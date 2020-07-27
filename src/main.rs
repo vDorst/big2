@@ -1,11 +1,5 @@
+mod big2rules;
 use rand::Rng;
-
-static SUITS: [u8; 4]  = [0x0, 0x1, 0x2, 0x3];
-static RANKS: [u8; 13] = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
-
-pub struct Cards {
-	rank: Vec<u8>,
-}
 
 fn cards_to_str(card: u8, card_str: &mut String) {
 	//                       0123456789ABCDEF
@@ -16,20 +10,39 @@ fn cards_to_str(card: u8, card_str: &mut String) {
 	rank = ((card >> 4) & 0xF).into();
 	suit = (card & 0x3).into();
 
+	// Suit 0: Diamon: Blue
+	//      1: Clubs:  Green
+	//      2: hearts: Red
+	//      3: Spades: Black
+
+	card_str.push_str("\u{1b}[1;30;107m");
+	
 	card_str.push(rank_str[rank] as char);
 
-	if suit == SUITS[0] { card_str.push_str("\u{2666}"); }
-	if suit == SUITS[1] { card_str.push_str("\u{2663}"); }    		
-	if suit == SUITS[2] { card_str.push_str("\u{2665}"); } 
-	if suit == SUITS[3] { card_str.push_str("\u{2660}"); }
+	//if suit == big2rules::SUITS[0] { card_str.push_str("\u{1b}[106m\u{1b}[30m"); }
+	//if suit == big2rules::SUITS[1] { card_str.push_str("\u{1b}[102m\u{1b}[30m"); }
+	//if suit == big2rules::SUITS[2] { card_str.push_str("\u{1b}[101m\u{1b}[30m"); }
+	//if suit == big2rules::SUITS[3] { card_str.push_str("\u{1b}[107m\u{1b}[30m"); }
+
+	if suit == big2rules::SUITS[0] { card_str.push_str("\u{1b}[34m"); }
+	if suit == big2rules::SUITS[1] { card_str.push_str("\u{1b}[32m"); }
+	if suit == big2rules::SUITS[2] { card_str.push_str("\u{1b}[31m"); }
+	if suit == big2rules::SUITS[3] { card_str.push_str("\u{1b}[30m"); }
+
+	if suit == big2rules::SUITS[0] { card_str.push_str("\u{2666}"); }
+	if suit == big2rules::SUITS[1] { card_str.push_str("\u{2663}"); }    		
+	if suit == big2rules::SUITS[2] { card_str.push_str("\u{2665}"); } 
+	if suit == big2rules::SUITS[3] { card_str.push_str("\u{2660}"); }
+	
+	card_str.push_str("\u{1b}[0;49;39m");
 }
 
 fn diplay_cards(cards: [u64; 4]) {
 	for p in 0..cards.len() {
 		let card = cards[p];
 		let mut out_str = String::from("");
-		for r in RANKS.iter() {
-			for s in SUITS.iter() {
+		for r in big2rules::RANKS.iter() {
+			for s in big2rules::SUITS.iter() {
 				if (card & card_encode(*r, *s)) == 0 { continue; }
 				cards_to_str(u8::from((r << 4) + s), &mut out_str);
 				out_str.push(' ');
@@ -46,8 +59,8 @@ pub fn gen_deck() -> [u64; 4] {
 	let cards: [u64; 4];
 	
 	// Create Cards
-	for s in SUITS.iter() {
-		for r in RANKS.iter() {
+	for s in big2rules::SUITS.iter() {
+		for r in big2rules::RANKS.iter() {
 			deck.push(deck_encode(*r, *s));
 		}
 	}
@@ -55,7 +68,7 @@ pub fn gen_deck() -> [u64; 4] {
 	assert_eq!(deck.len(), 52, "Strange card count must be 52!");
 	
 	// Randomize/shuffle the cards
-	for _ in 0..128 {
+	for _ in 0..256 {
 		for c in 0..deck.len() {
 			o = rng.gen_range(0, deck.len());
 			deck.swap(c, o);
@@ -104,15 +117,19 @@ fn deal_cards(deck: Vec<u8>) -> [u64; 4] {
 }
 
 fn main() {
-    let cards: [u64; 4] = gen_deck();
-    // let mut players: [Player; 4];
+	let cards: [u64; 4] = gen_deck();
+	// let mut players: [Player; 4];
 
-//	for value in RANKS.iter() {
+//	for value in big2rules::RANKS.iter() {
 //		for suit in SUITS.iter() {
 //			let bit = card_encode(*value, *suit);
 //			println!("r{:02x} s{:02x} b{:64b}", value, suit, bit);
 //		}
 //	}
 
-    diplay_cards(cards);
+	diplay_cards(cards);
+	for p in 0..cards.len() {
+		big2rules::rules::get_numbers(cards[p]);
+		//println!("P{}: Quads: {}", p, Rules::hasQuads(cards[p]));
+	}
 }

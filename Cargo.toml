@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["René van Dorst"]
 edition = "2018"
 exclude = ["target", "Cargo.lock"]
+license = "MIT"
 
 [dependencies]
 rand = "0.7"
