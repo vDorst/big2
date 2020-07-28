@@ -93,7 +93,7 @@ pub mod rules {
 	
 		// Score:
 		//	0xCRS = one 0x1.. to three cards 0x3..
-		// 	  ||+- Suit: Selected rank card shifted down.
+		// 	  ||+- Suit: Selected suit of that ranked card shifted down.
 		//	  |+-- Rank: 3..F 3 = 3 and F = 2
 		//        +--- Card count: 1 = single, 2 = two, 3 = three
 		
@@ -116,15 +116,18 @@ pub mod rules {
 		let card_cnt_hand: u64 = hand.count_ones().into();
 
 		if card_cnt_hand <= 3 {
-			for r in crate::big2rules::RANKS.iter() {
-				let rank: u64 = (*r).into();
-				let rankmask = (hand >> (rank << 2)) & 0xF;
-				let cnt: u64 = rankmask.count_ones().into();
-				if cnt == card_cnt_hand { return (cnt << 8) | (rank << 4) | rankmask; }
-			}
-			return 0;
+			// find the highest card and calc the rank.
+			let rank: u64 = (63 - hand.leading_zeros() as u64) >> 2;
+			// Get the played suit of that rank.
+			let suitmask = hand >> (rank << 2);
+			// Count number of cards based on the suit
+			let cnt: u64 = suitmask.count_ones() as u64;
+			// If cnt doesn't match the card_cnt then it is invalid hand.
+			if cnt != card_cnt_hand { return 0; }
+			// Return score.
+			return (card_cnt_hand << 8) | (rank << 4) | suitmask;
 		}
-		
+
 		let mut straigth_bits = 0;
 		let mut single: u64 = 0;
 		let mut doubles: u64 = 0;
