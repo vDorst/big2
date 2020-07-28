@@ -41,8 +41,89 @@ pub mod rules {
 			flushs += cnt / 5;
 			mask <<= 1;
 		}
-		
+
 		let fullhouse = std::cmp::min(doubles, tripps) + std::cmp::min(doubles, quads) + std::cmp::min(tripps, quads);
 		println!("R{:x?} S{:16b} {:x} D{:x} T{:x} Q{:x} FH{:x} FL{:x}", ranks, straigth, straigths, doubles, tripps, quads, fullhouse, flushs);
+	}
+	pub fn is_valid_hand(hand: u64) -> bool {
+		// Check cards range. Only the upper 52 bits are used.
+		if hand & 0xFFF != 0 { return false; }
+
+		// Check number of cards played.
+		let cardcount = hand.count_ones();
+		// println!("Card count: {}", cardcount);
+		if cardcount != 1 && cardcount != 2 &&
+		   cardcount != 3 && cardcount != 5 {
+			return false;
+		}
+
+		return true;
+	}
+	pub fn beter_hand(board: u64, hand: u64) -> bool {
+		if is_valid_hand(hand) == false { return false; }
+
+		let card_cnt_hand = hand.count_ones();
+		let card_cnt_board = board.count_ones();
+
+		// Board and hand count must match.
+		// Board count 0 means new turn.
+		if card_cnt_board != 0 &&
+		   card_cnt_board != card_cnt_hand {
+			return false;
+		}
+
+		return true;
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn rules_sizes() {
+	        assert!(rules::is_valid_hand(0b1          ) == false, "1 invalid card");
+	        assert!(rules::is_valid_hand(0b1     << 12) == true);
+	        assert!(rules::is_valid_hand(0b11    << 12) == true);
+	        assert!(rules::is_valid_hand(0b111   << 12) == true);
+	        assert!(rules::is_valid_hand(0b1111  << 12) == false, "4 cards");
+	        assert!(rules::is_valid_hand(0b11111 << 12) == true);
+		assert!(rules::is_valid_hand(0b111111<< 12) == false, "6 cards");
+	}
+	#[test]
+	fn rules_board_hand_new_turn() {
+		assert!(rules::beter_hand(0, 0b1      << 12));
+		assert!(rules::beter_hand(0, 0b11     << 12));
+		assert!(rules::beter_hand(0, 0b111    << 12));
+		assert!(rules::beter_hand(0, 0b1111   << 12) == false);
+		assert!(rules::beter_hand(0, 0b11111  << 12));
+	}
+	#[test]
+	fn rules_board_hand_one_pair() {
+		assert!(rules::beter_hand(0b1 << 12, 0b1      << 12));
+		assert!(rules::beter_hand(0b1 << 12, 0b11     << 12) == false);
+		assert!(rules::beter_hand(0b1 << 12, 0b111    << 12) == false);
+		assert!(rules::beter_hand(0b1 << 12, 0b11111  << 12) == false);
+	}
+	#[test]
+	fn rules_board_hand_two_pair() {
+		assert!(rules::beter_hand(0b11 << 12, 0b1      << 12) == false);
+		assert!(rules::beter_hand(0b11 << 12, 0b11     << 12));
+		assert!(rules::beter_hand(0b11 << 12, 0b111    << 12) == false);
+		assert!(rules::beter_hand(0b11 << 12, 0b11111  << 12) == false);
+	}
+	#[test]
+	fn rules_board_hand_three_of_kind() {
+		assert!(rules::beter_hand(0b111 << 12, 0b1      << 12) == false);
+		assert!(rules::beter_hand(0b111 << 12, 0b11     << 12) == false);
+		assert!(rules::beter_hand(0b111 << 12, 0b111    << 12) == true);
+		assert!(rules::beter_hand(0b111 << 12, 0b11111  << 12) == false);
+	}
+	#[test]
+	fn rules_board_hand_fivecards() {
+		assert!(rules::beter_hand(0b11111 << 12, 0b1      << 12) == false);
+		assert!(rules::beter_hand(0b11111 << 12, 0b11     << 12) == false);
+		assert!(rules::beter_hand(0b11111 << 12, 0b111    << 12) == false);
+		assert!(rules::beter_hand(0b11111 << 12, 0b11111  << 12));
 	}
 }
