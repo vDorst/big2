@@ -4,7 +4,10 @@ pub const RANKS: [u8; 13] = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 pub mod cards {
 	#[non_exhaustive]
 	pub struct Kind;
+	#[non_exhaustive]
+	pub struct Rank;
 
+	#[allow(dead_code)]
 	impl Kind {
 		pub const ONE: u64		= 0x100;
 		pub const PAIR: u64		= 0x200;
@@ -24,6 +27,23 @@ pub mod cards {
 
 		pub const HIGHEST: u64		= 0x3f;
 		pub const LOWEST: u64		= 12;
+	}
+
+	#[allow(dead_code)]
+	impl Rank {
+		pub const THREE: u64		= 3;
+		pub const FOUR: u64		= 4;
+		pub const FIVE: u64		= 5;
+		pub const SIX: u64		= 6;
+		pub const SEVEN: u64		= 7;
+		pub const EIGTH: u64		= 8;
+		pub const NINE: u64		= 9;
+		pub const TEN: u64		= 10;
+		pub const JACK: u64		= 11;
+		pub const QUEEN: u64		= 12;
+		pub const KING: u64		= 13;
+		pub const ACE: u64		= 14;
+		pub const TWO: u64		= 15;
 	}
 
 	pub fn has_rank(hand: u64, rank: u64) -> u64 {
@@ -47,7 +67,7 @@ pub mod rules {
 		let mut straigths: u32 = 0;
 		let mut doubles: u32 = 0;
 		
-		for r in crate::big2rules::RANKS.iter() {
+		for r in RANKS.iter() {
 			let idx: usize = (*r).into();
 			ranks[idx] = cards::cnt_rank(hand, idx as u64) as u32;
 			if ranks[idx] != 0 { straigth |= 1 << r; }
@@ -174,20 +194,20 @@ pub mod rules {
 		if is_straight {
 			let mut straigth_score: u64 = 0;
 			if rank - low_rank == 12 {
-				is_straight =	cards::cnt_rank(hand,  3) == 1 &&
-						cards::cnt_rank(hand,  4) == 1 &&
-						cards::cnt_rank(hand,  5) == 1 &&
-						cards::cnt_rank(hand, 15) == 1;
+				is_straight =	cards::has_rank(hand, cards::Rank::THREE) != 0 &&
+						cards::has_rank(hand, cards::Rank::FOUR)  != 0 &&
+						cards::has_rank(hand, cards::Rank::FIVE)  != 0 &&
+						cards::has_rank(hand, cards::Rank::TWO)   != 0;
 				// Straight 23456
-				if is_straight && cards::cnt_rank(hand, 6) == 1  { straigth_score |= highest_card | 0x40; }
+				if is_straight && cards::has_rank(hand, cards::Rank::SIX) != 0  { straigth_score |= highest_card | 0x40; }
 				// Straight A2345
-				if is_straight && cards::cnt_rank(hand, 14) == 1 { straigth_score |= highest_card | 0x80; }
+				if is_straight && cards::has_rank(hand, cards::Rank::ACE) != 0 { straigth_score |= highest_card | 0x80; }
 			} else {
-				is_straight =   cards::cnt_rank(hand,  low_rank) == 1 &&
-						cards::cnt_rank(hand,  low_rank + 1) == 1 &&
-						cards::cnt_rank(hand,  low_rank + 2) == 1 &&
-						cards::cnt_rank(hand,  low_rank + 3) == 1 &&
-						cards::cnt_rank(hand,  low_rank + 4) == 1;
+				is_straight =   cards::has_rank(hand,  low_rank)     != 0 &&
+						cards::has_rank(hand,  low_rank + 1) != 0 &&
+						cards::has_rank(hand,  low_rank + 2) != 0 &&
+						cards::has_rank(hand,  low_rank + 3) != 0 &&
+						cards::has_rank(hand,  low_rank + 4) != 0;
 				if is_straight { straigth_score = highest_card; }
 			}
 
@@ -201,7 +221,6 @@ pub mod rules {
 
 		if !is_straight && is_flush { return cards::Kind::FLUSH | highest_card; }
 
-		println!("Unknown hand {:64b}", hand);
 		return 0;
 	}
 }
@@ -271,31 +290,31 @@ mod tests {
 
 
 		// SET
-		assert!(rules::score_hand(0b0111 << 12) == cards::Kind::SET | 3);
-		assert!(rules::score_hand(0b1110 << 12) == cards::Kind::SET | 3);
-		assert!(rules::score_hand(0b1101 << 12) == cards::Kind::SET | 3);
-		assert!(rules::score_hand(0b1011 << 12) == cards::Kind::SET | 3);
+		assert!(rules::score_hand(0b0111 << 12) == cards::Kind::SET | cards::Rank::THREE);
+		assert!(rules::score_hand(0b1110 << 12) == cards::Kind::SET | cards::Rank::THREE);
+		assert!(rules::score_hand(0b1101 << 12) == cards::Kind::SET | cards::Rank::THREE);
+		assert!(rules::score_hand(0b1011 << 12) == cards::Kind::SET | cards::Rank::THREE);
 		assert!(rules::score_hand(0b11100 << 12) == 0);
 		assert!(rules::score_hand(0b11 << 12) < rules::score_hand(0b11 << 13));
 
 
 		// QUAD
-		assert!(rules::score_hand(0b0001_1111_0000 << 12) == cards::Kind::QUADS | 4);
-		assert!(rules::score_hand(0b0000_1111_1000 << 12) == cards::Kind::QUADS | 4);
-		assert!(rules::score_hand(0b0001_1111_0000 << 52) == cards::Kind::QUADS | 14);
-		assert!(rules::score_hand(0b0000_1111_1000 << 52) == cards::Kind::QUADS | 14);
-		assert!(rules::score_hand(0b1111_0000_1000 << 52) == cards::Kind::QUADS | 15);
+		assert!(rules::score_hand(0b0001_1111_0000 << 12) == cards::Kind::QUADS | cards::Rank::FOUR);
+		assert!(rules::score_hand(0b0000_1111_1000 << 12) == cards::Kind::QUADS | cards::Rank::FOUR);
+		assert!(rules::score_hand(0b0001_1111_0000 << 52) == cards::Kind::QUADS | cards::Rank::ACE);
+		assert!(rules::score_hand(0b0000_1111_1000 << 52) == cards::Kind::QUADS | cards::Rank::ACE);
+		assert!(rules::score_hand(0b1111_0000_1000 << 52) == cards::Kind::QUADS | cards::Rank::TWO);
 		assert!(rules::score_hand(0b1111_0001_1000 << 52) == 0);
 		assert!(rules::score_hand(0b1111_0000_1001 << 52) == 0);
 
 
 		// FULL HOUSE
-		assert!(rules::score_hand(0b0011_1011_0000 << 12) == cards::Kind::FULLHOUSE | 4);
-		assert!(rules::score_hand(0b0000_1101_1001 << 12) == cards::Kind::FULLHOUSE | 4);
-		assert!(rules::score_hand(0b0000_1011_0110 << 12) == cards::Kind::FULLHOUSE | 4);
-		assert!(rules::score_hand(0b1110_1001_0000 << 52) == cards::Kind::FULLHOUSE | 15);
-		assert!(rules::score_hand(0b0000_0111_1001 << 52) == cards::Kind::FULLHOUSE | 14);
-		assert!(rules::score_hand(0b0000_1101_0110 << 52) == cards::Kind::FULLHOUSE | 14);
+		assert!(rules::score_hand(0b0011_1011_0000 << 12) == cards::Kind::FULLHOUSE | cards::Rank::FOUR);
+		assert!(rules::score_hand(0b0000_1101_1001 << 12) == cards::Kind::FULLHOUSE | cards::Rank::FOUR);
+		assert!(rules::score_hand(0b0000_1011_0110 << 12) == cards::Kind::FULLHOUSE | cards::Rank::FOUR);
+		assert!(rules::score_hand(0b1110_1001_0000 << 52) == cards::Kind::FULLHOUSE | cards::Rank::TWO);
+		assert!(rules::score_hand(0b0000_0111_1001 << 52) == cards::Kind::FULLHOUSE | cards::Rank::ACE);
+		assert!(rules::score_hand(0b0000_1101_0110 << 52) == cards::Kind::FULLHOUSE | cards::Rank::ACE);
 
 
 		// STRAIGHT
