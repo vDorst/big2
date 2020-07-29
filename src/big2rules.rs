@@ -1,7 +1,44 @@
 pub const SUITS: [u8; 4]  = [0x0, 0x1, 0x2, 0x3];
 pub const RANKS: [u8; 13] = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
+pub mod cards {
+	#[non_exhaustive]
+	pub struct Kind;
+
+	impl Kind {
+		pub const ONE: u64		= 0x100;
+		pub const PAIR: u64		= 0x200;
+		pub const SET: u64		= 0x300;
+		pub const FIVECARD: u64		= 0x800;
+		pub const STRAIGHT: u64		= Kind::FIVECARD | 0x100;
+		pub const FLUSH: u64		= Kind::FIVECARD | 0x200;
+		pub const FULLHOUSE: u64	= Kind::FIVECARD | 0x300;
+		pub const QUADS: u64		= Kind::FIVECARD | 0x400;
+		pub const STRAIGHTFLUSH: u64	= Kind::FIVECARD | 0x500;
+
+		pub const SPADES: u64		= 0b1000;
+		pub const HEARTS: u64		= 0b0100;
+		pub const CLUBS: u64		= 0b0010;
+		pub const DIAMONDS: u64		= 0b0001;
+		pub const SUITMASK: u64		= 0b1111;
+
+		pub const HIGHEST: u64		= 0x3f;
+		pub const LOWEST: u64		= 12;
+	}
+
+	pub fn has_rank(hand: u64, rank: u64) -> u64 {
+		let mask = Kind::SUITMASK << (rank << 2);
+		return hand & mask;
+	}
+
+	pub fn cnt_rank(hand: u64, rank: u64) -> u64 {
+		return has_rank(hand, rank).count_ones() as u64;
+	}
+}
+
 pub mod rules {
+	use super::*;
+
 	pub fn get_numbers(hand: u64) {
 		let mut ranks: [u32; 16] = [0; 16];
 		let mut straigth: u64 = 0;
@@ -12,9 +49,7 @@ pub mod rules {
 		
 		for r in crate::big2rules::RANKS.iter() {
 			let idx: usize = (*r).into();
-			let bitmask = 0xF << (r << 2);
-			let rankmask = hand & bitmask;
-			ranks[idx] = rankmask.count_ones();
+			ranks[idx] = cards::cnt_rank(hand, idx as u64) as u32;
 			if ranks[idx] != 0 { straigth |= 1 << r; }
 			if ranks[idx] == 2 { doubles += 1; }	
 			if ranks[idx] == 3 { tripps += 1; }
@@ -48,7 +83,6 @@ pub mod rules {
 		   cardcount != 3 && cardcount != 5 {
 			return false;
 		}
-
 		return true;
 	}
 	pub fn beter_hand(board: u64, hand: u64) -> bool {
@@ -63,19 +97,16 @@ pub mod rules {
 		   card_cnt_board != card_cnt_hand {
 			return false;
 		}
-
 		return true;
 	}
-
-	pub fn is_flush(hand: u64) -> u64 {
+	pub fn is_flush(hand: u64) -> bool {
 		let mut mask: u64 = 0x1111_1111_1111_1000;
 		for _ in 0..4 {
-			if (hand & mask).count_ones() == 5 { return (mask >> 12) & 0xF; }
+			if (hand & mask).count_ones() == 5 { return true; }
 			mask <<= 1;
 		}
-		return 0;
+		return false;
 	}
-
 	pub fn has_flush(hand: u64) -> u8 {
 		let mut mask: u64 = 0x1111_1111_1111_1000;
 		let mut flushs: u8 = 0;
@@ -85,99 +116,94 @@ pub mod rules {
 		}
 		return flushs;
 	}
-
 	pub fn score_hand(hand: u64) -> u64 {
+		// Score:
+		//	0xKNN = One, Pair and Straigth, Flush
+		// 	  |++- highest card: bit nummer of the highest card
+		//        +--- Kind: Kind::ONE or Kind::TWO
+
+		//	0xK0R = Set, Quad, FullHouse
+		// 	  ||+- Rank: Only the RANK. Because only one RANK of each can exists.
+		//	  |+-- Zero
+		//        +--- Kind: Kind::QUADS or Kind::SET or Kind::FULLHOUSE
+
 		if is_valid_hand(hand) == false { return 0; }
-		// Score:
-		// 	
-	
-		// Score:
-		//	0xCRS = one 0x1.. to three cards 0x3..
-		// 	  ||+- Suit: Selected suit of that ranked card shifted down.
-		//	  |+-- Rank: 3..F 3 = 3 and F = 2
-		//        +--- Card count: 1 = single, 2 = two, 3 = three
-		
-		//	Five cards
-		//		5/7 = straigt, 7 =straigth flush
-		//		R = card score 
-		// 		S = highst suit
-		
-		//		6 = flush
-		//		R = card score
-		//		S = suit
-		
-		//		8 = Full house
-		//		R = card score
-		//		S = suit
-		
-		//		9 = Quads
-		//		R = card score
-		//		S = suit
 		let card_cnt_hand: u64 = hand.count_ones().into();
 
+		// find the highest card and calc the rank.
+		let highest_card: u64 = 63 - hand.leading_zeros() as u64;
+		let rank: u64 = highest_card >> 2;
+
+		// Get the played suit of that rank.
+		let suitmask = hand >> (rank << 2);
+		// Count number of cards based on the suit
+		let cnt: u64 = suitmask.count_ones() as u64;
+
 		if card_cnt_hand <= 3 {
-			// find the highest card and calc the rank.
-			let rank: u64 = (63 - hand.leading_zeros() as u64) >> 2;
-			// Get the played suit of that rank.
-			let suitmask = hand >> (rank << 2);
-			// Count number of cards based on the suit
-			let cnt: u64 = suitmask.count_ones() as u64;
 			// If cnt doesn't match the card_cnt then it is invalid hand.
 			if cnt != card_cnt_hand { return 0; }
-			// Return score.
-			return (card_cnt_hand << 8) | (rank << 4) | suitmask;
+
+			if card_cnt_hand == 1 { return cards::Kind::ONE | highest_card; }
+			if card_cnt_hand == 2 { return cards::Kind::PAIR | highest_card; }
+			if card_cnt_hand == 3 { return cards::Kind::SET | rank; }
+
+			return 0;
 		}
 
-		let mut straigth_bits = 0;
-		let mut single: u64 = 0;
-		let mut doubles: u64 = 0;
-		let mut tripples: u64 = 0;
-		let mut flush:	u64 = 0;
+		let lowest_card: u64 = hand.trailing_zeros() as u64;
+		let low_rank: u64 = lowest_card  >> 2;
+		// Get the played suit of that rank.
+		let low_suitmask = hand >> (low_rank << 2) & cards::Kind::SUITMASK;
+		// Count number of cards based on the suit
+		let low_cnt: u64 = low_suitmask.count_ones() as u64;
 
-		for r in crate::big2rules::RANKS.iter() {
-			let rank: u64 = (*r).into();
-			let rankmask = (hand >> (rank << 2)) & 0xF;
-			
-			if rankmask == 0 { 
-				straigth_bits = 0;
-				continue; 
+		// Quad
+		if cnt == 4 { return cards::Kind::QUADS | rank; }
+		if low_cnt == 4 { return cards::Kind::QUADS | low_rank; }
+
+		// Full House
+		if cnt == 3 && low_cnt == 2 { return cards::Kind::FULLHOUSE | rank; }
+		if cnt == 2 && low_cnt == 3 { return cards::Kind::FULLHOUSE | low_rank; }
+
+		// Flush
+		let is_flush: bool = is_flush(hand);
+
+		// Straigth detection
+		let mut is_straight: bool = rank - low_rank == 4 || rank - low_rank == 12;
+
+		if is_straight {
+			let mut straigth_score: u64 = 0;
+			if rank - low_rank == 12 {
+				is_straight =	cards::cnt_rank(hand,  3) == 1 &&
+						cards::cnt_rank(hand,  4) == 1 &&
+						cards::cnt_rank(hand,  5) == 1 &&
+						cards::cnt_rank(hand, 15) == 1;
+				// Straight 23456
+				if is_straight && cards::cnt_rank(hand, 6) == 1  { straigth_score |= highest_card | 0x40; }
+				// Straight A2345
+				if is_straight && cards::cnt_rank(hand, 14) == 1 { straigth_score |= highest_card | 0x80; }
+			} else {
+				is_straight =   cards::cnt_rank(hand,  low_rank) == 1 &&
+						cards::cnt_rank(hand,  low_rank + 1) == 1 &&
+						cards::cnt_rank(hand,  low_rank + 2) == 1 &&
+						cards::cnt_rank(hand,  low_rank + 3) == 1 &&
+						cards::cnt_rank(hand,  low_rank + 4) == 1;
+				if is_straight { straigth_score = highest_card; }
 			}
-			
-			let cnt: u64 = rankmask.count_ones().into();
 
-			// Found Quads
-			if cnt == 4 { return 0x5400 | rank; }
+			is_straight = straigth_score != 0;
 
-			let rs: u64 = rankmask | (rank << 4);
-			
-			flush |= rankmask;
-			
-			if cnt == 1 { single = rs; }
-			if cnt == 2 { doubles = rs; }	
-			if cnt == 3 { tripples = rs; }
-		}
-		
-		let is_flush: bool = flush.count_ones() == 1;
-
-		if straigth_bits == 5 && is_flush {
-			return 0x5600 | single;
+			if is_straight {
+				if is_flush { return cards::Kind::STRAIGHTFLUSH | straigth_score; }
+				return cards::Kind::STRAIGHT | straigth_score;
+			}
 		}
 
-		if straigth_bits == 5 && !is_flush {
-			return 0x5000 | single;
-		}
-		
-		if is_flush {
-			return 0x5500 | single;
-		}
+		if !is_straight && is_flush { return cards::Kind::FLUSH | highest_card; }
 
-		if tripples != 0 && doubles != 0 {
-			return 0x5400 | tripples;
-		}
-
-		println!("Unknown");
+		println!("Unknown hand {:64b}", hand);
 		return 0;
-	}	
+	}
 }
 
 #[cfg(test)]
@@ -232,17 +258,74 @@ mod tests {
 	}
 	#[test]
 	fn b_rules_score_hand() {
-		assert!(rules::score_hand(0b1  << 12) == 0x131);
-		assert!(rules::score_hand(0b11 << 12) == 0x233);
+		// ONE
+		assert!(rules::score_hand(0x0000_0000_0000_1000) == cards::Kind::ONE | cards::Kind::LOWEST);
+		assert!(rules::score_hand(0x8000_0000_0000_0000) == cards::Kind::ONE | cards::Kind::HIGHEST);
+
+
+		// PAIR
+		assert!(rules::score_hand(0b11 << 12) == cards::Kind::PAIR | 13);
 		// Select one 3 and one 4
 		assert!(rules::score_hand(0b11000 << 12) == 0);
-		assert!(rules::score_hand(0b11 << 12) < rules::score_hand(0b11 << 13));
-		// Select two 3 and one 4
-		assert!(rules::score_hand(0b111 << 12) == 0x337);
+		assert!(rules::score_hand(0b11 << 12) < rules::score_hand(0b11 << 62));
+
+
+		// SET
+		assert!(rules::score_hand(0b0111 << 12) == cards::Kind::SET | 3);
+		assert!(rules::score_hand(0b1110 << 12) == cards::Kind::SET | 3);
+		assert!(rules::score_hand(0b1101 << 12) == cards::Kind::SET | 3);
+		assert!(rules::score_hand(0b1011 << 12) == cards::Kind::SET | 3);
 		assert!(rules::score_hand(0b11100 << 12) == 0);
 		assert!(rules::score_hand(0b11 << 12) < rules::score_hand(0b11 << 13));
-		
-		// flush
-		assert!(rules::score_hand(0x11111 << 12) == 0);
+
+
+		// QUAD
+		assert!(rules::score_hand(0b0001_1111_0000 << 12) == cards::Kind::QUADS | 4);
+		assert!(rules::score_hand(0b0000_1111_1000 << 12) == cards::Kind::QUADS | 4);
+		assert!(rules::score_hand(0b0001_1111_0000 << 52) == cards::Kind::QUADS | 14);
+		assert!(rules::score_hand(0b0000_1111_1000 << 52) == cards::Kind::QUADS | 14);
+		assert!(rules::score_hand(0b1111_0000_1000 << 52) == cards::Kind::QUADS | 15);
+		assert!(rules::score_hand(0b1111_0001_1000 << 52) == 0);
+		assert!(rules::score_hand(0b1111_0000_1001 << 52) == 0);
+
+
+		// FULL HOUSE
+		assert!(rules::score_hand(0b0011_1011_0000 << 12) == cards::Kind::FULLHOUSE | 4);
+		assert!(rules::score_hand(0b0000_1101_1001 << 12) == cards::Kind::FULLHOUSE | 4);
+		assert!(rules::score_hand(0b0000_1011_0110 << 12) == cards::Kind::FULLHOUSE | 4);
+		assert!(rules::score_hand(0b1110_1001_0000 << 52) == cards::Kind::FULLHOUSE | 15);
+		assert!(rules::score_hand(0b0000_0111_1001 << 52) == cards::Kind::FULLHOUSE | 14);
+		assert!(rules::score_hand(0b0000_1101_0110 << 52) == cards::Kind::FULLHOUSE | 14);
+
+
+		// STRAIGHT
+		assert!(rules::score_hand(0x0002_1111 << 12) == cards::Kind::STRAIGHT | 0x1d);
+		assert!(rules::score_hand(0x0002_2221 << 12) == cards::Kind::STRAIGHT | 0x1d);
+		assert!(rules::score_hand(0x0000_0002_2221 << 12) == cards::Kind::STRAIGHT | 0x1d);
+		// 23456
+		assert!(rules::score_hand(0x8000_0000_0111_1000) == cards::Kind::STRAIGHT | cards::Kind::HIGHEST | 0x40);
+		// A2345
+		assert!(rules::score_hand(0x8200_0000_0011_1000) == cards::Kind::STRAIGHT | cards::Kind::HIGHEST | 0x80);
+
+
+		// FLUSH
+		assert!(rules::score_hand(0x0011_1101 << 12) == cards::Kind::FLUSH | 32);
+		assert!(rules::score_hand(0x8800_0000_0808_8000) == cards::Kind::FLUSH | cards::Kind::HIGHEST);
+
+
+		// STRAIGHT FLUSH
+		assert!(rules::score_hand(0x0001_1111 << 12) == cards::Kind::STRAIGHTFLUSH | 0x1c);
+		assert!(rules::score_hand(0x1111_1000_0000_0000) == cards::Kind::STRAIGHTFLUSH | 0x3c);
+		assert!(rules::score_hand(0x8888_8000_0000_0000) == cards::Kind::STRAIGHTFLUSH | cards::Kind::HIGHEST);
+		// 23456
+		assert!(rules::score_hand(0x8000_0000_0888_8000) == cards::Kind::STRAIGHTFLUSH | cards::Kind::HIGHEST | 0x40);
+		assert!(rules::score_hand(0x1000_0000_0111_1000) == cards::Kind::STRAIGHTFLUSH | 0x3c | 0x40);
+		// A2345
+		assert!(rules::score_hand(0x8800_0000_0088_8000) == cards::Kind::STRAIGHTFLUSH | cards::Kind::HIGHEST | 0x80);
+		assert!(rules::score_hand(0x1100_0000_0011_1000) == cards::Kind::STRAIGHTFLUSH | 0x3c | 0x80);
+
+
+		// BARBAGE
+		assert!(rules::score_hand(0x0001_0311 << 12) == 0);
 	}
 }
