@@ -1,6 +1,75 @@
 pub const SUITS: [u8; 4]  = [0x0, 0x1, 0x2, 0x3];
 pub const RANKS: [u8; 13] = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
+pub mod deck {
+	use rand::Rng;
+	use super::*;
+
+	pub fn deal() -> [u64; 4] {
+		let mut deck = Vec::<u8>::with_capacity(52);
+		let mut rng = rand::thread_rng();
+		let mut o: usize;
+		let cards: [u64; 4];
+		
+		// Create Cards
+		for s in SUITS.iter() {
+			for r in RANKS.iter() {
+				deck.push(deck_encode(*r, *s));
+			}
+		}
+
+		assert_eq!(deck.len(), 52, "Strange card count must be 52!");
+		
+		// Randomize/shuffle the cards
+		for _ in 0..256 {
+			for c in 0..deck.len() {
+				o = rng.gen_range(0, deck.len());
+				deck.swap(c, o);
+			}
+		}
+
+		// Deal cards
+		cards = deal_cards(deck);
+		assert!((cards[0] | cards[1] | cards[2] | cards[3]) != 0xFFFF_FFFF_FFFF_0000u64);
+		return cards;
+	}
+
+	fn deck_encode(value: u8, suit: u8) -> u8 {
+		return (value << 4) + suit;
+	}
+
+	fn deck_decode(deckvalue: u8) -> (u8, u8) {
+		let value = (deckvalue >> 4) & 0xF;
+		let suit  = deckvalue & 0x3;
+		return (value, suit);
+	}
+
+	pub fn card_encode(value: u8, suit: u8) -> u64 {
+		return (1 << (u64::from(value) << 2)) << u64::from(suit);
+	}
+
+	fn deal_cards(deck: Vec<u8>) -> [u64; 4] {
+		let mut player_cards: [u64; 4] = [0,0,0,0];
+		let mut p: usize = 0;
+		let mut c: usize = 0;
+		
+		for r in deck {
+			let (value, suit) = deck_decode(r);
+			let bit = card_encode(value, suit);
+			player_cards[p] |= bit;
+			// println!("r{:02x} v{:02x} s{:02x} b{:16x} - {:16x?} + {:64b}", r, value, suit, bit, player_cards[p], player_cards[p]);
+			c += 1;
+			if c == 13 {
+				// println!("p{:x} {:#08x?}", p, player_cards[p]);
+				assert!(player_cards[p].count_ones() == 13);
+				c = 0;
+				p += 1;
+			}
+		}
+		return player_cards;
+	}
+}	
+
 pub mod cards {
 	#[non_exhaustive]
 	pub struct Kind;
