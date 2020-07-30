@@ -2,58 +2,38 @@ pub const SUITS: [u8; 4]  = [0x0, 0x1, 0x2, 0x3];
 pub const RANKS: [u8; 13] = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
 pub mod deck {
-	use rand::Rng;
+	use rand::thread_rng;
+	use rand::seq::SliceRandom;
 	use super::*;
-
-	pub fn deal() -> [u64; 4] {
-		let mut deck = Vec::<u8>::with_capacity(52);
-		let mut rng = rand::thread_rng();
-		let mut o: usize;
-		let cards: [u64; 4];
-		
-		// Create Cards
-		for s in SUITS.iter() {
-			for r in RANKS.iter() {
-				deck.push(deck_encode(*r, *s));
-			}
-		}
-
-		assert_eq!(deck.len(), 52, "Strange card count must be 52!");
-		
-		// Randomize/shuffle the cards
-		for _ in 0..256 {
-			for c in 0..deck.len() {
-				o = rng.gen_range(0, deck.len());
-				deck.swap(c, o);
-			}
-		}
-
-		// Deal cards
-		cards = deal_cards(deck);
-		assert!((cards[0] | cards[1] | cards[2] | cards[3]) != 0xFFFF_FFFF_FFFF_0000u64);
-		return cards;
-	}
 
 	fn deck_encode(value: u8, suit: u8) -> u8 {
 		return (value << 4) + suit;
 	}
+	pub fn deal() -> [u64; 4] {
+		// Create and shulle deck of cards
+		let deck = {
+				let mut deck = Vec::<u8>::with_capacity(52);
 
-	fn deck_decode(deckvalue: u8) -> (u8, u8) {
-		let value = (deckvalue >> 4) & 0xF;
-		let suit  = deckvalue & 0x3;
-		return (value, suit);
+				for s in SUITS.iter() {
+					for r in RANKS.iter() {
+						deck.push(deck_encode(*r, *s));
+					}
+				}
+
+				// Randomize/shuffle the cards
+				for _ in 0..256 {
+					deck.shuffle(&mut thread_rng());
+				}
+				deck
+			};
+		return deal_cards(deck);
 	}
-
-	pub fn card_encode(value: u8, suit: u8) -> u64 {
-		return (1 << (u64::from(value) << 2)) << u64::from(suit);
-	}
-
-	fn deal_cards(deck: Vec<u8>) -> [u64; 4] {
+	fn deal_cards(cards: Vec<u8>) -> [u64; 4] {
 		let mut player_cards: [u64; 4] = [0,0,0,0];
 		let mut p: usize = 0;
 		let mut c: usize = 0;
-		
-		for r in deck {
+
+		for r in cards {
 			let (value, suit) = deck_decode(r);
 			let bit = card_encode(value, suit);
 			player_cards[p] |= bit;
@@ -66,9 +46,18 @@ pub mod deck {
 				p += 1;
 			}
 		}
+		assert!((player_cards[0] | player_cards[1] | player_cards[2] | player_cards[3]) == 0xFFFF_FFFF_FFFF_F000u64);
 		return player_cards;
 	}
-}	
+	pub fn card_encode(value: u8, suit: u8) -> u64 {
+		return (1 << (u64::from(value) << 2)) << u64::from(suit);
+	}
+	fn deck_decode(deckvalue: u8) -> (u8, u8) {
+		let value = (deckvalue >> 4) & 0xF;
+		let suit  = deckvalue & 0x3;
+		return (value, suit);
+	}
+}
 
 pub mod cards {
 	#[non_exhaustive]
@@ -135,12 +124,12 @@ pub mod rules {
 		let mut quads:  u32 = 0;
 		let mut straigths: u32 = 0;
 		let mut doubles: u32 = 0;
-		
+
 		for r in RANKS.iter() {
 			let idx: usize = (*r).into();
 			ranks[idx] = cards::cnt_rank(hand, idx as u64) as u32;
 			if ranks[idx] != 0 { straigth |= 1 << r; }
-			if ranks[idx] == 2 { doubles += 1; }	
+			if ranks[idx] == 2 { doubles += 1; }
 			if ranks[idx] == 3 { tripps += 1; }
 			if ranks[idx] == 4 { quads += 1; }
 		}
@@ -155,7 +144,7 @@ pub mod rules {
 		// 23456
 		mask = 0b1000_0000_0111_1000;
 		if straigth & mask == mask { straigths += 1;};
-		
+
 		let flushs = has_flush(hand);
 
 		let fullhouse = std::cmp::min(doubles, tripps) + std::cmp::min(doubles, quads) + std::cmp::min(tripps, quads);
@@ -415,5 +404,12 @@ mod tests {
 
 		// BARBAGE
 		assert!(rules::score_hand(0x0001_0311 << 12) == 0);
+	}
+	#[test]
+	fn c_deal_hand() {
+		// No cards generated
+		assert!(deck::deal() != [0, 0, 0, 0]);
+		// Detect shuffle is did not work at all.
+		assert!(deck::deal() != [0x1111_1111_1111_1000, 0x2222_2222_2222_2000, 0x4444_4444_4444_4000, 0x8888_8888_8888_8000]);
 	}
 }
