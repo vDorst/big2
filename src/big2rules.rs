@@ -1,4 +1,3 @@
-pub const SUITS: [u8; 4]  = [0x0, 0x1, 0x2, 0x3];
 pub const RANKS: [u8; 13] = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
 pub mod deck {
@@ -6,18 +5,17 @@ pub mod deck {
 	use rand::seq::SliceRandom;
 	use super::*;
 
-	fn deck_encode(value: u8, suit: u8) -> u8 {
-		return (value << 4) + suit;
-	}
+	pub const NUMBER_OF_CARDS: u8 = 52;
+	pub const START_BIT: u8 = 12;
+
 	pub fn deal() -> [u64; 4] {
 		// Create and shulle deck of cards
 		let deck = {
 				let mut deck = Vec::<u8>::with_capacity(52);
 
-				for s in SUITS.iter() {
-					for r in RANKS.iter() {
-						deck.push(deck_encode(*r, *s));
-					}
+				for s in 0..deck::NUMBER_OF_CARDS {
+					let card_bit: u8 = s as u8 + deck::START_BIT;
+					deck.push(card_bit);
 				}
 
 				// Randomize/shuffle the cards
@@ -29,33 +27,24 @@ pub mod deck {
 		return deal_cards(deck);
 	}
 	fn deal_cards(cards: Vec<u8>) -> [u64; 4] {
-		let mut player_cards: [u64; 4] = [0,0,0,0];
+		let mut players_hand: [u64; 4] = [0,0,0,0];
 		let mut p: usize = 0;
 		let mut c: usize = 0;
 
 		for r in cards {
-			let (value, suit) = deck_decode(r);
-			let bit = card_encode(value, suit);
-			player_cards[p] |= bit;
-			// println!("r{:02x} v{:02x} s{:02x} b{:16x} - {:16x?} + {:64b}", r, value, suit, bit, player_cards[p], player_cards[p]);
+			let card_bit = 1 << r;
+			players_hand[p] |= card_bit;
 			c += 1;
 			if c == 13 {
 				// println!("p{:x} {:#08x?}", p, player_cards[p]);
-				assert!(player_cards[p].count_ones() == 13);
+				assert!(players_hand[p].count_ones() == 13);
 				c = 0;
 				p += 1;
 			}
 		}
-		assert!((player_cards[0] | player_cards[1] | player_cards[2] | player_cards[3]) == 0xFFFF_FFFF_FFFF_F000u64);
-		return player_cards;
-	}
-	pub fn card_encode(value: u8, suit: u8) -> u64 {
-		return (1 << (u64::from(value) << 2)) << u64::from(suit);
-	}
-	fn deck_decode(deckvalue: u8) -> (u8, u8) {
-		let value = (deckvalue >> 4) & 0xF;
-		let suit  = deckvalue & 0x3;
-		return (value, suit);
+		assert!((players_hand[0] | players_hand[1] |
+			 players_hand[2] | players_hand[3]) == 0xFFFF_FFFF_FFFF_F000u64);
+		return players_hand;
 	}
 }
 
@@ -111,6 +100,18 @@ pub mod cards {
 
 	pub fn cnt_rank(hand: u64, rank: u64) -> u64 {
 		return has_rank(hand, rank).count_ones() as u64;
+	}
+
+	pub fn card_selected(card: u64) -> u64 {
+		return card.trailing_zeros() as u64;
+	}
+
+	pub fn has_rank_idx(card: u64) -> u64 {
+		return card_selected(card) >> 2;
+	}
+
+	pub fn has_suit(card: u64) -> u64 {
+		return 1 << (card_selected(card) & 0x3);
 	}
 }
 
@@ -229,7 +230,7 @@ pub mod rules {
 		}
 
 		let lowest_card: u64 = hand.trailing_zeros() as u64;
-		let low_rank: u64 = lowest_card  >> 2;
+		let low_rank: u64 = lowest_card >> 2;
 		// Get the played suit of that rank.
 		let low_suitmask = hand >> (low_rank << 2) & cards::Kind::SUITMASK;
 		// Count number of cards based on the suit
@@ -412,4 +413,21 @@ mod tests {
 		// Detect shuffle is did not work at all.
 		assert!(deck::deal() != [0x1111_1111_1111_1000, 0x2222_2222_2222_2000, 0x4444_4444_4444_4000, 0x8888_8888_8888_8000]);
 	}
+	#[test]
+	fn d_cards_test() {
+		// No cards generated
+		let card: u64 = 0x1000;
+		assert!(cards::has_rank_idx(card) == cards::Rank::THREE);
+		assert!(cards::has_suit(card) == cards::Kind::DIAMONDS);
+		let card: u64 = 0x20000;
+		assert!(cards::has_rank_idx(card) == cards::Rank::FOUR);
+		assert!(cards::has_suit(card) == cards::Kind::CLUBS);
+		let card: u64 = 0x0400_0000_0000_0000;
+		assert!(cards::has_rank_idx(card) == cards::Rank::ACE);
+		assert!(cards::has_suit(card) == cards::Kind::HEARTS);
+		let card: u64 = 0x8000_0000_0000_0000;
+		assert!(cards::has_rank_idx(card) == cards::Rank::TWO);
+		assert!(cards::has_suit(card) == cards::Kind::SPADES);
+	}
 }
+
