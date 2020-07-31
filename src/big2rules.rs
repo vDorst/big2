@@ -65,6 +65,7 @@ pub mod cards {
 		pub const FULLHOUSE: u64	= Kind::FIVECARD | 0x300;
 		pub const QUADS: u64		= Kind::FIVECARD | 0x400;
 		pub const STRAIGHTFLUSH: u64	= Kind::FIVECARD | 0x500;
+		pub const TYPE: u64		= 0xF00;
 
 		pub const SPADES: u64		= 0b1000;
 		pub const HEARTS: u64		= 0b0100;
@@ -282,6 +283,24 @@ pub mod rules {
 
 		return 0;
 	}
+}
+
+pub struct Player {
+	pub name: String,
+	pub score: isize,
+	pub hand: u64,
+	pub has_passed: bool,
+}
+
+pub struct GameState {
+	pub players: Vec::<Player>,
+	pub round: usize,
+	pub rounds: usize,
+	pub board: u64,
+	pub board_score: u64,
+	pub i_am_player: usize,
+	pub player_to_act: usize,
+	pub cards_selected: u64,
 }
 
 #[cfg(test)]
