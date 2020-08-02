@@ -106,6 +106,7 @@ pub mod display {
 			println!("p{:x}: {}", p, out_str);
 	    	}
 	}
+
 	pub fn board(gs: &big2rules::GameState) {
 		let mut out_str = String::from("");
 		let board_hand = gs.board;
@@ -113,6 +114,9 @@ pub mod display {
 		let odd_straight: bool = (board_kind == big2rules::cards::Kind::STRAIGHT || board_kind == big2rules::cards::Kind::STRAIGHTFLUSH) && gs.board_score & (0x40 | 0x80) != 0;
 		let mut bit: u64 = 1 << 11;
 		if odd_straight { bit = 1 << 38; };
+
+		// Clear screen
+		print!("\u{1b}[2J");
 
 		for _ in 12..64 {
 			if bit == 1 << 63 { bit = 1 << 11; };
@@ -122,15 +126,15 @@ pub mod display {
 			cards_to_utf8(card, &mut out_str);
 			out_str.push(' ');
 		}
-		print!("\n  {:>16}: {}/{} - {}             ", "Board", gs.round, gs.rounds, out_str);
+		print!("\r\n  {:>16}: {}/{} - {}             ", "Board", gs.round, gs.rounds, out_str);
 
 		let mut p = gs.i_am_player;
 		{
 			let mut player = &gs.players[p];
-			if p == gs.player_to_act { print!("\u{1b}[49;102m"); } else { print!("\u{1b}[40;100m"); }
+			if p == gs.player_to_act && gs.is_valid_hand { print!("\u{1b}[49;102m"); } else { print!("\u{1b}[40;100m"); }
 			print!("[ PLAY ]\u{1b}[49;39m    ");
 			if !player.has_passed { print!("\u{1b}[49;101m"); } else { print!("\u{1b}[40;100m"); }
-			print!("[ PASS ]\u{1b}[49;39m\n\n");
+			print!("[ PASS ]\u{1b}[49;39m\r\n\n");
 		}
 
 		for _ in 0..gs.players.len() {
@@ -149,7 +153,7 @@ pub mod display {
 						cards_to_utf8(card, &mut out_sel_str);
 						out_str.push_str("^^");
 					} else {
-						out_sel_str.push_str("  ");					
+						out_sel_str.push_str("  ");
 						cards_to_utf8(card, &mut out_str);
 					}
 					out_str.push(' ');
@@ -167,11 +171,11 @@ pub mod display {
 				print!("\u{1b}[49;101m");
 			}
 			if p == gs.player_to_act { print!("\u{1b}[49;102m"); }
-			print!("{}.{:>16}\u{1b}[49;39m:", p + 1, player.name);
+			print!("\r{}.{:>16}\u{1b}[49;39m:", p + 1, player.name);
 			print!(" #{:2}", n_cards);
 			print!(" {}{}", out_str, no_cards);
 			print!(" {}", score);
-			print!(" {}\n", passed);
+			print!(" {}\r\n", passed);
 			p += 1; if p == gs.players.len() { p = 0; };
 		}
 	}

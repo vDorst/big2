@@ -1,10 +1,18 @@
 mod big2rules;
 mod cli;
 
-use std::io::{self, stdout, Write};
+use std::{
+	io::{self, stdout, Write},
+	time::Duration,
+};
+
 use crossterm::{
     queue,
-    style::{self, Colorize, Print}, cursor, terminal, Result, QueueableCommand
+    style::{self, Colorize, Print}, Result, QueueableCommand,
+    terminal::{disable_raw_mode, enable_raw_mode},
+    cursor::position,
+    event::{poll, read, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    execute,
 };
 
 struct game {
@@ -12,28 +20,17 @@ struct game {
 	board_score: u64,
 }
 
-/*
-fn draw_box<W>(w: &mut W) -> Result<()>
-where
-    W: Write,
-{
-	w
-		.queue(cursor::MoveTo(0,0))?
-		.queue(Print("+============+"))?
-		.queue(cursor::MoveTo(0,1))?
-		.queue(Print("|            |"))?
-		.queue(cursor::MoveTo(0,2))?
-		.queue(Print("+============+"))?
-		.queue(cursor::MoveTo(0,5))?;
-}
-*/
-
 fn add_player(name: String) -> big2rules::Player {
 	return big2rules::Player {	name: name,
 					score: 0,
 					hand: 0x1FFF,
 					has_passed: false,
 				};
+}
+
+struct cycle {
+	has_hand: Vec::<u8>,
+	can_pass: bool,
 }
 
 fn main() -> Result<()> {
@@ -47,8 +44,10 @@ fn main() -> Result<()> {
 		i_am_player: 0,
 		player_to_act: 0,
 		cards_selected: 0,
+		hand_score: 0,
+		is_valid_hand: false,
 	};
-
+	
 	// find first player to act which as a 3 of diamonds.
 	for p in 0..4 {
 		if cards[p] & 0x1000 != 0 {
@@ -57,9 +56,11 @@ fn main() -> Result<()> {
 		}
 	}
 
+	
 	gs.players.push( add_player("Pietje".to_string()) );
 	gs.players.push( add_player("René".to_string()) );
 	gs.i_am_player = 1;
+	gs.player_to_act = 1;
 	gs.players.push( add_player("The King".to_string()) );
 	gs.players.push( add_player("Nobody".to_string()) );
 
@@ -71,38 +72,85 @@ fn main() -> Result<()> {
 	let fp = &mut gs.players[gs.player_to_act];
 	fp.hand &= !gs.board;
 
-	// A2345
-	gs.board = 0x8800_0000_0088_8000;
-	gs.board_score = big2rules::rules::score_hand(gs.board);
-	cli::display::board(&gs);
-	// 23456
-	gs.board = 0x1000_0000_0288_8000;
-	gs.board_score = big2rules::rules::score_hand(gs.board);
-	gs.player_to_act = 1;
-	gs.cards_selected = cards[gs.i_am_player] & 0xF0_0000_0F00_0000;
-	cli::display::board(&gs);
-	// 34567
-	gs.board = 0x0000_0000_1288_8000;
-	gs.board_score = big2rules::rules::score_hand(gs.board);
-	gs.player_to_act = 2;
-	gs.players[gs.i_am_player].has_passed = true;
-	cli::display::board(&gs);
-	// 34567
-	gs.board = 0x0000_0000_1842_1000;
-	gs.board_score = big2rules::rules::score_hand(gs.board);
-	gs.players[3].hand = 0x1f;
-	gs.player_to_act = 0;
-	gs.players[2].has_passed = true;
-	gs.players[gs.i_am_player].hand &= !0xF040_00F0_0000_F000;
-	
-	gs.round = 2;
-	gs.players[0].score = -2;
-	gs.players[1].score = 8;
-	gs.players[2].score = -10;
-	gs.players[3].score = 4;
-	
+	enable_raw_mode()?;
+	let mut stdout = stdout();
+	execute!(stdout, EnableMouseCapture)?;
+
 	cli::display::board(&gs);
 
+ 	let mut this_cycle = cycle { has_hand: Vec::<u8>::with_capacity(13), can_pass: true, };
+
+	let me = &mut gs.players[gs.i_am_player];
+	me.hand = cards[gs.i_am_player];	
+	for bit in 12..64 {
+		if me.hand & (1 << bit) != 0 { this_cycle.has_hand.push(bit); }
+	}
+		
+		
+	loop {
+		// poll user events
+		if poll(Duration::from_millis(1_000))? {
+	        	// It's guaranteed that read() wont block if `poll` returns `Ok(true)`
+			let user_event = read()?;
+			let mut toggle_card = 0;
+				
+			if user_event == Event::Key(KeyCode::Esc.into()) {
+				break;
+			}
+
+			match user_event {
+				Event::Key(user_event) => println!("{:?}", user_event),
+				Event::Mouse(user_event) => println!("{:?}", user_event),
+				Event::Resize(width, height) => println!("New size {}x{}", width, height),
+			}
+			
+			if user_event == Event::Key(KeyCode::Char('/').into()) &&
+			   this_cycle.can_pass {
+				gs.players[gs.i_am_player].has_passed = !gs.players[gs.i_am_player].has_passed;
+			}
+
+			if user_event == Event::Key(KeyCode::Char('1').into()) { toggle_card = 1; }
+			if user_event == Event::Key(KeyCode::Char('2').into()) { toggle_card = 2; }
+			if user_event == Event::Key(KeyCode::Char('3').into()) { toggle_card = 3; }
+			if user_event == Event::Key(KeyCode::Char('4').into()) { toggle_card = 4; }
+			if user_event == Event::Key(KeyCode::Char('5').into()) { toggle_card = 5; }
+			if user_event == Event::Key(KeyCode::Char('6').into()) { toggle_card = 6; }
+			if user_event == Event::Key(KeyCode::Char('7').into()) { toggle_card = 7; }
+			if user_event == Event::Key(KeyCode::Char('8').into()) { toggle_card = 8; }
+			if user_event == Event::Key(KeyCode::Char('9').into()) { toggle_card = 9; }
+			if user_event == Event::Key(KeyCode::Char('0').into()) { toggle_card = 10; }
+			if user_event == Event::Key(KeyCode::Char('-').into()) { toggle_card = 11; }
+			if user_event == Event::Key(KeyCode::Char('=').into()) { toggle_card = 12; }
+			if user_event == Event::Key(KeyCode::Backspace.into())    { toggle_card = 13; }
+			if user_event == Event::Key(KeyCode::Char('`').into()) {
+				gs.cards_selected = 0;
+				gs.hand_score = 0;
+			}
+			
+			if (toggle_card != 0) {
+				if toggle_card > this_cycle.has_hand.len() { break; }
+				gs.cards_selected ^= 1 << (this_cycle.has_hand[toggle_card - 1] as u64);
+				gs.hand_score = big2rules::rules::score_hand(gs.cards_selected);
+			}
+			
+			gs.is_valid_hand = (gs.hand_score > gs.board_score) && (gs.board == 0 || gs.board.count_ones() ==  gs.cards_selected.count_ones());
+			
+			if user_event == Event::Key(KeyCode::Enter.into()) && gs.is_valid_hand { 
+				gs.board = gs.cards_selected;
+				gs.players[gs.i_am_player].hand &= !gs.cards_selected;
+				gs.cards_selected = 0;
+				gs.board_score = gs.hand_score;
+				gs.cards_selected = 0;
+				gs.players[gs.i_am_player].has_passed = false;
+				gs.is_valid_hand = false;
+			}
+			cli::display::board(&gs);		
+		}
+	}
+
+	execute!(stdout, DisableMouseCapture)?;
+	disable_raw_mode();
+	
 	//cli::display::cards(cards, 2);
 	//for p in 0..cards.len() {
 	//	big2rules::rules::get_numbers(cards[p]);

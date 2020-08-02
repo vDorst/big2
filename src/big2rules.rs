@@ -301,7 +301,69 @@ pub struct GameState {
 	pub i_am_player: usize,
 	pub player_to_act: usize,
 	pub cards_selected: u64,
+	pub hand_score: u64,
+	pub is_valid_hand: bool,
 }
+
+pub struct muon_String16 {
+	data: [u8; 16],
+	count: i32,
+}
+
+pub struct muon_StateMessage {
+	type_: i32,
+	length: i32,
+	round: i32,
+	numRounds: i32,
+	turn: i32,
+	yourIndex: i32,
+	yourHand: [u8; 16],
+	muon_StateMessage_Players: [muon_StateMessage_Player; 4],
+	board: [u8; 8],
+	action: i32,
+}
+/*
+typedef struct tag_____StateMessage__ {
+<------>int__ type__;
+<------>int__ length__;
+<------>int__ round__;
+<------>int__ numRounds__;
+<------>int__ turn__;
+<------>int__ yourIndex__;
+<------>InlineList16__byte____ yourHand__;
+<------>InlineArray4__StateMessage_Player____ players__;
+<------>InlineList8__byte____ board__;
+<------>StateMessage_Action__ action__;
+} StateMessage__;
+*/
+
+/*
+typedef struct tag_____InlineArray4__StateMessage_Player____ {
+<------>StateMessage_Player__ item_0__;
+<------>StateMessage_Player__ item_1__;
+<------>StateMessage_Player__ item_2__;
+<------>StateMessage_Player__ item_3__;
+} InlineArray4__StateMessage_Player____;
+*/
+
+pub struct muon_StateMessage_Player {
+	name: muon_String16,
+	score: i32,
+	numCards: i32,
+	deltaScore: i32,
+	isReady: bool,
+	hasPassedThisCycle: bool,
+}
+/*
+typedef struct tag_____StateMessage_Player__ {
+<------>String16__ name__;
+<------>int__ score__;
+<------>int__ numCards__;
+<------>int__ deltaScore__;
+<------>bool__ isReady__;
+<------>bool__ hasPassedThisCycle__;
+} StateMessage_Player__;
+*/
 
 #[cfg(test)]
 mod tests {
