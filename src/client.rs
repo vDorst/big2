@@ -2,8 +2,6 @@ use std::io::prelude::*;
 use std::mem;
 use serde::{Deserialize, Serialize};
 
-
-
 #[derive(Serialize, Deserialize)]
 enum StateMessage_ActionType {
 	update,
@@ -51,7 +49,7 @@ mod client {
 	use super::*;
 
 	pub const PORT: u16 = 27191;
-	pub const VERSION: u32 = 4;
+	pub const VERSION: u32 = 5;
 	pub const MAGICNUMBER: u32 = 0x3267_6962;
 
 //	01 00 00 00
