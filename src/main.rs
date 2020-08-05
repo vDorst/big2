@@ -4,16 +4,20 @@ mod cli;
 use std::{
 	io::{self, stdout, Write},
 	time::Duration,
+	env,
+	net::{SocketAddr, IpAddr, Ipv4Addr, ToSocketAddrs},
 };
 
 use crossterm::{
     queue,
     style::{self, Colorize, Print}, Result, QueueableCommand,
     terminal::{disable_raw_mode, enable_raw_mode},
-    cursor::position,
     event::{poll, read, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    cursor::position,
     execute,
 };
+
+use clap::{Arg, App, SubCommand};
 
 struct game {
 	board: u64,
@@ -21,11 +25,20 @@ struct game {
 }
 
 fn add_player(name: String) -> big2rules::Player {
-	return big2rules::Player {	name: name,
-					score: 0,
-					hand: 0x1FFF,
-					has_passed: false,
-				};
+	return big2rules::Player {
+		name: name,
+		score: 0,
+		hand: 0x1FFF,
+		has_passed: false,
+	};
+}
+
+#[derive(PartialEq)]
+enum AppMode {
+	ERROR,
+	HOSTONLY,
+	HOST,
+	CLIENT,
 }
 
 struct cycle {
@@ -33,9 +46,101 @@ struct cycle {
 	can_pass: bool,
 }
 
+struct cli_args {
+	name: String,
+	app_mode: AppMode,
+	socket_addr: String,
+}
+
+fn parse_args() -> cli_args {
+	let mut arg = cli_args {
+		name: "To less arguments".to_string(),
+		app_mode: AppMode::ERROR,
+		socket_addr: "".to_string(),
+	};
+
+    let matches = App::new("big2")
+		.version("v4")
+		.about("CLI version of big2")
+		.arg(Arg::with_name("join")
+			.short("j")
+			.long("join")
+			.help("Join a server")
+			.value_name("addr")
+			.takes_value(true))
+		.arg(Arg::with_name("host")
+			.long("host")
+			.short("h")
+			.help("Be the host")
+			.required_unless("join"))
+		.arg(Arg::with_name("name")
+			.long("name")
+			.short("n")
+			.value_name("name")
+			.required_unless("hostonly")
+			.help("Your name, max length 16 bytes.")
+			.takes_value(true))
+		.arg(Arg::with_name("hostonly")
+			.short("o")
+			.long("hostonly")
+			.requires("host")
+			.help("Be host only"))
+		.arg(Arg::with_name("rounds")
+			.short("r")
+			.long("rounds")
+			.help("number of rounds")
+			.value_name("rounds")
+			.default_value("8")
+			.takes_value(true))
+		.arg(Arg::with_name("port")
+			.short("p")
+			.long("port")
+			.help("Set host listen port")
+			.value_name("port")
+			.default_value("27191")
+			.takes_value(true))
+		.get_matches();	
+
+	let hostonly = matches.is_present("hostonly");
+	let join = matches.is_present("join");
+	let be_host = matches.is_present("host");
+
+	arg.name = "Missing -host or -client or -hostonly".to_string();
+
+	if join || be_host {
+		let name: String = matches.value_of("name").unwrap_or("").to_string();
+		println!("Hello {}", name);
+		arg.name = name;
+	}
+
+	if join {
+		let join_addr = matches.value_of("join").unwrap_or("").to_string();
+		if join_addr != "" {
+			arg.socket_addr = join_addr;
+			arg.app_mode = AppMode::CLIENT;
+		}
+	}
+
+	if hostonly {
+		arg.app_mode = AppMode::HOSTONLY;
+	}
+
+	if be_host {
+		arg.app_mode = AppMode::HOST;
+	}
+
+	return arg;
+}
+
 fn main() -> Result<()> {
+	let cli_args = parse_args();
+	if cli_args.app_mode == AppMode::ERROR { 
+		std::process::exit(1);
+	}
+
 	let cards: [u64; 4] = big2rules::deck::deal();
-	let mut gs: big2rules::GameState = big2rules::GameState {
+
+	let mut gs = big2rules::GameState {
 		players: Vec::<big2rules::Player>::with_capacity(4),
 		round: 1,
 		rounds: 8,
@@ -44,19 +149,18 @@ fn main() -> Result<()> {
 		i_am_player: 0,
 		player_to_act: 0,
 		cards_selected: 0,
-		hand_score: 0,
 		is_valid_hand: false,
+		hand_score: 0,
 	};
-	
+
 	// find first player to act which as a 3 of diamonds.
 	for p in 0..4 {
-		if cards[p] & 0x1000 != 0 {
+		if cards[p] & (1 << big2rules::deck::START_BIT ) != 0 {
 			gs.player_to_act = p;
 			break;
 		}
 	}
 
-	
 	gs.players.push( add_player("Pietje".to_string()) );
 	gs.players.push( add_player("René".to_string()) );
 	gs.i_am_player = 1;
@@ -85,8 +189,7 @@ fn main() -> Result<()> {
 	for bit in 12..64 {
 		if me.hand & (1 << bit) != 0 { this_cycle.has_hand.push(bit); }
 	}
-		
-		
+
 	loop {
 		// poll user events
 		if poll(Duration::from_millis(1_000))? {
@@ -121,13 +224,13 @@ fn main() -> Result<()> {
 			if user_event == Event::Key(KeyCode::Char('0').into()) { toggle_card = 10; }
 			if user_event == Event::Key(KeyCode::Char('-').into()) { toggle_card = 11; }
 			if user_event == Event::Key(KeyCode::Char('=').into()) { toggle_card = 12; }
-			if user_event == Event::Key(KeyCode::Backspace.into())    { toggle_card = 13; }
+			if user_event == Event::Key(KeyCode::Backspace.into()) { toggle_card = 13; }
 			if user_event == Event::Key(KeyCode::Char('`').into()) {
 				gs.cards_selected = 0;
 				gs.hand_score = 0;
 			}
 			
-			if (toggle_card != 0) {
+			if toggle_card != 0 {
 				if toggle_card > this_cycle.has_hand.len() { break; }
 				gs.cards_selected ^= 1 << (this_cycle.has_hand[toggle_card - 1] as u64);
 				gs.hand_score = big2rules::rules::score_hand(gs.cards_selected);
