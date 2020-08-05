@@ -1,3 +1,4 @@
-Cargo.lock
 # Generated files
 /target/
+Cargo.lock
+/.vscode/
