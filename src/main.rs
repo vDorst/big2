@@ -1,11 +1,14 @@
 mod big2rules;
 mod cli;
+mod client;
 
 use std::{
-	io::{self, stdout, Write},
+	io::{self, stdout, Write, Read},
 	time::Duration,
 	env,
-	net::{SocketAddr, IpAddr, Ipv4Addr, ToSocketAddrs},
+	net::{SocketAddr, IpAddr, Ipv4Addr, ToSocketAddrs, TcpListener, TcpStream},
+	thread,
+	time,
 };
 
 use crossterm::{
@@ -114,8 +117,10 @@ fn parse_args() -> cli_args {
 	}
 
 	if join {
-		let join_addr = matches.value_of("join").unwrap_or("").to_string();
+		let mut join_addr = matches.value_of("join").unwrap_or("").to_string();
 		if join_addr != "" {
+			// append default port is not provided.
+			if !join_addr.contains(":") { join_addr.push_str(":27191"); }
 			arg.socket_addr = join_addr;
 			arg.app_mode = AppMode::CLIENT;
 		}
@@ -138,147 +143,184 @@ fn main() -> Result<()> {
 		std::process::exit(1);
 	}
 
-	let cards: [u64; 4] = big2rules::deck::deal();
+	//enable_raw_mode()?;
+	let mut stdout = stdout();
+	//execute!(stdout, EnableMouseCapture)?;
 
-	let mut gs = big2rules::GameState {
-		players: Vec::<big2rules::Player>::with_capacity(4),
-		round: 1,
-		rounds: 8,
-		board: 0,
-		board_score: 0,
-		i_am_player: 0,
-		player_to_act: 0,
-		cards_selected: 0,
-		is_valid_hand: false,
-		hand_score: 0,
-	};
+	if cli_args.app_mode == AppMode::CLIENT {
+		let client = client::client::TcpClient::connect(cli_args.socket_addr);
 
-	// find first player to act which as a 3 of diamonds.
-	for p in 0..4 {
-		if cards[p] & (1 << big2rules::deck::START_BIT ) != 0 {
-			gs.player_to_act = p;
-			break;
+		if let Err(e) = client {
+				println!("Can't connect to server... quit! {}", e); 
+				std::process::exit(1);
+		} 
+
+		let mut ts = client.unwrap();
+
+		ts.send_join_msg(&cli_args.name)?;
+		
+		let empty_buffer = &[0u8; std::mem::size_of::<client::StateMessage>()];
+		let mut SM: client::StateMessage = bincode::deserialize(empty_buffer).unwrap();		
+		let mut update: usize = 0;
+		let mut is_ready: bool = false;
+
+		loop {
+			update = 0;
+			match ts.check_buffer(&mut SM) {
+				Ok(ret) => update = ret,
+				Err(e) => {
+					println!("Error {:?}", e);
+				},
+			}
+
+			if update == 0 { continue; }
+
+			if SM.yourIndex == SM.turn {
+				println!("Our turn, send pass {} {}", SM.yourIndex, SM.turn);
+				ts.Action_Pass()?;
+			}
+
+			let mut boardcards: u64 = 0;
+			if SM.action.action_type == client::StateMessage_ActionType::PLAY {
+				for c in 0..SM.action.cards.count as usize {
+					boardcards |= client::client::card_from_byte(SM.action.cards.data[c]);
+				}
+			} else {
+				for c in 0..SM.board.count as usize {
+					boardcards |= client::client::card_from_byte(SM.board.data[c]);
+				}
+			}
+			// print!("Board: {:?}", SM.board);
+			// cli::display::my_cards(boardcards);
+
+			let mut mycards: u64 = 0;
+			for c in 0..SM.yourHand.count as usize {
+				mycards |= client::client::card_from_byte(SM.yourHand.data[c]);
+			}
+			//print!("Yours: ");
+			//cli::display::my_cards(mycards);
+
+
+			let mut gs = big2rules::GameState {
+				players: Vec::<big2rules::Player>::with_capacity(4),
+				round: SM.round as usize,
+				rounds: SM.numRounds as usize,
+				board: boardcards,
+				board_score: big2rules::rules::score_hand(boardcards),
+				i_am_player: SM.yourIndex as usize,
+				player_to_act: SM.turn as usize,
+				cards_selected: 0,
+				is_valid_hand: false,
+				hand_score: 0,
+			};
+
+			for p in SM.players.iter() {
+				let mut name = Vec::with_capacity(16);
+				for c in 0..std::cmp::min(p.name.count, 16) as usize {
+					name.push(p.name.data[c]);
+				}
+				let name: String = String::from_utf8(name)?;
+				gs.players.push(add_player(name));
+			}
+
+			for p in 0..4 {
+				let smp = &SM.players[p];
+				let passed: bool = smp.hasPassedThisCycle;
+				gs.players[p].has_passed = passed;
+				let nc: u64 = smp.numCards as u64;
+				if nc > 0 && nc < 14 {
+					gs.players[p].hand = !0 >> (64 - nc);
+				} else {
+					gs.players[p].hand = 0;
+				}
+			}
+
+			gs.players[gs.i_am_player].hand = mycards;
+			cli::display::board(&gs);
+
+			if SM.action.isEndOfCycle {
+				let ten_millis = time::Duration::from_millis(1000);
+
+				thread::sleep(ten_millis);
+				for p in 0..4 {
+					gs.players[p].has_passed = false;
+				}
+				gs.board = 0;
+				gs.board_score = 0;
+				cli::display::board(&gs);
+			}
+
+			if !is_ready && SM.turn == -1 {
+				ts.Action_Ready()?;
+				is_ready = true;
+			}
+			println!("{:?}", SM);
 		}
 	}
 
-	gs.players.push( add_player("Pietje".to_string()) );
-	gs.players.push( add_player("René".to_string()) );
-	gs.i_am_player = 1;
-	gs.player_to_act = 1;
-	gs.players.push( add_player("The King".to_string()) );
-	gs.players.push( add_player("Nobody".to_string()) );
 
-	println!("Player: {} {} first to act", gs.player_to_act, gs.players[gs.player_to_act].name);
-
-	let me = &mut gs.players[gs.i_am_player];
-	me.hand = cards[gs.i_am_player];
-
-	let fp = &mut gs.players[gs.player_to_act];
-	fp.hand &= !gs.board;
-
-	enable_raw_mode()?;
-	let mut stdout = stdout();
-	execute!(stdout, EnableMouseCapture)?;
-
-	cli::display::board(&gs);
-
- 	let mut this_cycle = cycle { has_hand: Vec::<u8>::with_capacity(13), can_pass: true, };
-
-	let me = &mut gs.players[gs.i_am_player];
-	me.hand = cards[gs.i_am_player];	
-	for bit in 12..64 {
-		if me.hand & (1 << bit) != 0 { this_cycle.has_hand.push(bit); }
-	}
-
-	loop {
-		// poll user events
-		if poll(Duration::from_millis(1_000))? {
-	        	// It's guaranteed that read() wont block if `poll` returns `Ok(true)`
-			let user_event = read()?;
-			let mut toggle_card = 0;
+	// 	// poll user events
+	// 	if poll(Duration::from_millis(1_000))? {
+	//         	// It's guaranteed that read() wont block if `poll` returns `Ok(true)`
+	// 		let user_event = read()?;
+	// 		let mut toggle_card = 0;
 				
-			if user_event == Event::Key(KeyCode::Esc.into()) {
-				break;
-			}
+	// 		if user_event == Event::Key(KeyCode::Esc.into()) {
+	// 			break;
+	// 		}
 
-			match user_event {
-				Event::Key(user_event) => println!("{:?}", user_event),
-				Event::Mouse(user_event) => println!("{:?}", user_event),
-				Event::Resize(width, height) => println!("New size {}x{}", width, height),
-			}
+	// 		match user_event {
+	// 			Event::Key(user_event) => println!("{:?}", user_event),
+	// 			Event::Mouse(user_event) => println!("{:?}", user_event),
+	// 			Event::Resize(width, height) => println!("New size {}x{}", width, height),
+	// 		}
 			
-			if user_event == Event::Key(KeyCode::Char('/').into()) &&
-			   this_cycle.can_pass {
-				gs.players[gs.i_am_player].has_passed = !gs.players[gs.i_am_player].has_passed;
-			}
+	// 		if user_event == Event::Key(KeyCode::Char('/').into()) &&
+	// 		   this_cycle.can_pass {
+	// 			gs.players[gs.i_am_player].has_passed = !gs.players[gs.i_am_player].has_passed;
+	// 		}
 
-			if user_event == Event::Key(KeyCode::Char('1').into()) { toggle_card = 1; }
-			if user_event == Event::Key(KeyCode::Char('2').into()) { toggle_card = 2; }
-			if user_event == Event::Key(KeyCode::Char('3').into()) { toggle_card = 3; }
-			if user_event == Event::Key(KeyCode::Char('4').into()) { toggle_card = 4; }
-			if user_event == Event::Key(KeyCode::Char('5').into()) { toggle_card = 5; }
-			if user_event == Event::Key(KeyCode::Char('6').into()) { toggle_card = 6; }
-			if user_event == Event::Key(KeyCode::Char('7').into()) { toggle_card = 7; }
-			if user_event == Event::Key(KeyCode::Char('8').into()) { toggle_card = 8; }
-			if user_event == Event::Key(KeyCode::Char('9').into()) { toggle_card = 9; }
-			if user_event == Event::Key(KeyCode::Char('0').into()) { toggle_card = 10; }
-			if user_event == Event::Key(KeyCode::Char('-').into()) { toggle_card = 11; }
-			if user_event == Event::Key(KeyCode::Char('=').into()) { toggle_card = 12; }
-			if user_event == Event::Key(KeyCode::Backspace.into()) { toggle_card = 13; }
-			if user_event == Event::Key(KeyCode::Char('`').into()) {
-				gs.cards_selected = 0;
-				gs.hand_score = 0;
-			}
+	// 		if user_event == Event::Key(KeyCode::Char('1').into()) { toggle_card = 1; }
+	// 		if user_event == Event::Key(KeyCode::Char('2').into()) { toggle_card = 2; }
+	// 		if user_event == Event::Key(KeyCode::Char('3').into()) { toggle_card = 3; }
+	// 		if user_event == Event::Key(KeyCode::Char('4').into()) { toggle_card = 4; }
+	// 		if user_event == Event::Key(KeyCode::Char('5').into()) { toggle_card = 5; }
+	// 		if user_event == Event::Key(KeyCode::Char('6').into()) { toggle_card = 6; }
+	// 		if user_event == Event::Key(KeyCode::Char('7').into()) { toggle_card = 7; }
+	// 		if user_event == Event::Key(KeyCode::Char('8').into()) { toggle_card = 8; }
+	// 		if user_event == Event::Key(KeyCode::Char('9').into()) { toggle_card = 9; }
+	// 		if user_event == Event::Key(KeyCode::Char('0').into()) { toggle_card = 10; }
+	// 		if user_event == Event::Key(KeyCode::Char('-').into()) { toggle_card = 11; }
+	// 		if user_event == Event::Key(KeyCode::Char('=').into()) { toggle_card = 12; }
+	// 		if user_event == Event::Key(KeyCode::Backspace.into()) { toggle_card = 13; }
+	// 		if user_event == Event::Key(KeyCode::Char('`').into()) {
+	// 			gs.cards_selected = 0;
+	// 			gs.hand_score = 0;
+	// 		}
 			
-			if toggle_card != 0 {
-				if toggle_card > this_cycle.has_hand.len() { break; }
-				gs.cards_selected ^= 1 << (this_cycle.has_hand[toggle_card - 1] as u64);
-				gs.hand_score = big2rules::rules::score_hand(gs.cards_selected);
-			}
+	// 		if toggle_card != 0 {
+	// 			if toggle_card > this_cycle.has_hand.len() { break; }
+	// 			gs.cards_selected ^= 1 << (this_cycle.has_hand[toggle_card - 1] as u64);
+	// 			gs.hand_score = big2rules::rules::score_hand(gs.cards_selected);
+	// 		}
 			
-			gs.is_valid_hand = (gs.hand_score > gs.board_score) && (gs.board == 0 || gs.board.count_ones() ==  gs.cards_selected.count_ones());
+	// 		gs.is_valid_hand = (gs.hand_score > gs.board_score) && (gs.board == 0 || gs.board.count_ones() ==  gs.cards_selected.count_ones());
 			
-			if user_event == Event::Key(KeyCode::Enter.into()) && gs.is_valid_hand { 
-				gs.board = gs.cards_selected;
-				gs.players[gs.i_am_player].hand &= !gs.cards_selected;
-				gs.cards_selected = 0;
-				gs.board_score = gs.hand_score;
-				gs.cards_selected = 0;
-				gs.players[gs.i_am_player].has_passed = false;
-				gs.is_valid_hand = false;
-			}
-			cli::display::board(&gs);		
-		}
-	}
+	// 		if user_event == Event::Key(KeyCode::Enter.into()) && gs.is_valid_hand { 
+	// 			gs.board = gs.cards_selected;
+	// 			gs.players[gs.i_am_player].hand &= !gs.cards_selected;
+	// 			gs.cards_selected = 0;
+	// 			gs.board_score = gs.hand_score;
+	// 			gs.cards_selected = 0;
+	// 			gs.players[gs.i_am_player].has_passed = false;
+	// 			gs.is_valid_hand = false;
+	// 		}
+	// 		cli::display::board(&gs);		
+	// 	}
+	// }
 
-	execute!(stdout, DisableMouseCapture)?;
-	disable_raw_mode();
+	//execute!(stdout, DisableMouseCapture)?;
+	//disable_raw_mode();
 	
-	//cli::display::cards(cards, 2);
-	//for p in 0..cards.len() {
-	//	big2rules::rules::get_numbers(cards[p]);
-	//}
-/*
-	let mut stdout = stdout();
-
-	stdout
-		.queue(cursor::MoveTo(5,5))?
-		.queue(Print("Styled text here."))?;
-	stdout.flush()?;
-
-	// draw_box(&mut stdout);
-
-	//stdout.flush()?;
-*/
-
 	Ok(())
-	//let name: String = "1234567890ABCDF".to_string();
-	//let score: i32 = -100;
-	//let cc = 13;
-	//let cc_str: String = String::from_utf8(vec![b'#'; cc]).unwrap();
-	//println!("\n {:16} PASS\n [{:13}] $ {}", name, cc_str, score);
-	//println!("\n {:16}\n [{:13}] $ {}      5♠ 7♥ 8♣ T♠ J♠ Q♠ ", name, cc_str, score);
-	//println!("\n {:16}\n [{:13}] $ {}                                ", name, cc_str, score);
-	//println!("\n {:16}           4\n [{:13}] $ {:4}  3♣ ♦ 4♠ 5♠ 7♥ 8♣ T♠ J♠ Q♠ K♥ K♠ A♥ A♠", name, cc_str, score);
 }
-

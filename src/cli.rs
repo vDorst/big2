@@ -107,6 +107,18 @@ pub mod display {
 	    	}
 	}
 
+	pub fn my_cards(cards: u64) {
+		let mut out_str = String::from("");
+		for c in 0..big2rules::deck::NUMBER_OF_CARDS {
+			let bit: u64 = (big2rules::deck::START_BIT + c) as u64;
+			let dsp_card = cards & (1 << bit);
+			if dsp_card == 0 { continue; }
+			cards_to_utf8(dsp_card as u64, &mut out_str);
+			out_str.push(' ');
+		}
+		println!("mycards: {}", out_str);
+	}
+
 	pub fn board(gs: &big2rules::GameState) {
 		let mut out_str = String::from("");
 		let board_hand = gs.board;
