@@ -41,7 +41,7 @@ pub struct muon_InlineList16 {
     pub count: i32, 
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
 pub struct muon_InlineList8 {
     pub data: [u8; 8],
     pub count: i32,
@@ -202,7 +202,7 @@ pub mod client {
         }
 
         pub fn check_buffer(&mut self, SM: &mut client::StateMessage) -> Result<usize, io::Error> {
-            let mut buffer = [0; 512];
+            let mut buffer = [0; 300];
             let bytes = self.ts.read(&mut buffer)?;
 
             if bytes < mem::size_of::<client::DetectMessage>() {
@@ -221,7 +221,7 @@ pub mod client {
 
             if DM.kind == 5 && DM.size as usize == mem::size_of::<client::StateMessage>() { 
                     let mut SM_NEW: client::StateMessage = bincode::deserialize(&buffer).unwrap();
-                    println!("{:?}", SM);
+                    println!("Request: {:?}", &buffer[0..DM.size as usize]);
                     *SM = SM_NEW;
                     return Ok(1);
             }

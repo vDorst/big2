@@ -152,11 +152,18 @@ pub mod display {
         // Clear screen
         print!("\u{1b}[2J");
 
+        const col_PASSED: &str = "\u{1b}[49;101m"; // White on Red
+        const col_NORMAL: &str = "\u{1b}[49;39m";  // White on black
+        const col_PLAYER_ACT:    &str = "\u{1b}[49;102m"; // White on Green
+        const col_PLAYER_PASSED: &str = "\u{1b}[40;100m";; 
+        const col_CARD_BACK:     &str = "\u{1b}[30;107m";
+        const col_BTN_DIS:       &str = "\u{1b}[40;100m";
+
 
         match gs.sm.action.action_type {
         client::StateMessage_ActionType::PASS => {
             let name = name_from_muon_string16(&gs.sm.players[gs.sm.action.player as usize].name);
-            print!("\r\n  {:>16}: PASSED", name);
+            print!("\r\n        {1:>16}: {0}PASSED{2}", col_PASSED, name, col_NORMAL);
         },
         client::StateMessage_ActionType::PLAY => {
             let name = name_from_muon_string16(&gs.sm.players[gs.sm.action.player as usize].name);
@@ -170,7 +177,7 @@ pub mod display {
                 cards_to_utf8(card, &mut card_str);
                 card_str.push(' ');
             }
-            print!("\r\n  {:>16}: {}", name, card_str);
+            print!("\r\n        {:>16}: {}", name, card_str);
         },
         _ => print!("\r\n"),
         }
@@ -184,14 +191,14 @@ pub mod display {
             cards_to_utf8(card, &mut out_str);
             out_str.push(' ');
         }
-        print!("\r\n  {:>16}: {}/{} - {}             ", "Board", gs.sm.round, gs.sm.numRounds, out_str);
+        print!("\r\nRounds: {}/{} {:>12}: {}             ", gs.sm.round, gs.sm.numRounds, "Board", out_str);
 
         let mut p = sm.yourIndex;
         if p >= 0 && p < 4 {
             let mut player = &sm.players[p as usize];
-            if p == sm.turn && gs.is_valid_hand { print!("\u{1b}[49;102m"); } else { print!("\u{1b}[40;100m"); }
+            if p == sm.turn && gs.is_valid_hand { print!("\u{1b}[49;102m"); } else { print!("{}", col_BTN_DIS); }
             print!("[ PLAY ]\u{1b}[49;39m    ");
-            if !player.hasPassedThisCycle { print!("\u{1b}[49;101m"); } else { print!("\u{1b}[40;100m"); }
+            if !player.hasPassedThisCycle { print!("\u{1b}[49;101m"); } else { print!("{}", col_BTN_DIS); }
             print!("[ PASS ]\u{1b}[49;39m\r\n\n");
         } else {
             p = 0;
@@ -220,24 +227,24 @@ pub mod display {
                 }
                 print!("                        {}\n", out_sel_str);
             } else {
-                out_str = "\u{1b}[30;107m##\u{1b}[49;39m ".to_string().repeat(n_cards);
+                out_str = format!("{}##{} ", col_CARD_BACK, col_NORMAL).repeat(n_cards);
             }
             let no_cards = ".. ".to_string().repeat(13 - n_cards);
             let score = format!("\u{1b}[33;100m€\u{1b}[44m{:4}\u{1b}[49;39m", player.score);
             let mut passed = String::from("");
             if player.hasPassedThisCycle {
-                passed = "\u{1b}[49;101mPASS\u{1b}[49;39m".to_string();
-                print!("\u{1b}[49;101m");
+                passed = format!("{}PASS{}", col_PASSED, col_NORMAL);
+                print!("{}", col_PLAYER_PASSED);
             }
-            if p == gs.sm.turn { print!("\u{1b}[49;102m"); }
+            if p == gs.sm.turn { print!("{}", col_PLAYER_ACT); }
             let name = name_from_muon_string16(&player.name);
-            print!("\r{}.{:>16}\u{1b}[49;39m:", p + 1, name);
+            print!("\r{}.{:>16}{}:", p + 1, name, col_NORMAL);
             print!(" #{:2}", n_cards);
             print!(" {}{}", out_str, no_cards);
             print!(" {}", score);
             print!(" {}\r\n", passed);
             p += 1; if p == 4 { p = 0; };
         }
-        println!("{:?}", gs.sm);
+        //println!("{:#x}", gs.sm.as_bytes());
     }
 }
