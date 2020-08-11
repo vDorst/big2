@@ -7,9 +7,10 @@ use crate::big2rules;
 use serde::{Deserialize, Serialize};
 
 use std::{
-    io::{self, Write, Read},
-    net::{TcpStream},
+    io::{self, Write, Read, ErrorKind},
+    net::{TcpStream, SocketAddr, ToSocketAddrs},
     mem,
+    time::Duration,
 };
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
@@ -161,7 +162,22 @@ pub mod client {
 
     impl TcpClient {
         pub fn connect(remote_addr: String) -> Result<TcpClient, io::Error> {
-            Ok( TcpClient {ts: TcpStream::connect(remote_addr)?})
+            let server_list = remote_addr.to_socket_addrs();
+            if let Err(e) = server_list { return Err(io::Error::new(io::ErrorKind::NotFound, "DNS Name not found!")); }
+            let mut servers = server_list.unwrap();
+
+            loop {
+                let server = servers.next();
+                if server.is_none() { break; }
+                let l = server.unwrap();
+                print!("Trying {:?}\r\n", l);
+                let ret = TcpStream::connect_timeout(&l, Duration::from_secs(1));
+                match ret {
+                    Err(_) => continue,
+                    Ok(s) =>  return Ok( TcpClient { ts: s} ),
+                }
+            }
+            Err(io::Error::new(io::ErrorKind::TimedOut, "Can't Connect Timeout!"))
         }
 
         // pub fn StateMessage_new(self, kind: u32) -> StateMessage {

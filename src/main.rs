@@ -155,10 +155,21 @@ fn main() -> Result<()> {
     let mut SM: client::StateMessage = bincode::deserialize(&buffer).unwrap();
 
 //  SM.players[2].name.count = 0;
+
     let p = SM.yourIndex as usize;
     SM.players[p].hasPassedThisCycle = false;
+    SM.players[p].deltaScore = -20;
+    SM.players[p].score = 10;
+    SM.players[p].isReady = false;
     SM.turn = SM.yourIndex;
-    SM.turn = -1;
+    SM.turn = 2;
+
+    let p = 3;
+    SM.players[p].hasPassedThisCycle = false;
+    SM.players[p].deltaScore = 20;
+    SM.players[p].score = -5;
+    SM.players[p].isReady = false;
+
 
     let mut gs = big2rules::GameState {
         board: 0,
@@ -172,8 +183,8 @@ fn main() -> Result<()> {
         sm: SM,
     };
 
-    cli::display::board(&gs);
-    std::process::exit(1);
+    // cli::display::board(&gs);
+    // std::process::exit(1);
 
     let cli_args = parse_args();
     if cli_args.app_mode == AppMode::ERROR {
@@ -188,13 +199,16 @@ fn main() -> Result<()> {
         let client = client::client::TcpClient::connect(cli_args.socket_addr);
 
         if let Err(e) = client {
-                println!("Can't connect to server... quit! {}", e);
-                std::process::exit(1);
+            print!("{}\r\n", e);
+            execute!(stdout, DisableMouseCapture)?;
+            disable_raw_mode();
+            std::process::exit(1);
         }
 
         let mut ts = client.unwrap();
 
         ts.send_join_msg(&cli_args.name)?;
+
 
         let empty_buffer = &[0u8; std::mem::size_of::<client::StateMessage>()];
         gs.sm = bincode::deserialize(empty_buffer).unwrap();
