@@ -140,26 +140,32 @@ fn main() -> Result<()> {
     
     //Request: [5, 0, 0, 0, 224, 0, 0, 0, 1, 0, 0, 0, 8, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 3, 19, 51, 52, 37, 6, 22, 38, 59, 12, 44, 61, 62, 0, 0, 0, 13, 0, 0, 0, 114, 117, 115, 116, 121, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 13, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 82, 101, 110, 101, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 78, 105, 99, 107, 51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 78, 105, 99, 107, 51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 13, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 23, 55, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     // PLay
-    // let &buffer: &[u8; 224] = &[5, 0, 0, 0, 224, 0, 0, 0, 1, 0, 0, 0, 8, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 3, 19, 51, 52, 37, 6, 22, 38, 59, 12, 44, 61, 62, 0, 0, 0, 13, 0, 0, 0, 114, 117, 115, 116, 121, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 13, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 82, 101, 110, 101, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 78, 105, 99, 107, 51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 78, 105, 99, 107, 51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 23, 55, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 8, 24, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0];
+    let &buffer: &[u8; 224] = &[5, 0, 0, 0, 224, 0, 0, 0, 1, 0, 0, 0, 8, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 3, 19, 51, 52, 37, 6, 22, 38, 59, 12, 44, 61, 62, 0, 0, 0, 13, 0, 0, 0, 114, 117, 115, 116, 121, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 13, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 82, 101, 110, 101, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 78, 105, 99, 107, 51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 78, 105, 99, 107, 51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 23, 55, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 8, 24, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0];
   
     // Passed
-    let &buffer: &[u8; 224] = &[5, 0, 0, 0, 224, 0, 0, 0, 1, 0, 0, 0, 8, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 3, 19, 51, 52, 37, 6, 22, 38, 59, 12, 44, 61, 62, 0, 0, 0, 13, 0, 0, 0, 114, 117, 115, 116, 121, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 13, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 82, 101, 110, 101, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 78, 105, 99, 107, 51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 78, 105, 99, 107, 51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 8, 24, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    // let &buffer: &[u8; 224] = &[5, 0, 0, 0, 224, 0, 0, 0, 1, 0, 0, 0, 8, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 3, 19, 51, 52, 37, 6, 22, 38, 59, 12, 44, 61, 62, 0, 0, 0, 13, 0, 0, 0, 114, 117, 115, 116, 121, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 13, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 82, 101, 110, 101, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 78, 105, 99, 107, 51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 78, 105, 99, 107, 51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 8, 24, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
     // Plauer leaves
     //let &buffer: &[u8; 224] = &[5, 0, 0, 0, 224, 0, 0, 0, 1, 0, 0, 0, 8, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 3, 19, 51, 52, 37, 6, 22, 38, 59, 12, 44, 61, 62, 0, 0, 0, 13, 0, 0, 0, 114, 117, 115, 116, 121, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 13, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 82, 101, 110, 101, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 78, 105, 99, 107, 51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 8, 24, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
     // player joins
     // Request: [5, 0, 0, 0, 224, 0, 0, 0, 1, 0, 0, 0, 8, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 3, 19, 51, 52, 37, 6, 22, 38, 59, 12, 44, 61, 62, 0, 0, 0, 13, 0, 0, 0, 114, 117, 115, 116, 121, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 13, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 82, 101, 110, 101, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 78, 105, 99, 107, 51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 78, 105, 99, 107, 51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 8, 24, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-    
-//  SM.players[2].name.count = 0;
+
+
 
     let mut SM: client::StateMessage = bincode::deserialize(&buffer).unwrap();
+
+//  SM.players[2].name.count = 0;
+    let p = SM.yourIndex as usize;
+    SM.players[p].hasPassedThisCycle = false;
+    SM.turn = SM.yourIndex;
+    SM.turn = -1;
 
     let mut gs = big2rules::GameState {
         board: 0,
         board_score: 0,
-        cards_selected: 0xF << 60,
+        cards_selected: 0,
         auto_pass: false,
-        i_am_ready: false,
+        i_am_ready: true,
         is_valid_hand: false,
         hand: 0,
         hand_score: 0,
@@ -167,166 +173,167 @@ fn main() -> Result<()> {
     };
 
     cli::display::board(&gs);
-    
-    if gs.sm.action.action_type == client::StateMessage_ActionType::PLAY || gs.sm.action.action_type == client::StateMessage_ActionType::PASS {
-        let ten_millis = time::Duration::from_millis(1000);
-        if gs.sm.action.action_type == client::StateMessage_ActionType::PLAY { 
-            gs.sm.board = gs.sm.action.cards.clone();
-        }
-        gs.sm.action.action_type = client::StateMessage_ActionType::UPDATE;
-        
-        thread::sleep(ten_millis);
-        cli::display::board(&gs);
-    }
-    
-    std::process::exit(0);
-
+    std::process::exit(1);
 
     let cli_args = parse_args();
-    if cli_args.app_mode == AppMode::ERROR { 
+    if cli_args.app_mode == AppMode::ERROR {
         std::process::exit(1);
     }
 
-    //enable_raw_mode()?;
+    enable_raw_mode()?;
     let mut stdout = stdout();
-    //execute!(stdout, EnableMouseCapture)?;
+    execute!(stdout, EnableMouseCapture)?;
 
     if cli_args.app_mode == AppMode::CLIENT {
         let client = client::client::TcpClient::connect(cli_args.socket_addr);
 
         if let Err(e) = client {
-                println!("Can't connect to server... quit! {}", e); 
+                println!("Can't connect to server... quit! {}", e);
                 std::process::exit(1);
-        } 
+        }
 
         let mut ts = client.unwrap();
 
         ts.send_join_msg(&cli_args.name)?;
-        
+
         let empty_buffer = &[0u8; std::mem::size_of::<client::StateMessage>()];
-        gs.sm = bincode::deserialize(empty_buffer).unwrap();     
+        gs.sm = bincode::deserialize(empty_buffer).unwrap();
         let mut update: usize = 0;
 
         loop {
-            update = 0;
             match ts.check_buffer(&mut gs.sm) {
                 Ok(ret) => update = ret,
                 Err(e) => {
                     println!("Error {:?}", e);
+                    std::process::exit(1);
                 },
             }
 
-            if update == 0 { continue; }
+            // Process new StateMessage
+            if update == 1 {
+                update = 0;
+                // Update display
+                cli::display::board(&gs);
 
-            if gs.sm.yourIndex == gs.sm.turn {
-                println!("Our turn, send pass {} {}", gs.sm.yourIndex, gs.sm.turn);
-                ts.Action_Pass()?;
-            }
 
-            let mut boardcards: u64 = 0;
-            if gs.sm.action.action_type == client::StateMessage_ActionType::PLAY {
-                for c in 0..gs.sm.action.cards.count as usize {
-                    boardcards |= client::client::card_from_byte(gs.sm.action.cards.data[c]);
+                if gs.sm.action.action_type == client::StateMessage_ActionType::PLAY
+                   || gs.sm.action.action_type == client::StateMessage_ActionType::PASS {
+                    let ten_millis = time::Duration::from_millis(1000);
+
+                    if gs.sm.action.action_type == client::StateMessage_ActionType::PLAY {
+                        gs.sm.board = gs.sm.action.cards.clone();
+                    }
+                    gs.sm.action.action_type = client::StateMessage_ActionType::UPDATE;
+
+                    // End of cycle?
+                    if gs.sm.action.isEndOfCycle {
+                        // Clear auto_pass and players[x].hasPassed.
+                        gs.auto_pass = false;
+                        for p in 0..4 {
+                            gs.sm.players[p].hasPassedThisCycle = false;
+                        }
+                        // Clear board and scores.
+                        gs.sm.board = client::muon_InlineList8 { data: [0; 8], count: 0, };
+                        gs.board = 0;
+                        gs.board_score = 0;
+                        gs.i_am_ready = false;
+                    }
+
+                    gs.board = client::client::IL8_to_card(&gs.sm.board);
+                    gs.board_score = big2rules::rules::score_hand(gs.board);
+                    gs.is_valid_hand = (gs.hand_score > gs.board_score) && (gs.board == 0 || gs.board.count_ones() == gs.cards_selected.count_ones());
+
+                    thread::sleep(ten_millis);
+                    cli::display::board(&gs);
                 }
-            } else {
-                for c in 0..gs.sm.board.count as usize {
-                    boardcards |= client::client::card_from_byte(gs.sm.board.data[c]);
+            }
+
+            // Poll user events
+            if poll(Duration::from_millis(1_000))? {
+                // It's guaranteed that read() wont block if `poll` returns `Ok(true)`
+                let user_event = read()?;
+                let mut toggle_card = 0;
+
+                if user_event == Event::Key(KeyCode::Esc.into()) {
+                    break;
                 }
-            }
 
-            let mut mycards: u64 = 0;
-            for c in 0..gs.sm.yourHand.count as usize {
-                mycards |= client::client::card_from_byte(gs.sm.yourHand.data[c]);
-            }
-
-            cli::display::board(&gs);
-
-            if gs.sm.action.isEndOfCycle {
-                let ten_millis = time::Duration::from_millis(1000);
-
-                thread::sleep(ten_millis);
-                for p in 0..4 {
-                    gs.sm.players[p].hasPassedThisCycle = false;
+                match user_event {
+                    Event::Key(user_event) => println!("{:?}", user_event),
+                    Event::Mouse(user_event) => println!("{:?}", user_event),
+                    Event::Resize(width, height) => println!("New size {}x{}", width, height),
                 }
-                gs.board = 0;
-                gs.board_score = 0;
-                //cli::display::board(&gs);
-            }
 
-            if !gs.i_am_ready && gs.sm.turn == -1 {
-                ts.Action_Ready()?;
-                gs.i_am_ready = true;
-            } else {
-                gs.i_am_ready = false;
+                // Pass / Auto Pass
+                let p = gs.sm.yourIndex as usize;
+                if user_event == Event::Key(KeyCode::Char('/').into()) &&
+                   !gs.sm.players[p].hasPassedThisCycle {
+                    if gs.sm.turn != gs.sm.yourIndex {
+                        gs.auto_pass = !gs.auto_pass
+                    } else {
+                        ts.Action_Pass()?;
+                        break;
+                    }
+                }
+
+                // Ready Signal
+                if user_event == Event::Key(KeyCode::Char('r').into()) &&
+                    !gs.i_am_ready && gs.sm.turn == -1 {
+                    gs.i_am_ready = true;
+                    ts.Action_Ready()?;
+                    break;
+                }
+
+                // (De)Select cards
+                if user_event == Event::Key(KeyCode::Char('1').into()) { toggle_card = 1; }
+                if user_event == Event::Key(KeyCode::Char('2').into()) { toggle_card = 2; }
+                if user_event == Event::Key(KeyCode::Char('3').into()) { toggle_card = 3; }
+                if user_event == Event::Key(KeyCode::Char('4').into()) { toggle_card = 4; }
+                if user_event == Event::Key(KeyCode::Char('5').into()) { toggle_card = 5; }
+                if user_event == Event::Key(KeyCode::Char('6').into()) { toggle_card = 6; }
+                if user_event == Event::Key(KeyCode::Char('7').into()) { toggle_card = 7; }
+                if user_event == Event::Key(KeyCode::Char('8').into()) { toggle_card = 8; }
+                if user_event == Event::Key(KeyCode::Char('9').into()) { toggle_card = 9; }
+                if user_event == Event::Key(KeyCode::Char('0').into()) { toggle_card = 10; }
+                if user_event == Event::Key(KeyCode::Char('-').into()) { toggle_card = 11; }
+                if user_event == Event::Key(KeyCode::Char('=').into()) { toggle_card = 12; }
+                if user_event == Event::Key(KeyCode::Backspace.into()) { toggle_card = 13; }
+                if user_event == Event::Key(KeyCode::Char('`').into()) {
+                    gs.cards_selected = 0;
+                    gs.hand_score = 0;
+                }
+
+                if toggle_card != 0 {
+                    if toggle_card > gs.sm.yourHand.count as usize { break; }
+                    let card = client::client::card_from_byte(gs.sm.yourHand.data[toggle_card - 1]);
+                    gs.cards_selected ^= card;
+                    gs.hand_score = big2rules::rules::score_hand(gs.cards_selected);
+                }
+
+                gs.is_valid_hand = (gs.hand_score > gs.board_score) && (gs.board == 0 || gs.board.count_ones() == gs.cards_selected.count_ones());
+
+                // Play hand
+                if user_event == Event::Key(KeyCode::Enter.into()) && gs.is_valid_hand && gs.sm.turn == gs.sm.yourIndex {
+                    gs.sm.action.action_type = client::StateMessage_ActionType::PLAY;
+
+                    let hand = client::client::IL8_from_card(gs.cards_selected);
+                    gs.sm.action.cards = hand;
+                    gs.sm.action.player = gs.sm.yourIndex;
+                    // Send has_played to server
+                    gs.sm.turn += 1;
+                    if gs.sm.turn == 4 { gs.sm.turn = 0; }
+                    gs.board = gs.cards_selected;
+                    gs.cards_selected = 0;
+                    gs.board_score = gs.hand_score;
+                    gs.is_valid_hand = false;
+                }
+
+                cli::display::board(&gs);
             }
-                
-            println!("{:?}", gs.sm);
         }
     }
+    execute!(stdout, DisableMouseCapture)?;
+    disable_raw_mode();
 
-
-    //  // poll user events
-    //  if poll(Duration::from_millis(1_000))? {
-    //          // It's guaranteed that read() wont block if `poll` returns `Ok(true)`
-    //      let user_event = read()?;
-    //      let mut toggle_card = 0;
-                
-    //      if user_event == Event::Key(KeyCode::Esc.into()) {
-    //          break;
-    //      }
-
-    //      match user_event {
-    //          Event::Key(user_event) => println!("{:?}", user_event),
-    //          Event::Mouse(user_event) => println!("{:?}", user_event),
-    //          Event::Resize(width, height) => println!("New size {}x{}", width, height),
-    //      }
-            
-    //      if user_event == Event::Key(KeyCode::Char('/').into()) &&
-    //         this_cycle.can_pass {
-    //          gs.players[gs.i_am_player].has_passed = !gs.players[gs.i_am_player].has_passed;
-    //      }
-
-    //      if user_event == Event::Key(KeyCode::Char('1').into()) { toggle_card = 1; }
-    //      if user_event == Event::Key(KeyCode::Char('2').into()) { toggle_card = 2; }
-    //      if user_event == Event::Key(KeyCode::Char('3').into()) { toggle_card = 3; }
-    //      if user_event == Event::Key(KeyCode::Char('4').into()) { toggle_card = 4; }
-    //      if user_event == Event::Key(KeyCode::Char('5').into()) { toggle_card = 5; }
-    //      if user_event == Event::Key(KeyCode::Char('6').into()) { toggle_card = 6; }
-    //      if user_event == Event::Key(KeyCode::Char('7').into()) { toggle_card = 7; }
-    //      if user_event == Event::Key(KeyCode::Char('8').into()) { toggle_card = 8; }
-    //      if user_event == Event::Key(KeyCode::Char('9').into()) { toggle_card = 9; }
-    //      if user_event == Event::Key(KeyCode::Char('0').into()) { toggle_card = 10; }
-    //      if user_event == Event::Key(KeyCode::Char('-').into()) { toggle_card = 11; }
-    //      if user_event == Event::Key(KeyCode::Char('=').into()) { toggle_card = 12; }
-    //      if user_event == Event::Key(KeyCode::Backspace.into()) { toggle_card = 13; }
-    //      if user_event == Event::Key(KeyCode::Char('`').into()) {
-    //          gs.cards_selected = 0;
-    //          gs.hand_score = 0;
-    //      }
-            
-    //      if toggle_card != 0 {
-    //          if toggle_card > this_cycle.has_hand.len() { break; }
-    //          gs.cards_selected ^= 1 << (this_cycle.has_hand[toggle_card - 1] as u64);
-    //          gs.hand_score = big2rules::rules::score_hand(gs.cards_selected);
-    //      }
-            
-    //      gs.is_valid_hand = (gs.hand_score > gs.board_score) && (gs.board == 0 || gs.board.count_ones() ==  gs.cards_selected.count_ones());
-            
-    //      if user_event == Event::Key(KeyCode::Enter.into()) && gs.is_valid_hand { 
-    //          gs.board = gs.cards_selected;
-    //          gs.players[gs.i_am_player].hand &= !gs.cards_selected;
-    //          gs.cards_selected = 0;
-    //          gs.board_score = gs.hand_score;
-    //          gs.cards_selected = 0;
-    //          gs.players[gs.i_am_player].has_passed = false;
-    //          gs.is_valid_hand = false;
-    //      }
-    //      cli::display::board(&gs);       
-    //  }
-    // }
-
-    //execute!(stdout, DisableMouseCapture)?;
-    //disable_raw_mode();
-    
     Ok(())
 }

@@ -154,10 +154,12 @@ pub mod display {
 
         const col_PASSED: &str = "\u{1b}[49;101m"; // White on Red
         const col_NORMAL: &str = "\u{1b}[49;39m";  // White on black
-        const col_PLAYER_ACT:    &str = "\u{1b}[49;102m"; // White on Green
-        const col_PLAYER_PASSED: &str = "\u{1b}[40;100m";; 
-        const col_CARD_BACK:     &str = "\u{1b}[30;107m";
-        const col_BTN_DIS:       &str = "\u{1b}[40;100m";
+        const col_PLAYER_ACT:      &str = "\u{1b}[49;102m"; // White on Green
+        const col_PLAYER_PASSED:   &str = "\u{1b}[40;100m";
+        const col_CARD_BACK:       &str = "\u{1b}[30;107m";
+        const col_BTN_DIS:         &str = "\u{1b}[40;100m";
+        const col_BTN_PASS_AUTO:   &str = "\u{1b}[30;104m"; // white on blue
+        const col_BTN_PASS_ACTIVE: &str = "\u{1b}[30;101m"; // white on red
 
 
         match gs.sm.action.action_type {
@@ -198,8 +200,12 @@ pub mod display {
             let mut player = &sm.players[p as usize];
             if p == sm.turn && gs.is_valid_hand { print!("\u{1b}[49;102m"); } else { print!("{}", col_BTN_DIS); }
             print!("[ PLAY ]\u{1b}[49;39m    ");
-            if !player.hasPassedThisCycle { print!("\u{1b}[49;101m"); } else { print!("{}", col_BTN_DIS); }
-            print!("[ PASS ]\u{1b}[49;39m\r\n\n");
+
+            let col_PASS_BTN: &str;
+            if !player.hasPassedThisCycle {
+                if gs.auto_pass { col_PASS_BTN = col_BTN_PASS_AUTO; } else { col_PASS_BTN = col_BTN_PASS_ACTIVE; }
+            } else { col_PASS_BTN = col_BTN_DIS; };
+            print!("{}[ PASS ]{}\r\n\n", col_PASS_BTN, col_NORMAL);
         } else {
             p = 0;
         }
@@ -245,6 +251,7 @@ pub mod display {
             print!(" {}\r\n", passed);
             p += 1; if p == 4 { p = 0; };
         }
+        println!("BS {} MS {} CS {:x}", gs.board_score, gs.hand_score, gs.cards_selected);
         //println!("{:#x}", gs.sm.as_bytes());
     }
 }

@@ -56,13 +56,19 @@ pub struct StateMessage_Player {
     pub isReady: bool,
     pub hasPassedThisCycle: bool,
     pub padding: u16,
-    //is_ready_passed: u32,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DetectMessage {
     pub kind: u32,
     pub size: u32,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PlayMessage {
+    pub kind: u32,
+    pub size: u32,
+    pub cards: muon_InlineList8,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -116,6 +122,23 @@ pub mod client {
             for c in 0..hand.count as usize {
                 let card = hand.data[c];
                 cards |= card_from_byte(card);
+            }
+        }
+        return cards;
+    }
+
+    pub fn IL8_from_card(hand: u64) -> muon_InlineList8 {
+        let mut cards = muon_InlineList8 { data: [0; 8], count: 0, };
+        let num_cards = hand.count_ones();
+        if num_cards > 5 { return cards };
+
+        let mut p: usize = 0;
+        for bit in 12..64 {
+            let mask = 1 << bit;
+            let card = hand & mask;
+            if card != 0 {
+                cards.data[p] = cards_to_byte(card);
+                p += 1;
             }
         }
         return cards;
