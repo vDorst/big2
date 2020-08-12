@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+//#![allow(unused_imports)]
+//#![allow(unused_variables)]
 use crate::client;
 
 pub const RANKS: [u8; 13] = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
