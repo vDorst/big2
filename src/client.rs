@@ -39,7 +39,7 @@ pub struct muon_String16 {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct muon_InlineList16 {
     pub data: [u8; 16],
-    pub count: i32, 
+    pub count: i32,
 }
 
 #[derive(Serialize, Deserialize, Debug, Copy, Clone)]
@@ -119,7 +119,7 @@ pub mod client {
 
     pub fn IL8_to_card(hand: &muon_InlineList8) -> u64 {
         let mut cards: u64 = 0;
-        if hand.count > 0 && hand.count < 6 { 
+        if hand.count > 0 && hand.count < 6 {
             for c in 0..hand.count as usize {
                 let card = hand.data[c];
                 cards |= card_from_byte(card);
@@ -128,8 +128,12 @@ pub mod client {
         return cards;
     }
 
+    // 02 00 00 00 14 00 00 00 06 26 36 00 00 00 00 00 03 00 00 00
+
+
+
     pub fn IL8_from_card(hand: u64) -> muon_InlineList8 {
-        let mut cards = muon_InlineList8 { data: [0; 8], count: 0, };
+        let mut cards = muon_InlineList8 { data: [0; 8], count: hand.count_ones() as i32, };
         let num_cards = hand.count_ones();
         if num_cards > 5 { return cards };
 
@@ -174,24 +178,14 @@ pub mod client {
                 let ret = TcpStream::connect_timeout(&l, Duration::from_secs(1));
                 match ret {
                     Err(_) => continue,
-                    Ok(s) =>  return Ok( TcpClient { ts: s} ),
+                    Ok(s) => {
+                        s.set_read_timeout(Some(Duration::from_millis(100)));
+                        return Ok( TcpClient { ts: s} );
+                    },
                 }
             }
             Err(io::Error::new(io::ErrorKind::TimedOut, "Can't Connect Timeout!"))
         }
-
-        // pub fn StateMessage_new(self, kind: u32) -> StateMessage {
-        //  let empty_buffer = &[0u8; mem::size_of::<client::StateMessage>()];
-        //  let mut SM: client::StateMessage = bincode::deserialize(empty_buffer).unwrap();
-        //  SM.size = mem::size_of::<client::StateMessage>() as u32;
-        //  SM.kind = kind;
-        //  return SM;
-        // }
-
-        // fn send_buf<T: Sized>(&mut self, value: T) -> Result<usize, io::Error> {
-        //  let byte_buf = bincode::serialize(&value).unwrap();
-        //  return self.ts.write(&byte_buf);    
-        // }
 
         pub fn Action_Pass(&mut self) -> Result<usize, io::Error> {
             let empty_buffer = &[0u8; mem::size_of::<client::StateMessage>()];
@@ -199,6 +193,7 @@ pub mod client {
             SM.size = mem::size_of::<client::StateMessage>() as u32;
             SM.kind = 3;
             let byte_buf = bincode::serialize(&SM).unwrap();
+            println!("{:?}", byte_buf);
             return self.ts.write(&byte_buf);
         }
 
@@ -211,12 +206,14 @@ pub mod client {
             return self.ts.write(&byte_buf);
         }
 
-        pub fn Action_Play(&mut self, cards: Vec::<u8>) -> Result<usize, io::Error> {
-            let empty_buffer = &[0u8; mem::size_of::<client::StateMessage>()];
-            let mut SM: client::StateMessage = bincode::deserialize(empty_buffer).unwrap();
-            SM.size = mem::size_of::<client::StateMessage>() as u32;
-            SM.kind = 4;
+        pub fn Action_Play(&mut self, cards: &muon_InlineList8) -> Result<usize, io::Error> {
+            let SM = client::PlayMessage {
+                kind: 2,
+                size: mem::size_of::<client::PlayMessage>() as u32,
+                cards: cards.clone(),
+            };
             let byte_buf = bincode::serialize(&SM).unwrap();
+            println!("Action_Play: {:x?}", byte_buf);
             return self.ts.write(&byte_buf);
         }
 
@@ -242,6 +239,13 @@ pub mod client {
 
         pub fn check_buffer(&mut self, SM: &mut client::StateMessage) -> Result<usize, io::Error> {
             let mut buffer = [0; 300];
+            let bytes = self.ts.peek(&mut buffer);
+
+            match bytes {
+                Err(e) => if e.kind() == io::ErrorKind::TimedOut { return Ok(0) },
+                Ok(b)  => if b < mem::size_of::<client::DetectMessage>() { return Ok(0); },
+            }
+
             let bytes = self.ts.read(&mut buffer)?;
 
             if bytes < mem::size_of::<client::DetectMessage>() {
@@ -258,9 +262,9 @@ pub mod client {
                 return Ok(0);
             }
 
-            if DM.kind == 5 && DM.size as usize == mem::size_of::<client::StateMessage>() { 
+            if DM.kind == 5 && DM.size as usize == mem::size_of::<client::StateMessage>() {
                     let mut SM_NEW: client::StateMessage = bincode::deserialize(&buffer).unwrap();
-                    println!("Request: {:?}", &buffer[0..DM.size as usize]);
+                    // println!("Request: {:?}", &buffer[0..DM.size as usize]);
                     *SM = SM_NEW;
                     return Ok(1);
             }
@@ -312,8 +316,8 @@ mod tests {
     } */
     #[test]
     fn c_statemessage_respone() {
-        let &buffer: &[u8; 224] = &[5, 0, 0, 0, 0xe0, 0, 0, 0, 1, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 
-            0x15, 7, 0x37, 0x28, 0x38, 0x39, 0xa, 0x2b, 0x3b, 0x2c, 0x1d, 0x3d, 2, 0, 0, 
+        let &buffer: &[u8; 224] = &[5, 0, 0, 0, 0xe0, 0, 0, 0, 1, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0,
+            0x15, 7, 0x37, 0x28, 0x38, 0x39, 0xa, 0x2b, 0x3b, 0x2c, 0x1d, 0x3d, 2, 0, 0,
             0, 0xd, 0, 0, 0, 0x54, 0x69, 0x6b, 0x6b, 0x69, 0x65, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 9, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0x68, 0x6f, 0x73, 0x74,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,
@@ -340,5 +344,16 @@ mod tests {
             mycards |= client::card_from_byte(SM.yourHand.data[c]);
         }
         assert_eq!(mycards, 0x10a4c18c90200000);
+    }
+    #[test]
+    fn d_statemessage_respone() {
+        let cards: u64 = 0b111 << 12;
+        let SM = PlayMessage {
+            kind: 2,
+            size: mem::size_of::<PlayMessage>() as u32,
+            cards: client::IL8_from_card(cards).clone(),
+        };
+        let byte_buf = bincode::serialize(&SM).unwrap();
+        println!("Action_Play: {:x?}", byte_buf);
     }
 }

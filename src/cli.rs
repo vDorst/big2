@@ -1,4 +1,4 @@
-#![allow(dead_coOCde)]
+#![allow(dead_code)]
 #![allow(unused_imports)]
 #![allow(unused_variables)]
 
@@ -221,7 +221,8 @@ pub mod display {
         if gs.sm.turn == -1 {
             for _ in 0..4 {
                 let player = &sm.players[p as usize];
-                let name = name_from_muon_string16(&player.name);
+                let mut name = name_from_muon_string16(&player.name);
+                if name == "" { name = String::from("-- Empty Seat --"); }
                 let n_cards: usize = player.numCards as usize;
                 print!("\r{}.{:>16}{}:", p + 1, name, COL_NORMAL);
                 print!(" #{:2}", n_cards);
@@ -281,7 +282,8 @@ pub mod display {
                 print!("{}", COL_PLAYER_PASSED);
             }
             if p == gs.sm.turn { print!("{}", COL_PLAYER_ACT); }
-            let name = name_from_muon_string16(&player.name);
+            let mut name = name_from_muon_string16(&player.name);
+            if name == "" { name = String::from("-- Empty Seat --"); }
             print!("\r{}.{:>16}{}:", p + 1, name, COL_NORMAL);
             print!(" #{:2}", n_cards);
             print!(" {}{}", out_str, no_cards);

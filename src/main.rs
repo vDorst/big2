@@ -91,7 +91,7 @@ fn parse_args() -> cli_args {
             .value_name("port")
             .default_value("27191")
             .takes_value(true))
-        .get_matches(); 
+        .get_matches();
 
     let hostonly = matches.is_present("hostonly");
     let join = matches.is_present("join");
@@ -127,8 +127,8 @@ fn parse_args() -> cli_args {
 }
 
 fn main() -> Result<()> {
-    let &buffer: &[u8; 224] = &[5, 0, 0, 0, 0xe0, 0, 0, 0, 1, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 
-    0x15, 7, 0x37, 0x28, 0x38, 0x39, 0xa, 0x2b, 0x3b, 0x2c, 0x1d, 0x3d, 2, 0, 0, 
+    let &buffer: &[u8; 224] = &[5, 0, 0, 0, 0xe0, 0, 0, 0, 1, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0,
+    0x15, 7, 0x37, 0x28, 0x38, 0x39, 0xa, 0x2b, 0x3b, 0x2c, 0x1d, 0x3d, 2, 0, 0,
     0, 0xd, 0, 0, 0, 0x54, 0x69, 0x6b, 0x6b, 0x69, 0x65, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 9, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0x68, 0x6f, 0x73, 0x74,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,
@@ -136,12 +136,12 @@ fn main() -> Result<()> {
     0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0x52, 0x65, 0x6e, 0x65, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0,
     0, 0, 0, 0, 0, 0, 0xd, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0x16, 0x26, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-    
-    
+
+
     //Request: [5, 0, 0, 0, 224, 0, 0, 0, 1, 0, 0, 0, 8, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 3, 19, 51, 52, 37, 6, 22, 38, 59, 12, 44, 61, 62, 0, 0, 0, 13, 0, 0, 0, 114, 117, 115, 116, 121, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 13, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 82, 101, 110, 101, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 78, 105, 99, 107, 51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 78, 105, 99, 107, 51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 13, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 23, 55, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     // PLay
     let &buffer: &[u8; 224] = &[5, 0, 0, 0, 224, 0, 0, 0, 1, 0, 0, 0, 8, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 3, 19, 51, 52, 37, 6, 22, 38, 59, 12, 44, 61, 62, 0, 0, 0, 13, 0, 0, 0, 114, 117, 115, 116, 121, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 13, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 82, 101, 110, 101, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 78, 105, 99, 107, 51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 78, 105, 99, 107, 51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 23, 55, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 8, 24, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0];
-  
+
     // Passed
     // let &buffer: &[u8; 224] = &[5, 0, 0, 0, 224, 0, 0, 0, 1, 0, 0, 0, 8, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 3, 19, 51, 52, 37, 6, 22, 38, 59, 12, 44, 61, 62, 0, 0, 0, 13, 0, 0, 0, 114, 117, 115, 116, 121, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 13, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 82, 101, 110, 101, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 78, 105, 99, 107, 51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 78, 105, 99, 107, 51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 8, 24, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
     // Plauer leaves
@@ -154,7 +154,7 @@ fn main() -> Result<()> {
 
     let mut SM: client::StateMessage = bincode::deserialize(&buffer).unwrap();
 
-//  SM.players[2].name.count = 0;
+    //  SM.players[2].name.count = 0;
 
     let p = SM.yourIndex as usize;
     SM.players[p].hasPassedThisCycle = false;
@@ -169,7 +169,6 @@ fn main() -> Result<()> {
     SM.players[p].deltaScore = 20;
     SM.players[p].score = -5;
     SM.players[p].isReady = false;
-
 
     let mut gs = big2rules::GameState {
         board: 0,
@@ -193,14 +192,14 @@ fn main() -> Result<()> {
 
     enable_raw_mode()?;
     let mut stdout = stdout();
-    execute!(stdout, EnableMouseCapture)?;
+    // execute!(stdout, EnableMouseCapture)?;
 
     if cli_args.app_mode == AppMode::CLIENT {
         let client = client::client::TcpClient::connect(cli_args.socket_addr);
 
         if let Err(e) = client {
             print!("{}\r\n", e);
-            execute!(stdout, DisableMouseCapture)?;
+            // execute!(stdout, DisableMouseCapture)?;
             disable_raw_mode();
             std::process::exit(1);
         }
@@ -262,8 +261,15 @@ fn main() -> Result<()> {
                 }
             }
 
+            // Pass / Auto Pass
+            let p = gs.sm.yourIndex as usize;
+            if gs.sm.turn == gs.sm.yourIndex && gs.auto_pass && !gs.sm.players[p].hasPassedThisCycle {
+                ts.Action_Pass()?;
+                continue;
+            }
+
             // Poll user events
-            if poll(Duration::from_millis(1_000))? {
+            if poll(Duration::from_millis(100))? {
                 // It's guaranteed that read() wont block if `poll` returns `Ok(true)`
                 let user_event = read()?;
                 let mut toggle_card = 0;
@@ -286,7 +292,7 @@ fn main() -> Result<()> {
                         gs.auto_pass = !gs.auto_pass
                     } else {
                         ts.Action_Pass()?;
-                        break;
+                        continue;
                     }
                 }
 
@@ -295,7 +301,7 @@ fn main() -> Result<()> {
                     !gs.i_am_ready && gs.sm.turn == -1 {
                     gs.i_am_ready = true;
                     ts.Action_Ready()?;
-                    break;
+                    continue;
                 }
 
                 // (De)Select cards
@@ -328,25 +334,19 @@ fn main() -> Result<()> {
 
                 // Play hand
                 if user_event == Event::Key(KeyCode::Enter.into()) && gs.is_valid_hand && gs.sm.turn == gs.sm.yourIndex {
+                    println!("Play hand");
                     gs.sm.action.action_type = client::StateMessage_ActionType::PLAY;
 
                     let hand = client::client::IL8_from_card(gs.cards_selected);
-                    gs.sm.action.cards = hand;
-                    gs.sm.action.player = gs.sm.yourIndex;
-                    // Send has_played to server
-                    gs.sm.turn += 1;
-                    if gs.sm.turn == 4 { gs.sm.turn = 0; }
-                    gs.board = gs.cards_selected;
-                    gs.cards_selected = 0;
-                    gs.board_score = gs.hand_score;
-                    gs.is_valid_hand = false;
+                    ts.Action_Play(&hand);
+                    continue;
                 }
 
                 cli::display::board(&gs);
             }
         }
     }
-    execute!(stdout, DisableMouseCapture)?;
+    // execute!(stdout, DisableMouseCapture)?;
     disable_raw_mode();
 
     Ok(())
