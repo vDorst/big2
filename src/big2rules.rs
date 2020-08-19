@@ -300,6 +300,7 @@ pub struct GameState {
     pub hand: u64,
     pub hand_score: u64,
     pub sm: client::StateMessage,
+    pub counter: u64,
 }
 
 #[cfg(test)]

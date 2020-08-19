@@ -15,13 +15,36 @@ use crossterm::{
     Result,
     //QueueableCommand,
     terminal::{disable_raw_mode, enable_raw_mode},
-    event::{poll, read, Event, KeyCode},
+    event::{poll, read, Event, KeyCode, KeyModifiers},
     //event::{poll, read, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     // cursor::position,
     //execute,
 };
 
 use clap::{Arg, App};
+
+#[derive(PartialEq)]
+enum UserEvent {
+    NOTHING,
+    PLAY,
+    PASS,
+    READY,
+    QUIT,
+    CLEAR,
+    TOGGLECARD1,
+    TOGGLECARD2,
+    TOGGLECARD3,
+    TOGGLECARD4,
+    TOGGLECARD5,
+    TOGGLECARD6,
+    TOGGLECARD7,
+    TOGGLECARD8,
+    TOGGLECARD9,
+    TOGGLECARD10,
+    TOGGLECARD11,
+    TOGGLECARD12,
+    TOGGLECARD13,
+}
 
 #[derive(PartialEq)]
 enum AppMode {
@@ -121,6 +144,33 @@ fn parse_args() -> CliArgs {
     return arg;
 }
 
+
+fn handle_key_events(event: crossterm::event::KeyEvent) -> UserEvent {
+    if event.modifiers != KeyModifiers::NONE { return UserEvent::NOTHING; }
+
+    match event.code {
+        KeyCode::Char('r') => return UserEvent::READY,
+        KeyCode::Char('`') => return UserEvent::CLEAR,
+        KeyCode::Esc       => return UserEvent::QUIT,
+        KeyCode::Enter     => return UserEvent::PLAY,
+        KeyCode::Char('/') => return UserEvent::PASS,
+        KeyCode::Char('1') => return UserEvent::TOGGLECARD1,
+        KeyCode::Char('2') => return UserEvent::TOGGLECARD2,
+        KeyCode::Char('3') => return UserEvent::TOGGLECARD3,
+        KeyCode::Char('4') => return UserEvent::TOGGLECARD4,
+        KeyCode::Char('5') => return UserEvent::TOGGLECARD5,
+        KeyCode::Char('6') => return UserEvent::TOGGLECARD6,
+        KeyCode::Char('7') => return UserEvent::TOGGLECARD7,
+        KeyCode::Char('8') => return UserEvent::TOGGLECARD8,
+        KeyCode::Char('9') => return UserEvent::TOGGLECARD9,
+        KeyCode::Char('0') => return UserEvent::TOGGLECARD10,
+        KeyCode::Char('-') => return UserEvent::TOGGLECARD11,
+        KeyCode::Char('=') => return UserEvent::TOGGLECARD12,
+        KeyCode::Backspace => return UserEvent::TOGGLECARD13,
+        _ => return UserEvent::NOTHING,
+    }
+
+}
 fn main() -> Result<()> {
     let cli_args = parse_args();
     if cli_args.app_mode == AppMode::ERROR {
@@ -134,8 +184,14 @@ fn main() -> Result<()> {
     }
 
     enable_raw_mode()?;
+
+    // Clear screen
+    print!("\u{1b}[2J");
     //let mut stdout = stdout();
     // execute!(stdout, EnableMouseCapture)?;
+
+	let l = cli_args.socket_addr.len();
+	println!("\u{1b}]0;Name {} Table {}\x07", &cli_args.name, &cli_args.socket_addr.get(l-1..l).unwrap());
 
     if cli_args.app_mode == AppMode::CLIENT {
         let client = client::client::TcpClient::connect(cli_args.socket_addr);
@@ -162,12 +218,13 @@ fn main() -> Result<()> {
             hand: 0,
             hand_score: 0,
             sm: bincode::deserialize(empty_buffer).unwrap(),
+            counter: 0,
         };
 
         loop {
             let update: usize;
             match ts.check_buffer(&mut gs.sm) {
-                Ok(ret) => update = ret,
+                Ok(ret) => { update = ret; gs.counter += 1; },
                 Err(e) => {
                     println!("Error {:?}", e);
                     std::process::exit(1);
@@ -176,9 +233,10 @@ fn main() -> Result<()> {
 
             // Process new StateMessage
             if update == 1 {
+                print!("\u{1b}[15;0f");
+                println!("Data count {}", gs.counter);
                 // Update display
                 cli::display::board(&gs);
-
 
                 if gs.sm.action.action_type == client::StateMessageActionType::PLAY
                    || gs.sm.action.action_type == client::StateMessageActionType::PASS {
@@ -201,6 +259,9 @@ fn main() -> Result<()> {
                         gs.board = 0;
                         gs.board_score = 0;
                         gs.i_am_ready = false;
+						gs.cards_selected = 0;
+						gs.hand = 0;
+						gs.hand_score = 0;
                     }
 
                     gs.board = client::client::muon_inline8_to_card(&gs.sm.board);
@@ -210,93 +271,121 @@ fn main() -> Result<()> {
                     thread::sleep(ten_millis);
                     cli::display::board(&gs);
                 }
-            }
-
-            // Pass / Auto Pass
-            let p = gs.sm.your_index as usize;
-            if gs.sm.turn == gs.sm.your_index && gs.auto_pass && !gs.sm.players[p].has_passed_this_cycle {
-                ts.action_pass()?;
-                continue;
+    
+                // Pass / Auto Pass
+                let p = gs.sm.your_index as usize;
+                if gs.sm.turn == gs.sm.your_index && gs.auto_pass && !gs.sm.players[p].has_passed_this_cycle {
+                    ts.action_pass()?;
+                    continue;
+                }
             }
 
             // Poll user events
             if poll(Duration::from_millis(100))? {
                 // It's guaranteed that read() wont block if `poll` returns `Ok(true)`
-                let user_event = read()?;
+                let cli_user_event = read()?;
                 let mut toggle_card = 0;
 
-                if user_event == Event::Key(KeyCode::Esc.into()) {
+                let mut user_event = UserEvent::NOTHING;
+
+                print!("\u{1b}[16;0f");
+                println!("Event {:?}", cli_user_event);
+
+                match cli_user_event {
+                    Event::Key(key_event) => user_event = handle_key_events(key_event),
+                    Event::Mouse(mouse_event) => println!("{:?}", mouse_event),
+                    Event::Resize(width, height) => { 
+                        cli::display::board(&gs); 
+                        println!("New size {}x{}", width, height);
+                    },
+                }
+
+                if user_event == UserEvent::NOTHING { continue; }
+
+                if user_event == UserEvent::QUIT {
+                    client::client::disconnect(ts);
                     break;
                 }
 
-                match user_event {
-                    Event::Key(user_event) => println!("{:?}", user_event),
-                    Event::Mouse(user_event) => println!("{:?}", user_event),
-                    Event::Resize(width, height) => println!("New size {}x{}", width, height),
-                }
+                let is_inbetween: bool = gs.sm.turn == -1;
 
-                // Pass / Auto Pass
-                let p = gs.sm.your_index as usize;
-                if user_event == Event::Key(KeyCode::Char('/').into()) &&
-                   !gs.sm.players[p].has_passed_this_cycle {
-                    if gs.sm.turn != gs.sm.your_index {
-                        gs.auto_pass = !gs.auto_pass
+                // Ready
+                if is_inbetween {
+                    if !gs.i_am_ready && user_event == UserEvent::READY {
+                        gs.i_am_ready = true;
+                        ts.action_ready()?;
+                    }
+                    continue;
+                } else {
+                    // (De)Select cards
+                    if user_event == UserEvent::TOGGLECARD1 { toggle_card = 1; }
+                    if user_event == UserEvent::TOGGLECARD2 { toggle_card = 2; }
+                    if user_event == UserEvent::TOGGLECARD3 { toggle_card = 3; }
+                    if user_event == UserEvent::TOGGLECARD4 { toggle_card = 4; }
+                    if user_event == UserEvent::TOGGLECARD5 { toggle_card = 5; }
+                    if user_event == UserEvent::TOGGLECARD6 { toggle_card = 6; }
+                    if user_event == UserEvent::TOGGLECARD7 { toggle_card = 7; }
+                    if user_event == UserEvent::TOGGLECARD8 { toggle_card = 8; }
+                    if user_event == UserEvent::TOGGLECARD9 { toggle_card = 9; }
+                    if user_event == UserEvent::TOGGLECARD10 { toggle_card = 10; }
+                    if user_event == UserEvent::TOGGLECARD11 { toggle_card = 11; }
+                    if user_event == UserEvent::TOGGLECARD12 { toggle_card = 12; }
+                    if user_event == UserEvent::TOGGLECARD13 { toggle_card = 13; }
+                    if user_event == UserEvent::CLEAR && 
+                       gs.cards_selected != 0 {
+                        gs.cards_selected = 0;
+                        gs.hand_score = 0;
+                        gs.is_valid_hand = false;
+                        cli::display::board(&gs);
+                    }
+
+                    let me_index = gs.sm.your_index;
+                    let is_your_turn: bool = gs.sm.turn == me_index;
+
+                    if toggle_card != 0 {
+                        if toggle_card > gs.sm.your_hand.count as usize { continue; }
+                        let card = client::client::card_from_byte(gs.sm.your_hand.data[toggle_card - 1]);
+                        gs.cards_selected ^= card;
+                        gs.hand_score = big2rules::rules::score_hand(gs.cards_selected);
+                        gs.is_valid_hand = is_your_turn && (gs.hand_score > gs.board_score) &&
+                                          (gs.board == 0 || gs.board.count_ones() == gs.cards_selected.count_ones());
+                        cli::display::board(&gs);
+                    }
+
+                    let you = &gs.sm.players[me_index as usize];
+                    if is_your_turn {
+                        // Pass
+                        if user_event == UserEvent::PASS && 
+                           !you.has_passed_this_cycle {
+                            ts.action_pass()?;
+                        }
+
+                        // Play hand
+                        if user_event == UserEvent::PLAY &&
+                           gs.is_valid_hand {
+                            println!("Play hand");
+                            gs.sm.action.action_type = client::StateMessageActionType::PLAY;
+
+                            let hand = client::client::muon_inline8_from_card(gs.cards_selected);
+                            if let Err(e) = ts.action_play(&hand) { println!("Could not send your hand to the server!\r\n{}", e); }
+                            
+                            gs.cards_selected = 0;
+                            gs.hand_score = 0;
+                            gs.is_valid_hand = false;
+                        }
                     } else {
-                        ts.action_pass()?;
-                        continue;
+                        // Pre Pass
+                        if user_event == UserEvent::PASS &&
+                           !you.has_passed_this_cycle {
+                            gs.auto_pass = !gs.auto_pass;
+                            cli::display::board(&gs);
+                        }
                     }
                 }
-
-                // Ready Signal
-                if user_event == Event::Key(KeyCode::Char('r').into()) &&
-                    !gs.i_am_ready && gs.sm.turn == -1 {
-                    gs.i_am_ready = true;
-                    ts.action_ready()?;
-                    continue;
-                }
-
-                // (De)Select cards
-                if user_event == Event::Key(KeyCode::Char('1').into()) { toggle_card = 1; }
-                if user_event == Event::Key(KeyCode::Char('2').into()) { toggle_card = 2; }
-                if user_event == Event::Key(KeyCode::Char('3').into()) { toggle_card = 3; }
-                if user_event == Event::Key(KeyCode::Char('4').into()) { toggle_card = 4; }
-                if user_event == Event::Key(KeyCode::Char('5').into()) { toggle_card = 5; }
-                if user_event == Event::Key(KeyCode::Char('6').into()) { toggle_card = 6; }
-                if user_event == Event::Key(KeyCode::Char('7').into()) { toggle_card = 7; }
-                if user_event == Event::Key(KeyCode::Char('8').into()) { toggle_card = 8; }
-                if user_event == Event::Key(KeyCode::Char('9').into()) { toggle_card = 9; }
-                if user_event == Event::Key(KeyCode::Char('0').into()) { toggle_card = 10; }
-                if user_event == Event::Key(KeyCode::Char('-').into()) { toggle_card = 11; }
-                if user_event == Event::Key(KeyCode::Char('=').into()) { toggle_card = 12; }
-                if user_event == Event::Key(KeyCode::Backspace.into()) { toggle_card = 13; }
-                if user_event == Event::Key(KeyCode::Char('`').into()) {
-                    gs.cards_selected = 0;
-                    gs.hand_score = 0;
-                }
-
-                if toggle_card != 0 {
-                    if toggle_card > gs.sm.your_hand.count as usize { break; }
-                    let card = client::client::card_from_byte(gs.sm.your_hand.data[toggle_card - 1]);
-                    gs.cards_selected ^= card;
-                    gs.hand_score = big2rules::rules::score_hand(gs.cards_selected);
-                }
-
-                gs.is_valid_hand = (gs.hand_score > gs.board_score) && (gs.board == 0 || gs.board.count_ones() == gs.cards_selected.count_ones());
-
-                // Play hand
-                if user_event == Event::Key(KeyCode::Enter.into()) && gs.is_valid_hand && gs.sm.turn == gs.sm.your_index {
-                    println!("Play hand");
-                    gs.sm.action.action_type = client::StateMessageActionType::PLAY;
-
-                    let hand = client::client::muon_inline8_from_card(gs.cards_selected);
-                    if let Err(e) = ts.action_play(&hand) { println!("Could not send your hand to the server!\r\n{}", e); }
-                    continue;
-                }
-
-                cli::display::board(&gs);
             }
         }
     }
+
     // execute!(stdout, DisableMouseCapture)?;
     disable_raw_mode()?;
 

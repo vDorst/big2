@@ -2,6 +2,7 @@ pub mod display {
     use crate::big2rules;
     use crate::client;
     use std::str;
+    use crossterm::{cursor, execute, queue, style, style::Colorize, Command};
 
     // https://en.wikipedia.org/wiki/ANSI_escape_code
     const COL_PASSED:          &str = "\u{1b}[97;100m"; // White on Grey
@@ -175,7 +176,11 @@ pub mod display {
         if odd_straight { bit = 1 << 38; };
 
         // Clear screen
-        print!("\u{1b}[2J");
+        //print!("\u{1b}[2J");
+
+        // execute().cursor::MoveTo(1, 1);
+
+        print!("\u{1b}[0;0f");
 
         match gs.sm.action.action_type {
         client::StateMessageActionType::PASS => {
@@ -196,7 +201,7 @@ pub mod display {
             }
             print!("\r\n        {:>16}: {}", name, card_str);
         },
-        _ => print!("\r\n"),
+        _ => print!("\r\n\u{1b}[2J"),
         }
 
         let cards = client::client::muon_inline8_to_card(&gs.sm.board);
@@ -288,5 +293,7 @@ pub mod display {
             print!(" {}\r\n", passed);
             p += 1; if p == 4 { p = 0; };
         }
+        print!("Debug: B {:x} BS {} H {:x} HS {} s {:x} CNT {}\r\n", gs.board, gs.board_score, gs.hand,
+                gs.hand_score, gs.cards_selected, gs.counter);
     }
 }
