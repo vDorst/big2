@@ -259,20 +259,22 @@ pub mod rules {
         if is_straight {
             let mut straigth_score: u64 = 0;
             if rank - low_rank == 12 {
-                is_straight =   cards::has_rank(hand, cards::Rank::THREE) != 0 &&
-                        cards::has_rank(hand, cards::Rank::FOUR)  != 0 &&
-                        cards::has_rank(hand, cards::Rank::FIVE)  != 0 &&
-                        cards::has_rank(hand, cards::Rank::TWO)   != 0;
+                is_straight = 
+                    cards::has_rank(hand, cards::Rank::THREE) != 0 &&
+                    cards::has_rank(hand, cards::Rank::FOUR)  != 0 &&
+                    cards::has_rank(hand, cards::Rank::FIVE)  != 0 &&
+                    cards::has_rank(hand, cards::Rank::TWO)   != 0;
                 // Straight 23456
                 if is_straight && cards::has_rank(hand, cards::Rank::SIX) != 0  { straigth_score |= highest_card | 0x40; }
                 // Straight A2345
                 if is_straight && cards::has_rank(hand, cards::Rank::ACE) != 0 { straigth_score |= highest_card | 0x80; }
             } else {
-                is_straight =   cards::has_rank(hand,  low_rank)     != 0 &&
-                        cards::has_rank(hand,  low_rank + 1) != 0 &&
-                        cards::has_rank(hand,  low_rank + 2) != 0 &&
-                        cards::has_rank(hand,  low_rank + 3) != 0 &&
-                        cards::has_rank(hand,  low_rank + 4) != 0;
+                is_straight =
+                    cards::has_rank(hand,  low_rank)     != 0 &&
+                    cards::has_rank(hand,  low_rank + 1) != 0 &&
+                    cards::has_rank(hand,  low_rank + 2) != 0 &&
+                    cards::has_rank(hand,  low_rank + 3) != 0 &&
+                    cards::has_rank(hand,  low_rank + 4) != 0;
                 if is_straight { straigth_score = highest_card; }
             }
 
@@ -291,6 +293,8 @@ pub mod rules {
 }
 
 pub struct GameState {
+    pub sm: client::StateMessage,
+    pub srn: std::io::Stdout,
     pub board: u64,
     pub board_score: u64,
     pub cards_selected: u64,
@@ -299,7 +303,7 @@ pub struct GameState {
     pub is_valid_hand: bool,
     pub hand: u64,
     pub hand_score: u64,
-    pub sm: client::StateMessage,
+
     pub counter: u64,
 }
 
