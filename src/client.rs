@@ -197,7 +197,7 @@ pub mod client {
         
             let dm: client::DetectMessage = bincode::deserialize(&buffer).unwrap();
 
-            print!("TCP: Message Kind {} Size {}\r", dm.kind, dm.size);
+            // print!("TCP: Message Kind {} Size {}\r", dm.kind, dm.size);
 
 			// Update
             if dm.kind == 5 && dm.size as usize == mem::size_of::<client::StateMessage>() {
@@ -273,7 +273,7 @@ pub mod client {
             sm.size = mem::size_of::<client::StateMessage>() as u32;
             sm.kind = 3;
             let byte_buf = bincode::serialize(&sm).unwrap();
-            println!("{:?}", byte_buf);
+            // println!("{:?}", byte_buf);
             let ret = self.tx.send(byte_buf);
             if ret.is_err() { 
                 return Err(io::Error::new(io::ErrorKind::BrokenPipe, "Thread died!")); }
@@ -299,7 +299,7 @@ pub mod client {
                 cards: cards.clone(),
             };
             let byte_buf = bincode::serialize(&sm).unwrap();
-            println!("action_play: {:x?}", byte_buf);
+            // println!("action_play: {:x?}", byte_buf);
             let ret = self.tx.send(byte_buf);
             if ret.is_err() { 
                 return Err(io::Error::new(io::ErrorKind::BrokenPipe, "Thread died!")); }
@@ -348,7 +348,7 @@ pub mod client {
 
             let dm: client::DetectMessage = bincode::deserialize(&buffer).unwrap();
 
-            println!("Message Kind {} Size {}", dm.kind, dm.size);
+            // println!("Message Kind {} Size {}", dm.kind, dm.size);
 
             if dm.kind > 6 || dm.size as usize > buffer.len() {
                 println!("Unknown packet drop {}", bytes);

@@ -169,14 +169,16 @@ fn main() {
 
             // Process new StateMessage
             if update == 1 {
-                print!("\u{1b}[15;0f");
-                println!("Data count {}", gs.counter);
+                // print!("\u{1b}[15;0f");
+                // println!("Data count {}", gs.counter);
                 // Update display
-                cli::display::board(&mut gs);
-
+                
                 if gs.sm.action.action_type == client::StateMessageActionType::PLAY
                    || gs.sm.action.action_type == client::StateMessageActionType::PASS {
+
+                    cli::display::board(&mut gs);
                     let ten_millis = time::Duration::from_millis(1000);
+                    thread::sleep(ten_millis);                    
 
                     if gs.sm.action.action_type == client::StateMessageActionType::PLAY {
                         gs.sm.board = gs.sm.action.cards.clone();
@@ -197,14 +199,27 @@ fn main() {
                         gs.i_am_ready = false;
 						gs.cards_selected = 0;
 						gs.hand = 0;
-						gs.hand_score = 0;
+                        gs.hand_score = 0;
+                        cli::display::clear(&mut gs.srn);
                     }
+                }
+               
+                if gs.sm.action.action_type == client::StateMessageActionType::DEAL {
+                    gs.board = 0;
+                    gs.board_score = 0;
+                    gs.i_am_ready = false;
+                    gs.cards_selected = 0;
+                    gs.hand = 0;
+                    gs.hand_score = 0;
+                    cli::display::clear(&mut gs.srn);
+                    gs.sm.action.action_type = client::StateMessageActionType::UPDATE;
+                }
 
+                if gs.sm.action.action_type == client::StateMessageActionType::UPDATE {
                     gs.board = client::client::muon_inline8_to_card(&gs.sm.board);
                     gs.board_score = big2rules::rules::score_hand(gs.board);
                     gs.is_valid_hand = (gs.hand_score > gs.board_score) && (gs.board == 0 || gs.board.count_ones() == gs.cards_selected.count_ones());
-
-                    thread::sleep(ten_millis);
+                    
                     if let Err(e) = cli::display::board(&mut gs) {
                         print!("DISPLAY ERROR {}", e);
                     }
@@ -223,7 +238,8 @@ fn main() {
             if user_event != cli::display::UserEvent::NOTHING {
                 let mut toggle_card = 0;
 
-                if user_event == cli::display::UserEvent::RESIZE || user_event == cli::display::UserEvent::READY {
+                if user_event == cli::display::UserEvent::RESIZE {
+                        cli::display::clear(&mut gs.srn);
                         cli::display::board(&mut gs); 
                         continue;
                 }
@@ -289,7 +305,7 @@ fn main() {
                         // Play hand
                         if user_event == cli::display::UserEvent::PLAY &&
                            gs.is_valid_hand {
-                            println!("Play hand");
+                            // println!("Play hand");
                             gs.sm.action.action_type = client::StateMessageActionType::PLAY;
 
                             let hand = client::client::muon_inline8_from_card(gs.cards_selected);

@@ -13,7 +13,7 @@ pub mod display {
         Result,
         //QueueableCommand,
         terminal::{disable_raw_mode, enable_raw_mode, SetTitle, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, SetSize},
-        event::{poll, read, Event, KeyCode, KeyModifiers},
+        event::{poll, read, Event, KeyCode, MouseEvent, KeyModifiers,EnableMouseCapture, DisableMouseCapture, MouseButton},
         cursor::{MoveTo, RestorePosition, SavePosition},
         execute,
     };
@@ -63,14 +63,25 @@ pub mod display {
     const COL_HEARTS:          &str = "\u{1b}[31m";
     const COL_SPADES:          &str = "\u{1b}[30m";
 
+    pub fn clear(srn: &mut std::io::Stdout) -> Result<()> {
+        execute!(srn, Clear(ClearType::All))
+    }
+
+    pub fn write_status(srn: &mut std::io::Stdout, status: &str) -> Result<()> {
+        execute!(srn,
+            MoveTo(7,0),
+            Print("Status: "),
+            Print(status),
+        )
+    }
+
     pub fn init(title: &str) -> Result<std::io::Stdout> {
         let mut srn = stdout();
 
-        if enable_raw_mode().is_err() {
-            println!("Can't set raw mode");
-        }
+        enable_raw_mode()?;
 
-        execute!(srn, EnterAlternateScreen, SetSize(80, 10))?;
+        //EnterAlternateScreen
+        execute!(srn, EnterAlternateScreen, EnableMouseCapture, SetSize(80, 10))?;
         
         // execute!(stdout, EnableMouseCapture)?;
       
@@ -84,7 +95,7 @@ pub mod display {
 
     pub fn close(mut srn: std::io::Stdout) -> Result<()> {
         // execute!(stdout, DisableMouseCapture)?;
-        execute!(srn, LeaveAlternateScreen)?;
+        execute!(srn, LeaveAlternateScreen, DisableMouseCapture)?;
         disable_raw_mode()?;
         Ok(())
     }
@@ -100,10 +111,38 @@ pub mod display {
 
          match cli_user_event {
             Event::Key(key_event) => return handle_key_events(key_event),
-            //Event::Mouse(mouse_event) => return UserEvent::NOTHING,
+            Event::Mouse(mouse_event) => return handle_mouse_events(mouse_event),
             Event::Resize(width, height) => return UserEvent::RESIZE,
             _ => return UserEvent::NOTHING,
         }
+    }
+
+    fn handle_mouse_events(event: crossterm::event::MouseEvent) -> UserEvent {
+        if let MouseEvent::Down(btn, x, y, m) = event {
+            if btn == MouseButton::Right { return UserEvent::CLEAR; }           
+            if y == 3 || y == 2 {
+                if x == 25 || x == 26 { return UserEvent::TOGGLECARD1; }
+                if x == 28 || x == 29 { return UserEvent::TOGGLECARD2; }
+                if x == 31 || x == 32 { return UserEvent::TOGGLECARD3; }
+                if x == 34 || x == 35 { return UserEvent::TOGGLECARD4; }
+                if x == 37 || x == 38 { return UserEvent::TOGGLECARD5; }
+                if x == 40 || x == 41 { return UserEvent::TOGGLECARD6; }
+                if x == 43 || x == 44 { return UserEvent::TOGGLECARD7; }
+                if x == 46 || x == 47 { return UserEvent::TOGGLECARD8; }
+                if x == 49 || x == 50 { return UserEvent::TOGGLECARD9; }
+                if x == 52 || x == 53 { return UserEvent::TOGGLECARD10; }
+                if x == 55 || x == 56 { return UserEvent::TOGGLECARD11; }
+                if x == 58 || x == 59 { return UserEvent::TOGGLECARD12; }
+                if x == 61 || x == 62 { return UserEvent::TOGGLECARD13; }                
+            }
+            if y == 1 {
+                if x >= 43 && x <= 49 { return UserEvent::PLAY; }
+                if x >= 55 && x <= 62 { return UserEvent::PASS; }
+            }
+            println!("{:?}", event);
+        }
+        //if Down(event) 
+        return UserEvent::NOTHING;
     }
 
     fn handle_key_events(event: crossterm::event::KeyEvent) -> UserEvent {
@@ -128,6 +167,7 @@ pub mod display {
             KeyCode::Char('-') => return UserEvent::TOGGLECARD11,
             KeyCode::Char('=') => return UserEvent::TOGGLECARD12,
             KeyCode::Backspace => return UserEvent::TOGGLECARD13,
+            KeyCode::Char('d') => return UserEvent::RESIZE,
             _ => return UserEvent::NOTHING,
         }
     }
@@ -268,17 +308,11 @@ pub mod display {
         let mut bit: u64 = 1 << 11;
         if odd_straight { bit = 1 << 38; };
 
-        execute!(gs.srn, MoveTo(0, 0), Print("+".white().on_red()))?;
-
+        let name = name_from_muon_string16(&gs.sm.players[gs.sm.action.player as usize].name);
+        let s = format!("{:>16}: ", name);
         if gs.sm.action.action_type == client::StateMessageActionType::PASS {
-            let name = name_from_muon_string16(&gs.sm.players[gs.sm.action.player as usize].name);
-            let s = format!("{:>16}: ", name);
-            execute!(gs.srn, MoveTo(9, 1), Print(&s), Print("PASSED".white().on_dark_grey()))?;          
-        }
-
-        if gs.sm.action.action_type == client::StateMessageActionType::PLAY {
-            let name = name_from_muon_string16(&gs.sm.players[gs.sm.action.player as usize].name);
-            let s = format!("{:>16}: ", name);
+            execute!(gs.srn, MoveTo(9, 0), Print(&s), Print("PASSED".white().on_dark_grey()))?;          
+        } else if gs.sm.action.action_type == client::StateMessageActionType::PLAY {
             let cards = client::client::muon_inline8_to_card(&gs.sm.action.cards);
             let mut card_str = String::from("");
             for _ in 12..64 {
@@ -289,10 +323,13 @@ pub mod display {
                 cards_to_utf8(card, &mut card_str);
                 card_str.push(' ');
             }
-            execute!(gs.srn, MoveTo(9, 2), Print(&s), Print(card_str))?;  
+            execute!(gs.srn, MoveTo(9, 0), Print(&s), Print(card_str))?;  
+        } else {
+            execute!(gs.srn, MoveTo(9, 0), Clear(ClearType::CurrentLine))?; 
         }
 
         execute!(gs.srn, MoveTo(0, 1), Print(format!("Rounds: {}/{}", gs.sm.round, gs.sm.num_rounds)))?;
+
         let cards = client::client::muon_inline8_to_card(&gs.sm.board);
         for _ in 12..64 {
             if bit == 1 << 63 { bit = 1 << 11; };
@@ -310,6 +347,7 @@ pub mod display {
         }
 
         if gs.sm.turn == -1 {
+            execute!(gs.srn, MoveTo(0, 3))?;
             for _ in 0..4 {
                 let player = &gs.sm.players[p as usize];
                 let mut name = name_from_muon_string16(&player.name);
@@ -364,18 +402,26 @@ pub mod display {
                 }
                 execute!(gs.srn,
                     MoveTo(25, 2),
+                    Clear(ClearType::CurrentLine),
                     Print(out_sel_str),
                 )?;
             } else {
                 out_str = format!("{}##{} ", COL_CARD_BACK, COL_NORMAL).repeat(n_cards);
             }
             let no_cards = ".. ".to_string().repeat(13 - n_cards);
-            if p == gs.sm.turn { print!("{}", COL_PLAYER_ACT); }
+            
 
             execute!(gs.srn,
                 MoveTo(0, 3+row),
                 Print(format!("{}.", p+1)),
-                Print(&s),
+            )?;
+            if p == gs.sm.turn { 
+                execute!(gs.srn, Print(&s.on_dark_green()))?;
+            } else {
+                execute!(gs.srn, Print(&s))?;
+            }
+
+            execute!(gs.srn,                
                 Print(format!(" #{:2}", n_cards)),
                 Print(format!(" {}{}", out_str, no_cards)),
                 Print(format!(" {}", score_str(player_score))),
