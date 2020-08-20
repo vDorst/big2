@@ -173,7 +173,8 @@ pub mod client {
                      if e == std::sync::mpsc::TryRecvError::Disconnected { break; }
             }
             if let Ok(data) = tx_data {
-                ts.write(&data);
+                let ret = ts.write(&data);
+                if let Err(e) = ret { println!("TCP: Error write. {}", e); }
             }
 
             let ret = ts.read(&mut buffer);
@@ -181,16 +182,18 @@ pub mod client {
             if let Err(e) = ret {
                 // if readtimeout then continue.
                 if e.kind() == io::ErrorKind::TimedOut { continue; }
-                //if e.kind() == io::Errorkind::Buffer { continue; }
-                println!("TCP RX error {:?}", e);
+                if e.kind() == io::ErrorKind::WouldBlock { continue; }
+                println!("TCP: RX error {:?}", e);
                 break;
             }
 
             let bytes = ret.unwrap();
 
             if bytes < mem::size_of::<client::DetectMessage>() {
-				println!("TCP: Packet too small");
-				continue; }
+                println!("TCP: Packet too small {}", bytes);
+                thread::sleep(Duration::from_millis(1000));
+                continue;
+            }
         
             let dm: client::DetectMessage = bincode::deserialize(&buffer).unwrap();
 
@@ -331,7 +334,7 @@ pub mod client {
 
             if let Err(e) = buffer {
                     if e == std::sync::mpsc::TryRecvError::Empty { return Ok(0); }
-                return Err(io::Error::new(io::ErrorKind::TimedOut, "Channel Disconnected"));
+                return Err(io::Error::new(io::ErrorKind::TimedOut, format!("check_buffer: Channel Disconnected {:?}", e)));
             }
 
             let buffer = buffer.unwrap();
@@ -366,8 +369,6 @@ pub mod client {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::str::from_utf8;
-    use std::mem::MaybeUninit;
 
     // #[test]
     // fn a_connect() {
