@@ -6,7 +6,15 @@ use std::{
     time::Duration,
     thread,
     time,
+    fs::File,
 };
+
+use log::{error, info, warn};
+#[macro_use]
+extern crate log;
+extern crate simplelog;
+
+use simplelog::*;
 
 use clap::{Arg, App};
 
@@ -114,9 +122,11 @@ fn main() {
         std::process::exit(1);
     }
 
+    let _ = WriteLogger::init(LevelFilter::Trace, Config::default(), File::create("big2.log").unwrap());
+
     if cli_args.app_mode == AppMode::HOST ||
        cli_args.app_mode == AppMode::HOSTONLY {
-        println!("Currently not supported!");
+        error!("Currently not supported!");
         std::process::exit(1);
     }
 
@@ -162,17 +172,41 @@ fn main() {
             match ts.check_buffer(&mut gs.sm) {
                 Ok(ret) => { update = ret; gs.counter += 1; },
                 Err(e) => {
-                    println!("Error {:?}", e);
+                    error!("Error {:?}", e);
                     std::process::exit(1);
                 },
             }
 
             // Process new StateMessage
             if update == 1 {
-                // print!("\u{1b}[15;0f");
-                // println!("Data count {}", gs.counter);
-                // Update display
-                
+                match gs.sm.action.action_type {
+                    client::StateMessageActionType::PLAY => {
+                        let p = gs.sm.action.player;
+                        if p >= 0 && p <= 3 {
+                            let cards = client::client::muon_inline8_to_card(&gs.sm.action.cards);
+                            let player = &gs.sm.players[p as usize];
+                            let name = cli::display::name_from_muon_string16(&player.name);
+                            let cards_str = cli::display::cards_str(cards);
+                            trace!("PLAY: {:>16}: {}", name, cards_str);
+                        }
+                    },
+                    client::StateMessageActionType::PASS => {
+                        let p = gs.sm.action.player;
+                        if p >= 0 && p <= 3 {
+                            let player = &gs.sm.players[p as usize];
+                            let name = cli::display::name_from_muon_string16(&player.name);
+                            trace!("PLAY: {:>16}: PASSED", name);
+                        }
+                    },
+                    client::StateMessageActionType::UPDATE => {
+                        trace!("PLAY: UPDATE");
+                    }
+                    client::StateMessageActionType::DEAL => {
+                        trace!("PLAY: DEAL: ROUND {}/{}", gs.sm.round, gs.sm.num_rounds);
+                    }                    
+                    _ => error!("unknown action {:?}", gs.sm.action.action_type),
+                }
+
                 if gs.sm.action.action_type == client::StateMessageActionType::PLAY
                    || gs.sm.action.action_type == client::StateMessageActionType::PASS {
 
@@ -221,7 +255,7 @@ fn main() {
                     gs.is_valid_hand = (gs.hand_score > gs.board_score) && (gs.board == 0 || gs.board.count_ones() == gs.cards_selected.count_ones());
                     
                     if let Err(e) = cli::display::board(&mut gs) {
-                        print!("DISPLAY ERROR {}", e);
+                        error!("DISPLAY ERROR {}", e);
                     }
                 }
     
@@ -234,7 +268,7 @@ fn main() {
             }
 
             // Poll user events
-            let user_event = cli::display::poll_user_events(&mut gs);
+            let user_event = cli::display::poll_user_events();
             if user_event != cli::display::UserEvent::NOTHING {
                 let mut toggle_card = 0;
 

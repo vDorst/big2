@@ -1,4 +1,6 @@
 use crate::big2rules;
+#[macro_use]
+use crate::log;
 
 use serde::{Deserialize, Serialize};
 
@@ -173,8 +175,9 @@ pub mod client {
                      if e == std::sync::mpsc::TryRecvError::Disconnected { break; }
             }
             if let Ok(data) = tx_data {
+                trace!("TCP: PUSH: {:x?}", data);
                 let ret = ts.write(&data);
-                if let Err(e) = ret { println!("TCP: Error write. {}", e); }
+                if let Err(e) = ret { error!("TCP: Error write. {}", e); }
             }
 
             let ret = ts.read(&mut buffer);
@@ -183,14 +186,14 @@ pub mod client {
                 // if readtimeout then continue.
                 if e.kind() == io::ErrorKind::TimedOut { continue; }
                 if e.kind() == io::ErrorKind::WouldBlock { continue; }
-                println!("TCP: RX error {:?}", e);
+                error!("TCP: RX error {:?}", e);
                 break;
             }
 
             let bytes = ret.unwrap();
 
             if bytes < mem::size_of::<client::DetectMessage>() {
-                println!("TCP: Packet too small {}", bytes);
+                error!("TCP: Packet too small {}", bytes);
                 thread::sleep(Duration::from_millis(1000));
                 continue;
             }
@@ -201,6 +204,7 @@ pub mod client {
 
 			// Update
             if dm.kind == 5 && dm.size as usize == mem::size_of::<client::StateMessage>() {
+                trace!("TCP: <T>SM: {:x?}", &buffer[0..dm.size as usize]);
                 let buffer = buffer.to_vec();
                 let ret = tx.send(buffer);
                 if ret.is_err() { break; }
@@ -209,19 +213,20 @@ pub mod client {
 
 			// HeartbeatMessage
             if dm.kind == 6 && dm.size == 264 {
+                trace!("TCP: <T>HB");
                 continue;
             }			
 
             if (dm.size as usize) == buffer.len() {
-                println!("TCP: Request: {:x?}", &buffer[0..dm.size as usize]);
+                trace!("TCP: GET: {:x?}", &buffer[0..dm.size as usize]);
             } else {
-                println!("TCP: Invalid packet!");
+                error!("TCP: Invalid packet!");
             }
         }
     }
 
     pub fn disconnect(mut tc: TcpClient) {
-        println!("Shutdown tcp thread!");
+        debug!("Shutdown tcp thread!");
         drop(tc.tx);
         if let Some(thread) = tc.id.take() {
             thread.join().unwrap();
@@ -238,7 +243,7 @@ pub mod client {
                 let server = servers.next();
                 if server.is_none() { break; }
                 let l = server.unwrap();
-                print!("Trying {:?}\r\n", l);
+                info!("Trying {:?}\r\n", l);
                 let ret = TcpStream::connect_timeout(&l, Duration::from_secs(1));
                 match ret {
                     Err(_) => continue,
@@ -246,6 +251,8 @@ pub mod client {
                         s.set_read_timeout(Some(Duration::from_millis(100)))?;
                         let (tx, rx) = std::sync::mpsc::channel();
                         let (tx1, rx1) = std::sync::mpsc::channel();
+
+                        info!("Connected to {:?}!", s.peer_addr());
 
 						let tcp_thread = thread::Builder::new().name("big2_tcp".into());
                         let id = tcp_thread.spawn(
@@ -259,7 +266,6 @@ pub mod client {
                         //     return Err(e);
                         // }
 
-                        println!("Connected!");
                         return Ok( TcpClient{ rx: rx, tx: tx1, id: Some(id) } );
                     },
                 }
@@ -342,16 +348,15 @@ pub mod client {
             let bytes = buffer.len();
 
             if bytes < mem::size_of::<client::DetectMessage>() {
-                // println!("Packet size to low {}", bytes);
+                error!("Packet size to low {}", bytes);
                 return Ok(0);
             }
 
             let dm: client::DetectMessage = bincode::deserialize(&buffer).unwrap();
 
-            // println!("Message Kind {} Size {}", dm.kind, dm.size);
 
             if dm.kind > 6 || dm.size as usize > buffer.len() {
-                println!("Unknown packet drop {}", bytes);
+                error!("Unknown packet drop {}", bytes);
                 return Ok(0);
             }
 

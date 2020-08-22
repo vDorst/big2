@@ -100,7 +100,7 @@ pub mod display {
         Ok(())
     }
 
-    pub fn poll_user_events(gs: &mut big2rules::GameState) -> UserEvent {
+    pub fn poll_user_events() -> UserEvent {
         // Poll user events
         let polled_event = poll(Duration::from_millis(100));
 
@@ -121,27 +121,27 @@ pub mod display {
         if let MouseEvent::Down(btn, x, y, m) = event {
             if btn == MouseButton::Right { return UserEvent::CLEAR; }           
             if y == 3 || y == 2 {
-                if x == 25 || x == 26 { return UserEvent::TOGGLECARD1; }
-                if x == 28 || x == 29 { return UserEvent::TOGGLECARD2; }
-                if x == 31 || x == 32 { return UserEvent::TOGGLECARD3; }
-                if x == 34 || x == 35 { return UserEvent::TOGGLECARD4; }
-                if x == 37 || x == 38 { return UserEvent::TOGGLECARD5; }
-                if x == 40 || x == 41 { return UserEvent::TOGGLECARD6; }
-                if x == 43 || x == 44 { return UserEvent::TOGGLECARD7; }
-                if x == 46 || x == 47 { return UserEvent::TOGGLECARD8; }
-                if x == 49 || x == 50 { return UserEvent::TOGGLECARD9; }
-                if x == 52 || x == 53 { return UserEvent::TOGGLECARD10; }
-                if x == 55 || x == 56 { return UserEvent::TOGGLECARD11; }
-                if x == 58 || x == 59 { return UserEvent::TOGGLECARD12; }
-                if x == 61 || x == 62 { return UserEvent::TOGGLECARD13; }                
+                if x == 24 || x == 25 { return UserEvent::TOGGLECARD1; }
+                if x == 27 || x == 28 { return UserEvent::TOGGLECARD2; }
+                if x == 30 || x == 31 { return UserEvent::TOGGLECARD3; }
+                if x == 33 || x == 34 { return UserEvent::TOGGLECARD4; }
+                if x == 36 || x == 37 { return UserEvent::TOGGLECARD5; }
+                if x == 39 || x == 40 { return UserEvent::TOGGLECARD6; }
+                if x == 42 || x == 43 { return UserEvent::TOGGLECARD7; }
+                if x == 45 || x == 46 { return UserEvent::TOGGLECARD8; }
+                if x == 48 || x == 49 { return UserEvent::TOGGLECARD9; }
+                if x == 51 || x == 52 { return UserEvent::TOGGLECARD10; }
+                if x == 54 || x == 55 { return UserEvent::TOGGLECARD11; }
+                if x == 57 || x == 58 { return UserEvent::TOGGLECARD12; }
+                if x == 60 || x == 61 { return UserEvent::TOGGLECARD13; }                
             }
             if y == 1 {
                 if x >= 43 && x <= 49 { return UserEvent::PLAY; }
                 if x >= 55 && x <= 62 { return UserEvent::PASS; }
+                if x >= 66 && x <= 74 { return UserEvent::READY; }
             }
-            println!("{:?}", event);
+            trace!("{:?}", event);
         }
-        //if Down(event) 
         return UserEvent::NOTHING;
     }
 
@@ -261,11 +261,11 @@ pub mod display {
     // 4.-- Empty Seat --: # 0                       Delta Score:  €   0  €   0
 
     // 0         1         2         3         4         5         6         7
-    // 123456789_123456789_123456789_123456789_123456789_123456789_123456789_123456789_     
+    // _123456789_123456789_123456789_123456789_123456789_123456789_123456789_123456789_     
     //         _________pietje2: __ __ __ __ __
-    // Rounds: 1/8        Board: 3♦              [ PLAY ]    [ PASS ]
-                                                    
-    // 3.         pietje2: #13 3♣ 5♥ 6♦ 7♥ 7♠ J♠ Q♠ K♣ K♠ A♣ A♥ A♠ 2♥  €   0 PASS
+    // Rounds: 1/8        Board: 3♦              [ PLAY ]    [ PASS ]    [ ] READY
+    //                                                             2♥     
+    // 3.         pietje2: #13 3♣ 5♥ 6♦ 7♥ 7♠ J♠ Q♠ K♣ K♠ A♣ A♥ A♠ ^^  €   0 PASS
     // 4.         pietje2: #12 ## ## ## ## ## ## ## ## ## ## ## ## ..  €   0 
     // 1.         pietje2: #13 ## ## ## ## ## ## ## ## ## ## ## ## ##  €   0 
     // 2.         pietje3: #13 ## ## ## ## ## ## ## ## ## ## ## ## ##  €   0 
@@ -278,6 +278,18 @@ pub mod display {
             execute!(gs.srn, Print("[ PLAY ]".white().on_green()))?;
         } else {
             execute!(gs.srn, Print("[ PLAY ]".white().on_dark_grey()))?;
+        }
+        execute!(gs.srn, RestorePosition)?;
+        Ok(())
+    }
+
+    pub fn draw_btn_ready(gs: &mut big2rules::GameState) -> Result<()> {
+        execute!(gs.srn, SavePosition, MoveTo(66, 1))?;
+
+        if gs.i_am_ready { 
+            execute!(gs.srn, Print("[x] READY".white().on_dark_grey()))?;
+        } else {
+            execute!(gs.srn, Print("[ ] READY".white().on_dark_blue()))?;
         }
         execute!(gs.srn, RestorePosition)?;
         Ok(())
@@ -301,28 +313,32 @@ pub mod display {
         Ok(())
     }
 
-    pub fn board(gs: &mut big2rules::GameState) -> Result<()> {
-        let mut out_str = String::with_capacity(64);
-        let board_kind = gs.board_score & big2rules::cards::Kind::TYPE;
-        let odd_straight: bool = (board_kind == big2rules::cards::Kind::STRAIGHT || board_kind == big2rules::cards::Kind::STRAIGHTFLUSH) && gs.board_score & (0x40 | 0x80) != 0;
+    pub fn cards_str (cards: u64) -> String {
         let mut bit: u64 = 1 << 11;
+        let score = big2rules::rules::score_hand(cards);
+        let board_kind = score & big2rules::cards::Kind::TYPE;
+        let odd_straight: bool = (board_kind == big2rules::cards::Kind::STRAIGHT || board_kind == big2rules::cards::Kind::STRAIGHTFLUSH) && score & (0x40 | 0x80) != 0;        
         if odd_straight { bit = 1 << 38; };
+        let mut card_str = String::with_capacity(64);          
+        for _ in 12..64 {
+            if bit == 1 << 63 { bit = 1 << 11; };
+            bit <<= 1;
+            let card = cards & bit;
+            if card == 0 { continue; }
+            cards_to_utf8(card, &mut card_str);
+            card_str.push(' ');
+        }
+        return card_str;
+    }
 
+    pub fn board(gs: &mut big2rules::GameState) -> Result<()> {
         let name = name_from_muon_string16(&gs.sm.players[gs.sm.action.player as usize].name);
         let s = format!("{:>16}: ", name);
         if gs.sm.action.action_type == client::StateMessageActionType::PASS {
             execute!(gs.srn, MoveTo(9, 0), Print(&s), Print("PASSED".white().on_dark_grey()))?;          
         } else if gs.sm.action.action_type == client::StateMessageActionType::PLAY {
             let cards = client::client::muon_inline8_to_card(&gs.sm.action.cards);
-            let mut card_str = String::from("");
-            for _ in 12..64 {
-                if bit == 1 << 63 { bit = 1 << 11; };
-                bit <<= 1;
-                let card = cards & bit;
-                if card == 0 { continue; }
-                cards_to_utf8(card, &mut card_str);
-                card_str.push(' ');
-            }
+            let card_str = cards_str(cards);
             execute!(gs.srn, MoveTo(9, 0), Print(&s), Print(card_str))?;  
         } else {
             execute!(gs.srn, MoveTo(9, 0), Clear(ClearType::CurrentLine))?; 
@@ -331,14 +347,7 @@ pub mod display {
         execute!(gs.srn, MoveTo(0, 1), Print(format!("Rounds: {}/{}", gs.sm.round, gs.sm.num_rounds)))?;
 
         let cards = client::client::muon_inline8_to_card(&gs.sm.board);
-        for _ in 12..64 {
-            if bit == 1 << 63 { bit = 1 << 11; };
-            bit <<= 1;
-            let card = cards & bit;
-            if card == 0 { continue; }
-            cards_to_utf8(card, &mut out_str);
-            out_str.push(' ');
-        }
+        let out_str = cards_str(cards);
         execute!(gs.srn, MoveTo(20, 1), Print("Board: "), Print(out_str))?;
 
         let mut p = gs.sm.your_index;
@@ -363,7 +372,8 @@ pub mod display {
                 print!("\r\n");
                 p += 1; if p == 4 { p = 0; };
             }
-            // println!("4.           Nick3: #11 ## ## ## ## ## ## ## ## ## ## ## .. ..  €   0 PASS^");
+            draw_btn_ready(gs)?;
+
             return Ok(()); 
         }
 
@@ -401,7 +411,7 @@ pub mod display {
                     out_sel_str.push(' ');
                 }
                 execute!(gs.srn,
-                    MoveTo(25, 2),
+                    MoveTo(24, 2),
                     Clear(ClearType::CurrentLine),
                     Print(out_sel_str),
                 )?;
@@ -411,36 +421,43 @@ pub mod display {
             let no_cards = ".. ".to_string().repeat(13 - n_cards);
             
 
+            // Number and Names.
             execute!(gs.srn,
                 MoveTo(0, 3+row),
                 Print(format!("{}.", p+1)),
             )?;
             if p == gs.sm.turn { 
                 execute!(gs.srn, Print(&s.on_dark_green()))?;
+            } else if has_passed { 
+                execute!(gs.srn, Print(&s.on_dark_grey()))?;
             } else {
                 execute!(gs.srn, Print(&s))?;
             }
 
+            // Cards
             execute!(gs.srn,                
-                Print(format!(" #{:2}", n_cards)),
+                Print(format!("#{:2}", n_cards)),
                 Print(format!(" {}{}", out_str, no_cards)),
-                Print(format!(" {}", score_str(player_score))),
+                Print(format!("{}", score_str(player_score))),
             )?;
 
+            // Passed Text
             if has_passed {
                 execute!(gs.srn,
-                    MoveTo(71, 3+row),
+                    MoveTo(70, 3+row),
                     Print("PASS".white().on_dark_grey() ),
                 )?;
             }
             p += 1; if p == 4 { p = 0; };
         }
 
+        // Debug Text
         execute!(gs.srn,
             MoveTo(0, 7),
             Print(format!("Debug: B {:x} BS {} H {:x} HS {} s {:x} CNT {}\r\n", gs.board, gs.board_score, gs.hand,
             gs.hand_score, gs.cards_selected, gs.counter))
         )?;
+
         Ok(())
     }
 }
