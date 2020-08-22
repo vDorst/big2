@@ -243,7 +243,7 @@ pub mod client {
                 let server = servers.next();
                 if server.is_none() { break; }
                 let l = server.unwrap();
-                info!("Trying {:?}\r\n", l);
+                info!("Connecting to {:?}", l);
                 let ret = TcpStream::connect_timeout(&l, Duration::from_secs(1));
                 match ret {
                     Err(_) => continue,
@@ -270,6 +270,7 @@ pub mod client {
                     },
                 }
             }
+            info!("Unable to connect!");
             Err(io::Error::new(io::ErrorKind::TimedOut, "Can't Connect Timeout!"))
         }
 		

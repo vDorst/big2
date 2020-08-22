@@ -301,10 +301,7 @@ pub struct GameState {
     pub auto_pass: bool,
     pub i_am_ready: bool,
     pub is_valid_hand: bool,
-    pub hand: u64,
     pub hand_score: u64,
-
-    pub counter: u64,
 }
 
 #[cfg(test)]

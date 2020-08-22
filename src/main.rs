@@ -3,13 +3,12 @@ mod cli;
 mod client;
 
 use std::{
-    time::Duration,
     thread,
     time,
     fs::File,
 };
 
-use log::{error, info, warn};
+use log::error;
 #[macro_use]
 extern crate log;
 extern crate simplelog;
@@ -161,16 +160,14 @@ fn main() {
             auto_pass: false,
             i_am_ready: true,
             is_valid_hand: false,
-            hand: 0,
             hand_score: 0,
             sm: bincode::deserialize(empty_buffer).unwrap(),
-            counter: 0,
         };
 
         loop {
             let update: usize;
             match ts.check_buffer(&mut gs.sm) {
-                Ok(ret) => { update = ret; gs.counter += 1; },
+                Ok(ret) => update = ret,
                 Err(e) => {
                     error!("Error {:?}", e);
                     std::process::exit(1);
@@ -203,14 +200,29 @@ fn main() {
                     }
                     client::StateMessageActionType::DEAL => {
                         trace!("PLAY: DEAL: ROUND {}/{}", gs.sm.round, gs.sm.num_rounds);
-                    }                    
+                    }
+                    #[warn(unreachable_patterns)]
                     _ => error!("unknown action {:?}", gs.sm.action.action_type),
-                }
+                };
+
+                let next_str: String = if gs.sm.turn == -1 { 
+                    String::from("Waiting for users ready")
+                } else {
+                    let p = gs.sm.turn;
+                    let name = if p >= 0 && p <= 3 {
+                            let player = &gs.sm.players[p as usize];
+                            cli::display::name_from_muon_string16(&player.name)
+                    } else {
+                            String::from("Unknown")
+                    };
+                    name
+                };
+                trace!("toACT: {}", next_str);
 
                 if gs.sm.action.action_type == client::StateMessageActionType::PLAY
                    || gs.sm.action.action_type == client::StateMessageActionType::PASS {
 
-                    cli::display::board(&mut gs);
+                    if let Err(e) = cli::display::board(&mut gs) { error!("DISPLAY ERROR {}", e); }
                     let ten_millis = time::Duration::from_millis(1000);
                     thread::sleep(ten_millis);                    
 
@@ -218,6 +230,17 @@ fn main() {
                         gs.sm.board = gs.sm.action.cards.clone();
                     }
                     gs.sm.action.action_type = client::StateMessageActionType::UPDATE;
+
+                    // DISABLED FOR NOW!
+                    // // Auto pass when hand count is less then board count
+                    // if gs.sm.board.count != 0 && gs.sm.board.count > gs.sm.your_hand.count { info!("AUTO PASS: CARD COUNT"); gs.auto_pass = true; }
+
+                    // // Auto pass when sigle card is lower then board.
+                    // if gs.sm.board.count == 1 { 
+                    //     let boardcard = client::client::card_from_byte(gs.sm.board.data[0] );
+                    //     let handcard = client::client::card_from_byte(gs.sm.your_hand.data[gs.sm.your_hand.count as usize -1]);
+                    //     if  boardcard > handcard { info!("AUTO PASS: SINGLE B {:x} H {:x}", boardcard, handcard); gs.auto_pass = true; }
+                    // }                    
 
                     // End of cycle?
                     if gs.sm.action.is_end_of_cycle {
@@ -231,10 +254,11 @@ fn main() {
                         gs.board = 0;
                         gs.board_score = 0;
                         gs.i_am_ready = false;
-						gs.cards_selected = 0;
-						gs.hand = 0;
-                        gs.hand_score = 0;
-                        cli::display::clear(&mut gs.srn);
+                        // Clear only the cards when it is not your turn.
+                        if gs.sm.turn != gs.sm.your_index { gs.cards_selected = 0; }
+                        gs.hand_score = big2rules::rules::score_hand(gs.cards_selected);
+                        if let Err(e) = cli::display::clear(&mut gs.srn) { error!("DISPLAY ERROR {}", e); }
+                        trace!("END OF THE CYCLE");
                     }
                 }
                
@@ -243,9 +267,8 @@ fn main() {
                     gs.board_score = 0;
                     gs.i_am_ready = false;
                     gs.cards_selected = 0;
-                    gs.hand = 0;
                     gs.hand_score = 0;
-                    cli::display::clear(&mut gs.srn);
+                    if let Err(e) = cli::display::clear(&mut gs.srn) { error!("DISPLAY ERROR {}", e); }
                     gs.sm.action.action_type = client::StateMessageActionType::UPDATE;
                 }
 
@@ -254,11 +277,9 @@ fn main() {
                     gs.board_score = big2rules::rules::score_hand(gs.board);
                     gs.is_valid_hand = (gs.hand_score > gs.board_score) && (gs.board == 0 || gs.board.count_ones() == gs.cards_selected.count_ones());
                     
-                    if let Err(e) = cli::display::board(&mut gs) {
-                        error!("DISPLAY ERROR {}", e);
-                    }
+                    if let Err(e) = cli::display::board(&mut gs) { error!("DISPLAY ERROR {}", e); }
                 }
-    
+                
                 // Pass / Auto Pass
                 let p = gs.sm.your_index as usize;
                 if gs.sm.turn == gs.sm.your_index && gs.auto_pass && !gs.sm.players[p].has_passed_this_cycle {
@@ -273,9 +294,9 @@ fn main() {
                 let mut toggle_card = 0;
 
                 if user_event == cli::display::UserEvent::RESIZE {
-                        cli::display::clear(&mut gs.srn);
-                        cli::display::board(&mut gs); 
-                        continue;
+                    if let Err(e) = cli::display::clear(&mut gs.srn) { error!("DISPLAY ERROR {}", e); }
+                    if let Err(e) = cli::display::board(&mut gs) { error!("DISPLAY ERROR {}", e); }
+                    continue;
                 }
 
                  if user_event == cli::display::UserEvent::QUIT {
@@ -312,7 +333,7 @@ fn main() {
                         gs.cards_selected = 0;
                         gs.hand_score = 0;
                         gs.is_valid_hand = false;
-                        cli::display::board(&mut gs);
+                        if let Err(e) = cli::display::board(&mut gs) { error!("DISPLAY ERROR {}", e); }
                     }
 
                     let me_index = gs.sm.your_index;
@@ -325,7 +346,7 @@ fn main() {
                         gs.hand_score = big2rules::rules::score_hand(gs.cards_selected);
                         gs.is_valid_hand = is_your_turn && (gs.hand_score > gs.board_score) &&
                                           (gs.board == 0 || gs.board.count_ones() == gs.cards_selected.count_ones());
-                        cli::display::board(&mut gs);
+                        if let Err(e) = cli::display::board(&mut gs) { error!("DISPLAY ERROR {}", e); }
                     }
 
                     let you = &gs.sm.players[me_index as usize];
@@ -354,12 +375,12 @@ fn main() {
                         if user_event == cli::display::UserEvent::PASS &&
                            !you.has_passed_this_cycle {
                             gs.auto_pass = !gs.auto_pass;
-                            cli::display::board(&mut gs);
+                            if let Err(e) = cli::display::board(&mut gs) { error!("DISPLAY ERROR {}", e); }
                         }
                     }
                 }
             }
         }
-        cli::display::close(gs.srn);
+        if let Err(e) = cli::display::board(&mut gs) { error!("DISPLAY ERROR {}", e); }
     }
 }

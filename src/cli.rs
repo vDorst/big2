@@ -45,14 +45,12 @@ pub mod display {
     // use crossterm::{cursor, execute, queue, style, style::Colorize, Command};
 
     // https://en.wikipedia.org/wiki/ANSI_escape_code
-    const COL_PASSED:          &str = "\u{1b}[97;100m"; // White on Grey
     const COL_NORMAL:          &str = "\u{1b}[0m";  // White on black
-    const COL_PLAYER_ACT:      &str = "\u{1b}[97;42m"; // White on Green
-    const COL_PLAYER_PASSED:   &str = "\u{1b}[97;100m";
+
     const COL_CARD_BACK:       &str = "\u{1b}[30;47m";
-    const COL_BTN_DIS:         &str = "\u{1b}[97;100m";
+
     const COL_BTN_PASS_AUTO:   &str = "\u{1b}[97;104m"; // white on blue
-    const COL_BTN_PASS_ACTIVE: &str = "\u{1b}[97;101m"; // white on red
+
 
     const COL_SCORE_POS:       &str = "\u{1b}[97;42m"; // White on Green
     const COL_SCORE_NEG:       &str = "\u{1b}[97;41m"; // White on Red
@@ -65,14 +63,6 @@ pub mod display {
 
     pub fn clear(srn: &mut std::io::Stdout) -> Result<()> {
         execute!(srn, Clear(ClearType::All))
-    }
-
-    pub fn write_status(srn: &mut std::io::Stdout, status: &str) -> Result<()> {
-        execute!(srn,
-            MoveTo(7,0),
-            Print("Status: "),
-            Print(status),
-        )
     }
 
     pub fn init(title: &str) -> Result<std::io::Stdout> {
@@ -112,7 +102,8 @@ pub mod display {
          match cli_user_event {
             Event::Key(key_event) => return handle_key_events(key_event),
             Event::Mouse(mouse_event) => return handle_mouse_events(mouse_event),
-            Event::Resize(width, height) => return UserEvent::RESIZE,
+            Event::Resize(_, _) => return UserEvent::RESIZE,
+            #[warn(unreachable_patterns)]
             _ => return UserEvent::NOTHING,
         }
     }
@@ -454,8 +445,9 @@ pub mod display {
         // Debug Text
         execute!(gs.srn,
             MoveTo(0, 7),
-            Print(format!("Debug: B {:x} BS {} H {:x} HS {} s {:x} CNT {}\r\n", gs.board, gs.board_score, gs.hand,
-            gs.hand_score, gs.cards_selected, gs.counter))
+            Clear(ClearType::CurrentLine),
+            Print(format!("Debug: B {:x} BS {} s {:x} HS {}", gs.board, gs.board_score,
+            gs.cards_selected, gs.hand_score))
         )?;
 
         Ok(())
