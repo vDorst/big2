@@ -1,7 +1,4 @@
 use crate::big2rules;
-#[macro_use]
-use crate::log;
-
 use serde::{Deserialize, Serialize};
 
 use std::{
@@ -9,7 +6,6 @@ use std::{
     net::{TcpStream, ToSocketAddrs},
     mem,
     time::Duration,
-    // thread::{JoinHandle},
 	thread,
     sync::mpsc::{Sender, Receiver},
 };

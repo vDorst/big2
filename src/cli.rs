@@ -41,8 +41,6 @@ pub mod display {
         TOGGLECARD12,
         TOGGLECARD13,
     }
-    
-    // use crossterm::{cursor, execute, queue, style, style::Colorize, Command};
 
     // https://en.wikipedia.org/wiki/ANSI_escape_code
     const COL_NORMAL:          &str = "\u{1b}[0m";  // White on black
@@ -72,9 +70,9 @@ pub mod display {
 
         //EnterAlternateScreen
         execute!(srn, EnterAlternateScreen, EnableMouseCapture, SetSize(80, 10))?;
-        
+
         // execute!(stdout, EnableMouseCapture)?;
-      
+
         execute!(srn,
             Clear(ClearType::All),
             SetTitle(&title),
@@ -103,14 +101,12 @@ pub mod display {
             Event::Key(key_event) => return handle_key_events(key_event),
             Event::Mouse(mouse_event) => return handle_mouse_events(mouse_event),
             Event::Resize(_, _) => return UserEvent::RESIZE,
-            #[warn(unreachable_patterns)]
-            _ => return UserEvent::NOTHING,
         }
     }
 
     fn handle_mouse_events(event: crossterm::event::MouseEvent) -> UserEvent {
-        if let MouseEvent::Down(btn, x, y, m) = event {
-            if btn == MouseButton::Right { return UserEvent::CLEAR; }           
+        if let MouseEvent::Down(btn, x, y, _) = event {
+            if btn == MouseButton::Right { return UserEvent::CLEAR; }
             if y == 3 || y == 2 {
                 if x == 24 || x == 25 { return UserEvent::TOGGLECARD1; }
                 if x == 27 || x == 28 { return UserEvent::TOGGLECARD2; }
@@ -124,7 +120,7 @@ pub mod display {
                 if x == 51 || x == 52 { return UserEvent::TOGGLECARD10; }
                 if x == 54 || x == 55 { return UserEvent::TOGGLECARD11; }
                 if x == 57 || x == 58 { return UserEvent::TOGGLECARD12; }
-                if x == 60 || x == 61 { return UserEvent::TOGGLECARD13; }                
+                if x == 60 || x == 61 { return UserEvent::TOGGLECARD13; }
             }
             if y == 1 {
                 if x >= 43 && x <= 49 { return UserEvent::PLAY; }
@@ -252,20 +248,20 @@ pub mod display {
     // 4.-- Empty Seat --: # 0                       Delta Score:  €   0  €   0
 
     // 0         1         2         3         4         5         6         7
-    // _123456789_123456789_123456789_123456789_123456789_123456789_123456789_123456789_     
+    // _123456789_123456789_123456789_123456789_123456789_123456789_123456789_123456789_
     //         _________pietje2: __ __ __ __ __
     // Rounds: 1/8        Board: 3♦              [ PLAY ]    [ PASS ]    [ ] READY
-    //                                                             2♥     
+    //                                                             2♥
     // 3.         pietje2: #13 3♣ 5♥ 6♦ 7♥ 7♠ J♠ Q♠ K♣ K♠ A♣ A♥ A♠ ^^  €   0 PASS
-    // 4.         pietje2: #12 ## ## ## ## ## ## ## ## ## ## ## ## ..  €   0 
-    // 1.         pietje2: #13 ## ## ## ## ## ## ## ## ## ## ## ## ##  €   0 
-    // 2.         pietje3: #13 ## ## ## ## ## ## ## ## ## ## ## ## ##  €   0 
+    // 4.         pietje2: #12 ## ## ## ## ## ## ## ## ## ## ## ## ..  €   0
+    // 1.         pietje2: #13 ## ## ## ## ## ## ## ## ## ## ## ## ##  €   0
+    // 2.         pietje3: #13 ## ## ## ## ## ## ## ## ## ## ## ## ##  €   0
 
 
     pub fn draw_btn_play(gs: &mut big2rules::GameState) -> Result<()> {
         execute!(gs.srn, SavePosition, MoveTo(43, 1))?;
 
-        if gs.sm.your_index == gs.sm.turn && gs.is_valid_hand { 
+        if gs.sm.your_index == gs.sm.turn && gs.is_valid_hand {
             execute!(gs.srn, Print("[ PLAY ]".white().on_green()))?;
         } else {
             execute!(gs.srn, Print("[ PLAY ]".white().on_dark_grey()))?;
@@ -277,7 +273,7 @@ pub mod display {
     pub fn draw_btn_ready(gs: &mut big2rules::GameState) -> Result<()> {
         execute!(gs.srn, SavePosition, MoveTo(66, 1))?;
 
-        if gs.i_am_ready { 
+        if gs.i_am_ready {
             execute!(gs.srn, Print("[x] READY".white().on_dark_grey()))?;
         } else {
             execute!(gs.srn, Print("[ ] READY".white().on_dark_blue()))?;
@@ -291,7 +287,7 @@ pub mod display {
 
         let has_passed_this_cycle = gs.sm.players[gs.sm.your_index as usize].has_passed_this_cycle;
 
-        if has_passed_this_cycle { 
+        if has_passed_this_cycle {
             execute!(gs.srn, Print("[X] PASS".white().on_dark_grey()))?;
         } else {
             if gs.auto_pass {
@@ -308,9 +304,9 @@ pub mod display {
         let mut bit: u64 = 1 << 11;
         let score = big2rules::rules::score_hand(cards);
         let board_kind = score & big2rules::cards::Kind::TYPE;
-        let odd_straight: bool = (board_kind == big2rules::cards::Kind::STRAIGHT || board_kind == big2rules::cards::Kind::STRAIGHTFLUSH) && score & (0x40 | 0x80) != 0;        
+        let odd_straight: bool = (board_kind == big2rules::cards::Kind::STRAIGHT || board_kind == big2rules::cards::Kind::STRAIGHTFLUSH) && score & (0x40 | 0x80) != 0;
         if odd_straight { bit = 1 << 38; };
-        let mut card_str = String::with_capacity(64);          
+        let mut card_str = String::with_capacity(64);
         for _ in 12..64 {
             if bit == 1 << 63 { bit = 1 << 11; };
             bit <<= 1;
@@ -326,13 +322,13 @@ pub mod display {
         let name = name_from_muon_string16(&gs.sm.players[gs.sm.action.player as usize].name);
         let s = format!("{:>16}: ", name);
         if gs.sm.action.action_type == client::StateMessageActionType::PASS {
-            execute!(gs.srn, MoveTo(9, 0), Print(&s), Print("PASSED".white().on_dark_grey()))?;          
+            execute!(gs.srn, MoveTo(9, 0), Print(&s), Print("PASSED".white().on_dark_grey()))?;
         } else if gs.sm.action.action_type == client::StateMessageActionType::PLAY {
             let cards = client::client::muon_inline8_to_card(&gs.sm.action.cards);
             let card_str = cards_str(cards);
-            execute!(gs.srn, MoveTo(9, 0), Print(&s), Print(card_str))?;  
+            execute!(gs.srn, MoveTo(9, 0), Print(&s), Print(card_str))?;
         } else {
-            execute!(gs.srn, MoveTo(9, 0), Clear(ClearType::CurrentLine))?; 
+            execute!(gs.srn, MoveTo(9, 0), Clear(ClearType::CurrentLine))?;
         }
 
         execute!(gs.srn, MoveTo(0, 1), Print(format!("Rounds: {}/{}", gs.sm.round, gs.sm.num_rounds)))?;
@@ -350,8 +346,8 @@ pub mod display {
             execute!(gs.srn, MoveTo(0, 3))?;
             for _ in 0..4 {
                 let player = &gs.sm.players[p as usize];
-                let mut name = name_from_muon_string16(&player.name);
-                if name == "" { name = String::from("-- Empty Seat --"); }
+                let name = name_from_muon_string16(&player.name);
+                let name = if name == "" { String::from("-- Empty Seat --") } else { name };
                 let n_cards: usize = player.num_cards as usize;
                 print!("\r{}.{:>16}{}:", p + 1, name, COL_NORMAL);
                 print!(" #{:2}", n_cards);
@@ -365,7 +361,7 @@ pub mod display {
             }
             draw_btn_ready(gs)?;
 
-            return Ok(()); 
+            return Ok(());
         }
 
         if p >= 0 {
@@ -375,8 +371,8 @@ pub mod display {
 
         for row in 0..4 {
             let player = &gs.sm.players[p as usize];
-            let mut name = name_from_muon_string16(&player.name);
-            if name == "" { name = String::from("-- Empty Seat --"); }
+            let name = name_from_muon_string16(&player.name);
+            let name: String = if name != "" { name } else { String::from("-- Empty Seat --") };
             let s = format!("{:>16}: ", name);
 
             let mut out_str = String::from("");
@@ -410,23 +406,23 @@ pub mod display {
                 out_str = format!("{}##{} ", COL_CARD_BACK, COL_NORMAL).repeat(n_cards);
             }
             let no_cards = ".. ".to_string().repeat(13 - n_cards);
-            
+
 
             // Number and Names.
             execute!(gs.srn,
                 MoveTo(0, 3+row),
                 Print(format!("{}.", p+1)),
             )?;
-            if p == gs.sm.turn { 
+            if p == gs.sm.turn {
                 execute!(gs.srn, Print(&s.on_dark_green()))?;
-            } else if has_passed { 
+            } else if has_passed {
                 execute!(gs.srn, Print(&s.on_dark_grey()))?;
             } else {
                 execute!(gs.srn, Print(&s))?;
             }
 
             // Cards
-            execute!(gs.srn,                
+            execute!(gs.srn,
                 Print(format!("#{:2}", n_cards)),
                 Print(format!(" {}{}", out_str, no_cards)),
                 Print(format!("{}", score_str(player_score))),
