@@ -1,6 +1,6 @@
 mod big2rules;
 mod cli;
-mod client;
+mod network;
 
 use std::{fs::File, thread, time};
 
@@ -105,7 +105,7 @@ fn parse_args() -> CliArgs {
             // append default port is not provided.
             if !join_addr.contains(":") {
                 join_addr.push(':');
-                join_addr.push_str(&client::client::PORT.to_string());
+                join_addr.push_str(&network::client::PORT.to_string());
             }
             arg.socket_addr = join_addr;
             arg.app_mode = AppMode::CLIENT;
@@ -138,11 +138,11 @@ fn main() {
     struct GameStateServer {
         cards: [u64; 4],
         cards_played: u64,
-        sm: client::StateMessage,
+        sm: network::StateMessage,
     }
 
     if cli_args.app_mode == AppMode::HOSTONLY {
-        let empty_buffer = &[0u8; std::mem::size_of::<client::StateMessage>()];
+        let empty_buffer = &[0u8; std::mem::size_of::<network::StateMessage>()];
         let mut gs = GameStateServer {
             cards: big2rules::deck::deal(),
             cards_played: 0,
@@ -165,7 +165,7 @@ fn main() {
 
         let srn = cli::display::init(&title).unwrap();
 
-        let client = client::client::TcpClient::connect(cli_args.socket_addr);
+        let client = network::client::TcpClient::connect(cli_args.socket_addr);
 
         if let Err(e) = client {
             let _ = cli::display::close(srn);
@@ -181,7 +181,7 @@ fn main() {
             std::process::exit(1);
         }
 
-        let empty_buffer = &[0u8; std::mem::size_of::<client::StateMessage>()];
+        let empty_buffer = &[0u8; std::mem::size_of::<network::StateMessage>()];
         let mut gs = big2rules::GameState {
             srn: srn,
             board: 0,
@@ -208,17 +208,17 @@ fn main() {
             // Process new StateMessage
             if update == 1 {
                 match gs.sm.action.action_type {
-                    client::StateMessageActionType::PLAY => {
+                    network::StateMessageActionType::PLAY => {
                         let p = gs.sm.action.player;
                         if p >= 0 && p <= 3 {
-                            let cards = client::client::muon_inline8_to_card(&gs.sm.action.cards);
+                            let cards = network::muon::inline8_to_card(&gs.sm.action.cards);
                             let player = &gs.sm.players[p as usize];
                             let name = cli::display::name_from_muon_string16(&player.name);
                             let cards_str = cli::display::cards_str(cards);
                             trace!("PLAY: {:>16}: {}", name, cards_str);
                         }
                     }
-                    client::StateMessageActionType::PASS => {
+                    network::StateMessageActionType::PASS => {
                         let p = gs.sm.action.player;
                         if p >= 0 && p <= 3 {
                             let player = &gs.sm.players[p as usize];
@@ -226,10 +226,10 @@ fn main() {
                             trace!("PLAY: {:>16}: PASSED", name);
                         }
                     }
-                    client::StateMessageActionType::UPDATE => {
+                    network::StateMessageActionType::UPDATE => {
                         trace!("PLAY: UPDATE");
                     }
-                    client::StateMessageActionType::DEAL => {
+                    network::StateMessageActionType::DEAL => {
                         trace!("PLAY: DEAL: ROUND {}/{}", gs.sm.round, gs.sm.num_rounds);
                     }
                 };
@@ -248,8 +248,8 @@ fn main() {
                 };
                 trace!("toACT: {}", next_str);
 
-                if gs.sm.action.action_type == client::StateMessageActionType::PLAY
-                    || gs.sm.action.action_type == client::StateMessageActionType::PASS
+                if gs.sm.action.action_type == network::StateMessageActionType::PLAY
+                    || gs.sm.action.action_type == network::StateMessageActionType::PASS
                 {
                     if let Err(e) = cli::display::board(&mut gs) {
                         error!("DISPLAY ERROR {}", e);
@@ -257,10 +257,10 @@ fn main() {
                     let ten_millis = time::Duration::from_millis(1000);
                     thread::sleep(ten_millis);
 
-                    if gs.sm.action.action_type == client::StateMessageActionType::PLAY {
+                    if gs.sm.action.action_type == network::StateMessageActionType::PLAY {
                         gs.sm.board = gs.sm.action.cards.clone();
                     }
-                    gs.sm.action.action_type = client::StateMessageActionType::UPDATE;
+                    gs.sm.action.action_type = network::StateMessageActionType::UPDATE;
 
                     // DISABLED FOR NOW!
                     // // Auto pass when hand count is less then board count
@@ -268,8 +268,8 @@ fn main() {
 
                     // // Auto pass when sigle card is lower then board.
                     // if gs.sm.board.count == 1 {
-                    //     let boardcard = client::client::card_from_byte(gs.sm.board.data[0] );
-                    //     let handcard = client::client::card_from_byte(gs.sm.your_hand.data[gs.sm.your_hand.count as usize -1]);
+                    //     let boardcard = network::client::card_from_byte(gs.sm.board.data[0] );
+                    //     let handcard = network::client::card_from_byte(gs.sm.your_hand.data[gs.sm.your_hand.count as usize -1]);
                     //     if  boardcard > handcard { info!("AUTO PASS: SINGLE B {:x} H {:x}", boardcard, handcard); gs.auto_pass = true; }
                     // }
 
@@ -281,7 +281,7 @@ fn main() {
                             gs.sm.players[p].has_passed_this_cycle = false;
                         }
                         // Clear board and scores.
-                        gs.sm.board = client::MuonInlineList8 {
+                        gs.sm.board = network::muon::InlineList8 {
                             data: [0; 8],
                             count: 0,
                         };
@@ -300,7 +300,7 @@ fn main() {
                     }
                 }
 
-                if gs.sm.action.action_type == client::StateMessageActionType::DEAL {
+                if gs.sm.action.action_type == network::StateMessageActionType::DEAL {
                     gs.board = 0;
                     gs.board_score = 0;
                     gs.i_am_ready = false;
@@ -309,11 +309,11 @@ fn main() {
                     if let Err(e) = cli::display::clear(&mut gs.srn) {
                         error!("DISPLAY ERROR {}", e);
                     }
-                    gs.sm.action.action_type = client::StateMessageActionType::UPDATE;
+                    gs.sm.action.action_type = network::StateMessageActionType::UPDATE;
                 }
 
-                if gs.sm.action.action_type == client::StateMessageActionType::UPDATE {
-                    gs.board = client::client::muon_inline8_to_card(&gs.sm.board);
+                if gs.sm.action.action_type == network::StateMessageActionType::UPDATE {
+                    gs.board = network::muon::inline8_to_card(&gs.sm.board);
                     gs.board_score = big2rules::rules::score_hand(gs.board);
                     gs.is_valid_hand = (gs.hand_score > gs.board_score)
                         && (gs.board == 0
@@ -353,7 +353,7 @@ fn main() {
                 }
 
                 if user_event == cli::display::UserEvent::QUIT {
-                    client::client::disconnect(ts);
+                    network::client::disconnect(ts);
                     break;
                 }
 
@@ -426,7 +426,7 @@ fn main() {
                             continue;
                         }
                         let card =
-                            client::client::card_from_byte(gs.sm.your_hand.data[toggle_card - 1]);
+                            network::muon::card_from_byte(gs.sm.your_hand.data[toggle_card - 1]);
                         gs.cards_selected ^= card;
                         gs.hand_score = big2rules::rules::score_hand(gs.cards_selected);
                         gs.is_valid_hand = is_your_turn
@@ -451,9 +451,9 @@ fn main() {
                         // Play hand
                         if user_event == cli::display::UserEvent::PLAY && gs.is_valid_hand {
                             // println!("Play hand");
-                            gs.sm.action.action_type = client::StateMessageActionType::PLAY;
+                            gs.sm.action.action_type = network::StateMessageActionType::PLAY;
 
-                            let hand = client::client::muon_inline8_from_card(gs.cards_selected);
+                            let hand = network::muon::inline8_from_card(gs.cards_selected);
                             if let Err(e) = ts.action_play(&hand) {
                                 println!("Could not send your hand to the server!\r\n{}", e);
                             }
