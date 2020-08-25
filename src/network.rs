@@ -89,7 +89,7 @@ pub mod muon {
         pub count: i32,
     }
 
-    #[derive(Serialize, Deserialize, Debug, Copy, Clone)]
+    #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq)]
     pub struct InlineList8 {
         pub data: [u8; 8],
         pub count: i32,
@@ -121,12 +121,14 @@ pub mod muon {
     pub fn inline8_from_card(hand: u64) -> InlineList8 {
         let mut cards = InlineList8 {
             data: [0; 8],
-            count: hand.count_ones() as i32,
+            count: 0,
         };
         let num_cards = hand.count_ones();
-        if num_cards > 5 {
+        if num_cards > 5 || num_cards == 4 {
             return cards;
         };
+
+        cards.count = num_cards as i32;
 
         let mut p: usize = 0;
         for bit in 12..64 {
@@ -136,6 +138,31 @@ pub mod muon {
                 cards.data[p] = cards_to_byte(card);
                 p += 1;
             }
+        }
+        return cards;
+    }
+
+    pub fn inline8_from_card_fast(hand: u64) -> InlineList8 {
+        let mut cards = InlineList8 {
+            data: [0; 8],
+            count: 0,
+        };
+        let num_cards = hand.count_ones();
+        if num_cards > 5 || num_cards == 4 {
+            return cards;
+        };
+
+        cards.count = num_cards as i32;
+
+        let mut hand = hand;
+        let mut p: usize = 0;
+        while hand != 0 {
+            let zeros = hand.trailing_zeros() as u64;
+
+            let mask = 1 << zeros;
+            hand ^= mask;
+            cards.data[p] = cards_to_byte(mask);
+            p += 1;
         }
         return cards;
     }
@@ -667,5 +694,74 @@ mod tests {
         };
         let byte_buf = bincode::serialize(&sm).unwrap();
         println!("action_play: {:x?}", byte_buf);
+    }
+
+    #[test]
+    fn a_rules_sizes() {
+        let hand: u64 = 0;
+        let muon_hand = muon::inline8_from_card(hand);
+        let muon_hand_fast = muon::inline8_from_card_fast(hand);
+        let il8 = muon::InlineList8 {
+            data: [0; 8],
+            count: 0,
+        };
+        assert_eq!(muon_hand, muon_hand_fast);
+        assert_eq!(muon_hand, il8);
+        assert_eq!(hand, muon::inline8_to_card(&muon_hand));
+
+        let hand: u64 = 0x1000;
+        let il8 = muon::InlineList8 {
+            data: [0x3, 0, 0, 0, 0, 0, 0, 0],
+            count: 1,
+        };
+        let muon_hand = muon::inline8_from_card(hand);
+        let muon_hand_fast = muon::inline8_from_card_fast(hand);
+        assert_eq!(muon_hand, muon_hand_fast);
+        assert_eq!(muon_hand, il8);
+        assert_eq!(hand, muon::inline8_to_card(&muon_hand));
+
+        let hand: u64 = 0xF000;
+        let il8 = muon::InlineList8 {
+            data: [0; 8],
+            count: 0,
+        };
+        let muon_hand = muon::inline8_from_card(hand);
+        let muon_hand_fast = muon::inline8_from_card_fast(hand);
+        assert_eq!(muon_hand, muon_hand_fast);
+        assert_eq!(muon_hand, il8);
+        assert!(muon::inline8_to_card(&muon_hand) == 0);
+
+        let hand: u64 = 0x1F000;
+        let il8 = muon::InlineList8 {
+            data: [3, 19, 35, 51, 4, 0, 0, 0],
+            count: 5,
+        };
+        let muon_hand = muon::inline8_from_card(hand);
+        let muon_hand_fast = muon::inline8_from_card_fast(hand);
+        assert_eq!(muon_hand, muon_hand_fast);
+        assert_eq!(muon_hand, il8);
+        assert_eq!(hand, muon::inline8_to_card(&muon_hand));
+
+        let hand: u64 = 0xFF000;
+        let il8 = muon::InlineList8 {
+            data: [0; 8],
+            count: 0,
+        };
+        let muon_hand = muon::inline8_from_card(hand);
+        let muon_hand_fast = muon::inline8_from_card_fast(hand);
+        assert_eq!(muon_hand, muon_hand_fast);
+        assert_eq!(muon_hand, il8);
+        assert!(muon::inline8_to_card(&muon_hand) == 0);
+
+        let hand: u64 = 0xFFF000;
+        let il8 = muon::InlineList8 {
+            data: [0; 8],
+            count: 0,
+        };
+        let muon_hand = muon::inline8_from_card(hand);
+        let muon_hand_fast = muon::inline8_from_card_fast(hand);
+        assert_eq!(muon_hand, muon_hand_fast);
+        assert_eq!(muon_hand, il8);
+        assert!(muon::inline8_to_card(&muon_hand) == 0);
     }
 }
