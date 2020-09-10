@@ -105,7 +105,7 @@ fn parse_args() -> CliArgs {
             // append default port is not provided.
             if !join_addr.contains(":") {
                 join_addr.push(':');
-                join_addr.push_str(&network::client::PORT.to_string());
+                join_addr.push_str(&network::common::PORT.to_string());
             }
             arg.socket_addr = join_addr;
             arg.app_mode = AppMode::CLIENT;

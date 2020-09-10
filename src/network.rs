@@ -161,13 +161,15 @@ pub mod muon {
     }
 }
 
-pub mod client {
-    use super::*;
-
+pub mod common {
     pub const PORT: u16 = 27191;
     pub const VERSION: u32 = 5;
     pub const MAGICNUMBER: u32 = 0x3267_6962;
     pub const BUFSIZE: usize = 512;
+}
+
+pub mod client {
+    use super::*;
 
     pub struct TcpClient {
         id: Option<thread::JoinHandle<()>>,
@@ -176,12 +178,13 @@ pub mod client {
     }
 
     fn thread_tcp(mut ts: TcpStream, tx: Sender<Vec<u8>>, rx: Receiver<Vec<u8>>) {
-        let mut buffer = [0; BUFSIZE];
+        let mut buffer = [0; common::BUFSIZE];
 
         loop {
             let tx_data = rx.try_recv();
             if let Err(e) = tx_data {
                 if e == std::sync::mpsc::TryRecvError::Disconnected {
+                    error!("TCP: TX channel disconnected");
                     break;
                 }
             }
@@ -216,8 +219,6 @@ pub mod client {
             }
 
             let dm: client::DetectMessage = bincode::deserialize(&buffer).unwrap();
-
-            // print!("TCP: Message Kind {} Size {}\r", dm.kind, dm.size);
 
             // Update
             if dm.kind == 5 && dm.size as usize == mem::size_of::<StateMessage>() {
@@ -354,8 +355,8 @@ pub mod client {
             let jm = JoinMessage {
                 kind: 1,
                 size: mem::size_of::<JoinMessage>() as u32,
-                magicnumber: MAGICNUMBER,
-                version: VERSION,
+                magicnumber: common::MAGICNUMBER,
+                version: common::VERSION,
                 name: muon::String16 {
                     data: name_bytes,
                     count: str_size as i32,

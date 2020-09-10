@@ -15,7 +15,7 @@ pub mod display {
         },
         execute,
         //queue,
-        style::{Colorize, Print},
+        style::{Colorize, Print, ResetColor},
         //QueueableCommand,
         terminal::{
             disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen,
@@ -71,27 +71,31 @@ pub mod display {
     pub fn init(title: &str) -> Result<std::io::Stdout> {
         let mut srn = stdout();
 
-        enable_raw_mode()?;
-
-        //EnterAlternateScreen
         execute!(
             srn,
             EnterAlternateScreen,
             EnableMouseCapture,
-            SetSize(80, 10)
+            SetSize(80, 10),
+            Clear(ClearType::All),
+            SetTitle(&title),
         )?;
 
-        // execute!(stdout, EnableMouseCapture)?;
-
-        execute!(srn, Clear(ClearType::All), SetTitle(&title),)?;
+        enable_raw_mode()?;
 
         return Ok(srn);
     }
 
     pub fn close(mut srn: std::io::Stdout) -> Result<()> {
-        // execute!(stdout, DisableMouseCapture)?;
-        execute!(srn, LeaveAlternateScreen, DisableMouseCapture)?;
         disable_raw_mode()?;
+        execute!(
+            srn,
+            ResetColor,
+            DisableMouseCapture,
+            LeaveAlternateScreen,
+            Clear(ClearType::All),
+            Print("Bye".white().on_dark_grey()),
+        )?;
+
         Ok(())
     }
 
@@ -546,16 +550,16 @@ pub mod display {
             };
         }
 
-        // Debug Text
-        execute!(
-            gs.srn,
-            MoveTo(0, 7),
-            Clear(ClearType::CurrentLine),
-            Print(format!(
-                "Debug: B {:x} BS {} s {:x} HS {}",
-                gs.board, gs.board_score, gs.cards_selected, gs.hand_score
-            ))
-        )?;
+        // // Debug Text
+        // execute!(
+        //     gs.srn,
+        //     MoveTo(0, 7),
+        //     Clear(ClearType::CurrentLine),
+        //     Print(format!(
+        //         "Debug: B {:x} BS {} s {:x} HS {}",
+        //         gs.board, gs.board_score, gs.cards_selected, gs.hand_score
+        //     ))
+        // )?;
 
         Ok(())
     }
