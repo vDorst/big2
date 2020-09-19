@@ -248,6 +248,11 @@ fn main() {
                 };
                 trace!("toACT: {}", next_str);
 
+                let title: &str = &format!("TURN: {}", next_str);
+                if let Err(e) = cli::display::titlebar(&mut gs.srn, title) {
+                    error!("DISPLAY TITLE ERROR {}", e);
+                }
+
                 if gs.sm.action.action_type == network::StateMessageActionType::PLAY
                     || gs.sm.action.action_type == network::StateMessageActionType::PASS
                 {

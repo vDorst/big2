@@ -68,6 +68,10 @@ pub mod display {
         execute!(srn, Clear(ClearType::All))
     }
 
+    pub fn titlebar(srn: &mut std::io::Stdout, title: &str) -> Result<()> {
+        execute!(srn, SetTitle(&title))
+    }
+
     pub fn init(title: &str) -> Result<std::io::Stdout> {
         let mut srn = stdout();
 
@@ -77,8 +81,10 @@ pub mod display {
             EnableMouseCapture,
             SetSize(80, 10),
             Clear(ClearType::All),
-            SetTitle(&title),
+            //SetTitle(&title),
         )?;
+
+        titlebar(&mut srn, title)?;
 
         enable_raw_mode()?;
 
