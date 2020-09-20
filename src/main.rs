@@ -232,16 +232,18 @@ fn main() {
                 };
 
                 let next_str: String = if gs.sm.turn == -1 {
-                    String::from("Waiting for users ready")
-                } else {
-                    let p = gs.sm.turn;
-                    let name = if p >= 0 && p <= 3 {
-                        let player = &gs.sm.players[p as usize];
-                        cli::display::name_from_muon_string16(&player.name)
+                    if gs.sm.round == gs.sm.num_rounds {
+                        String::from("The END!")
                     } else {
+                        String::from("Waiting for users ready")
+                    }
+                } else {
+                    let name = gs.sm.current_player_name();
+                    if name.is_none() {
                         String::from("Unknown")
-                    };
-                    name
+                    } else {
+                        name.unwrap()
+                    }
                 };
                 trace!("toACT: {}", next_str);
 

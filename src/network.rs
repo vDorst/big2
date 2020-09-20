@@ -87,6 +87,22 @@ impl StateMessage {
         sm.size = mem::size_of::<StateMessage>() as u32;
         sm
     }
+    pub fn current_player(&self) -> Option<usize> {
+        if self.turn == -1 || self.turn < 0 || self.turn > 3 {
+            return None;
+        }
+        Some(self.turn as usize)
+    }
+    pub fn current_player_name(&self) -> Option<String> {
+        match self.current_player() {
+            None => return None,
+            Some(p) => {
+                return Some(crate::cli::display::name_from_muon_string16(
+                    &self.players[p].name,
+                ));
+            }
+        }
+    }
 }
 
 pub mod muon {
@@ -742,5 +758,34 @@ mod tests {
         let muon_hand = muon::inline8_from_card(hand);
         assert_eq!(muon_hand, il8);
         assert!(muon::inline8_to_card(&muon_hand) == 0);
+    }
+    #[test]
+    fn statemessage_current_players_names() {
+        let buffer: &[u8] = &[
+            5, 0, 0, 0, 0xe0, 0, 0, 0, 1, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0x15, 7,
+            0x37, 0x28, 0x38, 0x39, 0xa, 0x2b, 0x3b, 0x2c, 0x1d, 0x3d, 2, 0, 0, 0, 0xd, 0, 0, 0,
+            0x54, 0x69, 0x6b, 0x6b, 0x69, 0x65, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0,
+            0, 9, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0x68, 0x6f, 0x73, 0x74, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0x52, 0x65,
+            0x6e, 0x65, 0x31, 0x32, 0x33, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0xb,
+            0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0x52, 0x65, 0x6e, 0x65, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0xd, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0x16, 0x26, 0, 0,
+            0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0,
+        ];
+        let mut sm = StateMessage::new(Some(buffer));
+        assert_eq!(sm.current_player().unwrap(), 0);
+        assert_eq!(sm.current_player_name().unwrap(), "Tikkie");
+        sm.turn = -1;
+        assert!(sm.current_player().is_none());
+        assert!(sm.current_player_name().is_none());
+        sm.turn = 1;
+        assert_eq!(sm.current_player_name().unwrap(), "host");
+        sm.turn = 2;
+        assert_eq!(sm.current_player_name().unwrap(), "Rene123");
+        sm.turn = 3;
+        assert_eq!(sm.current_player_name().unwrap(), "Rene");
+        sm.turn = 4;
+        assert!(sm.current_player().is_none());
     }
 }
