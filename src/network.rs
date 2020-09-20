@@ -97,9 +97,7 @@ impl StateMessage {
         match self.current_player() {
             None => return None,
             Some(p) => {
-                return Some(crate::cli::display::name_from_muon_string16(
-                    &self.players[p].name,
-                ));
+                return Some(self.players[p].name.to_string());
             }
         }
     }
@@ -112,6 +110,35 @@ pub mod muon {
     pub struct String16 {
         pub data: [u8; 16],
         pub count: i32,
+    }
+
+    impl String16 {
+        pub fn to_string(&self) -> String {
+            let mut s = String::with_capacity(16);
+            if self.count < 0 || self.count > 16 {
+                s.push_str("Invalid string");
+                return s;
+            }
+
+            let cnt: usize = self.count as usize;
+            let s_ret = String::from_utf8(self.data[..cnt].to_vec());
+            match s_ret {
+                Err(_) => s.push_str("Can't convert"),
+                Ok(st) => s = st,
+            }
+            return s;
+        }
+
+        pub fn from_string(name: &String) -> Self {
+            let str_size = std::cmp::min(name.len(), 16);
+            let mut name_bytes: [u8; 16] = [0; 16];
+            let nb = &name.as_bytes()[..str_size];
+            name_bytes[..str_size].clone_from_slice(nb);
+            String16 {
+                count: str_size as i32,
+                data: name_bytes,
+            }
+        }
     }
 
     #[derive(Serialize, Deserialize, Debug)]
@@ -376,18 +403,12 @@ pub mod client {
         }
 
         pub fn send_join_msg(&mut self, name: &String) -> Result<usize, io::Error> {
-            let mut name_bytes: [u8; 16] = [0; 16];
-            let str_size = std::cmp::min(name.len(), 16);
-            name_bytes[..str_size].clone_from_slice(&name.as_bytes()[..str_size]);
             let jm = JoinMessage {
                 kind: 1,
                 size: mem::size_of::<JoinMessage>() as u32,
                 magicnumber: common::MAGICNUMBER,
                 version: common::VERSION,
-                name: muon::String16 {
-                    data: name_bytes,
-                    count: str_size as i32,
-                },
+                name: muon::String16::from_string(&name),
             };
 
             // Send Join Message.

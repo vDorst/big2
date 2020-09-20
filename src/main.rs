@@ -206,21 +206,17 @@ fn main() {
                 gs.sm = buffer_sm.unwrap();
                 match gs.sm.action.action_type {
                     network::StateMessageActionType::PLAY => {
-                        let p = gs.sm.action.player;
-                        if p >= 0 && p <= 3 {
+                        let name = gs.sm.current_player_name();
+                        if name.is_some() {
                             let cards = network::muon::inline8_to_card(&gs.sm.action.cards);
-                            let player = &gs.sm.players[p as usize];
-                            let name = cli::display::name_from_muon_string16(&player.name);
                             let cards_str = cli::display::cards_str(cards);
-                            trace!("PLAY: {:>16}: {}", name, cards_str);
+                            trace!("PLAY: {:>16}: {}", name.unwrap(), cards_str);
                         }
                     }
                     network::StateMessageActionType::PASS => {
-                        let p = gs.sm.action.player;
-                        if p >= 0 && p <= 3 {
-                            let player = &gs.sm.players[p as usize];
-                            let name = cli::display::name_from_muon_string16(&player.name);
-                            trace!("PLAY: {:>16}: PASSED", name);
+                        let name = gs.sm.current_player_name();
+                        if name.is_some() {
+                            trace!("PLAY: {:>16}: PASSED", name.unwrap());
                         }
                     }
                     network::StateMessageActionType::UPDATE => {

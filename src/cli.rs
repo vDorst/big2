@@ -291,22 +291,6 @@ pub mod display {
         println!("mycards: {}", out_str);
     }
 
-    pub fn name_from_muon_string16(sm_name: &network::muon::String16) -> String {
-        let mut s = String::with_capacity(16);
-        if sm_name.count < 0 || sm_name.count > 16 {
-            s.push_str("Invalid string");
-            return s;
-        }
-
-        let cnt: usize = sm_name.count as usize;
-        let s_ret = String::from_utf8(sm_name.data[..cnt].to_vec());
-        match s_ret {
-            Err(_) => s.push_str("Can't convert"),
-            Ok(st) => s = st,
-        }
-        return s;
-    }
-
     fn score_str(score: i32) -> String {
         let mut buf = String::with_capacity(32);
         if score < 0 {
@@ -409,7 +393,7 @@ pub mod display {
     }
 
     pub fn board(gs: &mut big2rules::GameState) -> Result<()> {
-        let name = name_from_muon_string16(&gs.sm.players[gs.sm.action.player as usize].name);
+        let name = gs.sm.players[gs.sm.action.player as usize].name.to_string();
         let s = format!("{:>16}: ", name);
         if gs.sm.action.action_type == network::StateMessageActionType::PASS {
             execute!(
@@ -445,7 +429,7 @@ pub mod display {
             execute!(gs.srn, MoveTo(0, 3))?;
             for _ in 0..4 {
                 let player = &gs.sm.players[p as usize];
-                let name = name_from_muon_string16(&player.name);
+                let name = player.name.to_string();
                 let name = if name == "" {
                     String::from("-- Empty Seat --")
                 } else {
@@ -481,7 +465,7 @@ pub mod display {
 
         for row in 0..4 {
             let player = &gs.sm.players[p as usize];
-            let name = name_from_muon_string16(&player.name);
+            let name = player.name.to_string();
             let name: String = if name != "" {
                 name
             } else {
