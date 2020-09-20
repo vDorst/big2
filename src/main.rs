@@ -142,11 +142,10 @@ fn main() {
     }
 
     if cli_args.app_mode == AppMode::HOSTONLY {
-        let empty_buffer = &[0u8; std::mem::size_of::<network::StateMessage>()];
         let mut gs = GameStateServer {
             cards: big2rules::deck::deal(),
             cards_played: 0,
-            sm: bincode::deserialize(empty_buffer).unwrap(),
+            sm: network::StateMessage::new(None),
         };
     }
 
@@ -181,7 +180,6 @@ fn main() {
             std::process::exit(1);
         }
 
-        let empty_buffer = &[0u8; std::mem::size_of::<network::StateMessage>()];
         let mut gs = big2rules::GameState {
             srn: srn,
             board: 0,
@@ -191,22 +189,21 @@ fn main() {
             i_am_ready: true,
             is_valid_hand: false,
             hand_score: 0,
-            sm: bincode::deserialize(empty_buffer).unwrap(),
+            sm: network::StateMessage::new(None),
         };
 
         loop {
-            let update: usize;
-            match ts.check_buffer(&mut gs.sm) {
-                Ok(ret) => update = ret,
-                Err(e) => {
-                    let _ = cli::display::close(gs.srn);
-                    error!("Error {:?}", e);
-                    std::process::exit(1);
-                }
+            let ret = ts.check_buffer();
+            if let Err(e) = ret {
+                let _ = cli::display::close(gs.srn);
+                error!("Error {:?}", e);
+                std::process::exit(1);
             }
+            let buffer_sm = ret.unwrap();
 
             // Process new StateMessage
-            if update == 1 {
+            if buffer_sm.is_some() {
+                gs.sm = buffer_sm.unwrap();
                 match gs.sm.action.action_type {
                     network::StateMessageActionType::PLAY => {
                         let p = gs.sm.action.player;

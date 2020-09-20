@@ -74,6 +74,19 @@ pub struct StateMessage {
     pub action: StateMessageAction,
 }
 
+impl StateMessage {
+    pub fn new(init_buffer: Option<&[u8]>) -> Self {
+        let buf: &[u8];
+        if let Some(b) = init_buffer {
+            // assert!(b.len() < std::mem::size_of::<Self>());
+            buf = b;
+        } else {
+            buf = &[0; std::mem::size_of::<Self>()];
+        }
+        bincode::deserialize(&buf).unwrap()
+    }
+}
+
 pub mod muon {
     use super::*;
 
@@ -307,8 +320,7 @@ pub mod client {
         }
 
         pub fn action_pass(&mut self) -> Result<usize, io::Error> {
-            let empty_buffer = &[0u8; mem::size_of::<StateMessage>()];
-            let mut sm: StateMessage = bincode::deserialize(empty_buffer).unwrap();
+            let mut sm = StateMessage::new(None);
             sm.size = mem::size_of::<StateMessage>() as u32;
             sm.kind = 3;
             let byte_buf = bincode::serialize(&sm).unwrap();
@@ -321,8 +333,7 @@ pub mod client {
         }
 
         pub fn action_ready(&mut self) -> Result<usize, io::Error> {
-            let empty_buffer = &[0u8; mem::size_of::<StateMessage>()];
-            let mut sm: StateMessage = bincode::deserialize(empty_buffer).unwrap();
+            let mut sm = StateMessage::new(None);
             sm.size = mem::size_of::<StateMessage>() as u32;
             sm.kind = 4;
             let byte_buf = bincode::serialize(&sm).unwrap();
@@ -372,12 +383,12 @@ pub mod client {
             Ok(0)
         }
 
-        pub fn check_buffer(&mut self, sm: &mut StateMessage) -> Result<usize, io::Error> {
+        pub fn check_buffer(&mut self) -> Result<Option<StateMessage>, io::Error> {
             let buffer = self.rx.try_recv();
 
             if let Err(e) = buffer {
                 if e == std::sync::mpsc::TryRecvError::Empty {
-                    return Ok(0);
+                    return Ok(None);
                 }
                 return Err(io::Error::new(
                     io::ErrorKind::TimedOut,
@@ -391,23 +402,21 @@ pub mod client {
 
             if bytes < mem::size_of::<client::DetectMessage>() {
                 error!("Packet size to low {}", bytes);
-                return Ok(0);
+                return Ok(None);
             }
 
             let dm: client::DetectMessage = bincode::deserialize(&buffer).unwrap();
 
             if dm.kind > 6 || dm.size as usize > buffer.len() {
                 error!("Unknown packet drop {}", bytes);
-                return Ok(0);
+                return Ok(None);
             }
 
             if dm.kind == 5 && dm.size as usize == mem::size_of::<StateMessage>() {
-                let sm_new: StateMessage = bincode::deserialize(&buffer).unwrap();
-                *sm = sm_new;
-                return Ok(1);
+                return Ok(Some(StateMessage::new(Some(&buffer))));
             }
 
-            return Ok(0);
+            return Ok(None);
         }
     }
 }
@@ -625,7 +634,7 @@ mod tests {
     } */
     #[test]
     fn c_statemessage_respone() {
-        let &buffer: &[u8; 224] = &[
+        let buffer: &[u8] = &[
             5, 0, 0, 0, 0xe0, 0, 0, 0, 1, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0x15, 7,
             0x37, 0x28, 0x38, 0x39, 0xa, 0x2b, 0x3b, 0x2c, 0x1d, 0x3d, 2, 0, 0, 0, 0xd, 0, 0, 0,
             0x54, 0x69, 0x6b, 0x6b, 0x69, 0x65, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0,
@@ -637,8 +646,8 @@ mod tests {
             0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0,
         ];
-        assert_eq!(buffer.len(), std::mem::size_of::<StateMessage>());
-        let sm: StateMessage = bincode::deserialize(&buffer).unwrap();
+
+        let sm = StateMessage::new(Some(buffer));
 
         let mut mycards: u64 = 0;
         for c in 0..sm.your_hand.count as usize {
