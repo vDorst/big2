@@ -2,3 +2,6 @@
 /target/
 Cargo.lock
 /.vscode/
+*.txt
+*.log
+big2
