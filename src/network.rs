@@ -83,7 +83,9 @@ impl StateMessage {
         } else {
             buf = &[0; std::mem::size_of::<Self>()];
         }
-        bincode::deserialize(&buf).unwrap()
+        let mut sm: StateMessage = bincode::deserialize(&buf).unwrap();
+        sm.size = mem::size_of::<StateMessage>() as u32;
+        sm
     }
 }
 
@@ -321,7 +323,6 @@ pub mod client {
 
         pub fn action_pass(&mut self) -> Result<usize, io::Error> {
             let mut sm = StateMessage::new(None);
-            sm.size = mem::size_of::<StateMessage>() as u32;
             sm.kind = 3;
             let byte_buf = bincode::serialize(&sm).unwrap();
             // println!("{:?}", byte_buf);
@@ -334,7 +335,6 @@ pub mod client {
 
         pub fn action_ready(&mut self) -> Result<usize, io::Error> {
             let mut sm = StateMessage::new(None);
-            sm.size = mem::size_of::<StateMessage>() as u32;
             sm.kind = 4;
             let byte_buf = bincode::serialize(&sm).unwrap();
             let ret = self.tx.send(byte_buf);
@@ -386,37 +386,35 @@ pub mod client {
         pub fn check_buffer(&mut self) -> Result<Option<StateMessage>, io::Error> {
             let buffer = self.rx.try_recv();
 
-            if let Err(e) = buffer {
-                if e == std::sync::mpsc::TryRecvError::Empty {
+            match buffer {
+                Err(std::sync::mpsc::TryRecvError::Empty) => return Ok(None),
+                Err(e) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        format!("check_buffer: Channel Disconnected {:?}", e),
+                    ));
+                }
+                Ok(buffer) => {
+                    let bytes = buffer.len();
+
+                    if bytes < mem::size_of::<client::DetectMessage>() {
+                        error!("Packet size to low {}", bytes);
+                        return Ok(None);
+                    }
+
+                    let dm: client::DetectMessage = bincode::deserialize(&buffer).unwrap();
+
+                    if dm.kind == 5 && dm.size as usize == mem::size_of::<StateMessage>() {
+                        return Ok(Some(StateMessage::new(Some(&buffer))));
+                    }
+
+                    if dm.kind > 6 || dm.size as usize > bytes {
+                        error!("Unknown packet drop {}", bytes);
+                    }
+
                     return Ok(None);
                 }
-                return Err(io::Error::new(
-                    io::ErrorKind::TimedOut,
-                    format!("check_buffer: Channel Disconnected {:?}", e),
-                ));
             }
-
-            let buffer = buffer.unwrap();
-
-            let bytes = buffer.len();
-
-            if bytes < mem::size_of::<client::DetectMessage>() {
-                error!("Packet size to low {}", bytes);
-                return Ok(None);
-            }
-
-            let dm: client::DetectMessage = bincode::deserialize(&buffer).unwrap();
-
-            if dm.kind > 6 || dm.size as usize > buffer.len() {
-                error!("Unknown packet drop {}", bytes);
-                return Ok(None);
-            }
-
-            if dm.kind == 5 && dm.size as usize == mem::size_of::<StateMessage>() {
-                return Ok(Some(StateMessage::new(Some(&buffer))));
-            }
-
-            return Ok(None);
         }
     }
 }
