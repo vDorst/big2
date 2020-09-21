@@ -403,7 +403,7 @@ pub mod display {
                 Print("PASSED".white().on_dark_grey())
             )?;
         } else if gs.sm.action.action_type == network::StateMessageActionType::PLAY {
-            let cards = network::muon::inline8_to_card(&gs.sm.action.cards);
+            let cards = gs.sm.action.cards.to_card();
             let card_str = cards_str(cards);
             execute!(gs.srn, MoveTo(9, 0), Print(&s), Print(card_str))?;
         } else {
@@ -416,7 +416,7 @@ pub mod display {
             Print(format!("Rounds: {}/{}", gs.sm.round, gs.sm.num_rounds))
         )?;
 
-        let cards = network::muon::inline8_to_card(&gs.sm.board);
+        let cards = gs.sm.board.to_card();
         let out_str = cards_str(cards);
         execute!(gs.srn, MoveTo(20, 1), Print("Board: "), Print(out_str))?;
 
@@ -481,7 +481,7 @@ pub mod display {
             let player_score = player.score;
 
             if p == gs.sm.your_index {
-                let cards = network::muon::inline16_to_card(&gs.sm.your_hand);
+                let cards = gs.sm.your_hand.to_card();
                 for bit in 12..64 {
                     let card = cards & (1 << bit);
                     if card == 0 {

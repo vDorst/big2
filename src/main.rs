@@ -208,7 +208,7 @@ fn main() {
                     network::StateMessageActionType::PLAY => {
                         let name = gs.sm.current_player_name();
                         if name.is_some() {
-                            let cards = network::muon::inline8_to_card(&gs.sm.action.cards);
+                            let cards = gs.sm.action.cards.to_card();
                             let cards_str = cli::display::cards_str(cards);
                             trace!("PLAY: {:>16}: {}", name.unwrap(), cards_str);
                         }
@@ -313,7 +313,7 @@ fn main() {
                 }
 
                 if gs.sm.action.action_type == network::StateMessageActionType::UPDATE {
-                    gs.board = network::muon::inline8_to_card(&gs.sm.board);
+                    gs.board = gs.sm.board.to_card();
                     gs.board_score = big2rules::rules::score_hand(gs.board);
                     gs.is_valid_hand = (gs.hand_score > gs.board_score)
                         && (gs.board == 0
@@ -453,8 +453,7 @@ fn main() {
                             // println!("Play hand");
                             gs.sm.action.action_type = network::StateMessageActionType::PLAY;
 
-                            let hand = network::muon::inline8_from_card(gs.cards_selected);
-                            if let Err(e) = ts.action_play(&hand) {
+                            if let Err(e) = ts.action_play(gs.cards_selected) {
                                 println!("Could not send your hand to the server!\r\n{}", e);
                             }
 
