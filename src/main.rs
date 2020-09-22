@@ -204,9 +204,11 @@ fn main() {
             // Process new StateMessage
             if buffer_sm.is_some() {
                 gs.sm = buffer_sm.unwrap();
+                trace!("TRAIL: {:16x}h", gs.sm.action_msg());
                 match gs.sm.action.action_type {
                     network::StateMessageActionType::PLAY => {
-                        let name = gs.sm.current_player_name();
+                        let p = gs.sm.action.player;
+                        let name = gs.sm.player_name(p);
                         if name.is_some() {
                             let cards = gs.sm.action.cards.to_card();
                             let cards_str = cli::display::cards_str(cards);
@@ -214,7 +216,8 @@ fn main() {
                         }
                     }
                     network::StateMessageActionType::PASS => {
-                        let name = gs.sm.current_player_name();
+                        let p = gs.sm.action.player;
+                        let name = gs.sm.player_name(p);
                         if name.is_some() {
                             trace!("PLAY: {:>16}: PASSED", name.unwrap());
                         }
@@ -226,6 +229,24 @@ fn main() {
                         trace!("PLAY: DEAL: ROUND {}/{}", gs.sm.round, gs.sm.num_rounds);
                     }
                 };
+                if gs.sm.turn == -1 {
+                    let mut dscore = Vec::<i16>::with_capacity(4);
+                    let mut cardnum = Vec::<u8>::with_capacity(4);
+                    let mut out = String::with_capacity(256);
+                    for p in 0..4 {
+                        let score = gs.sm.players[p].delta_score;
+                        let name = gs.sm.players[p].name.to_string();
+                        dscore.push(score as i16);
+                        cardnum.push(gs.sm.players[p].num_cards as u8);
+                        out.push_str(&format!(" {} {} ", name, score));
+                        if gs.sm.round == gs.sm.num_rounds {
+                            let score = gs.sm.players[p].score;
+                            out.push_str(&format!("[{}] ", score));
+                        }
+                        out.push('|');
+                    }
+                    trace!("Score: {}", out);
+                }
 
                 let next_str: String = if gs.sm.turn == -1 {
                     if gs.sm.round == gs.sm.num_rounds {
