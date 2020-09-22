@@ -180,17 +180,11 @@ pub mod rules {
     }
     pub fn is_valid_hand(hand: u64) -> bool {
         // Check cards range. Only the upper 52 bits are used.
-        if hand & 0xFFF != 0 {
-            return false;
-        }
+        let ret: bool = (hand & 0xFFF) == 0;
 
-        // Check number of cards played.
+        // Check number of cards played. count = 1, 2, 3 or 5 is valid.
         let cardcount = hand.count_ones();
-        // println!("Card count: {}", cardcount);
-        if cardcount != 1 && cardcount != 2 && cardcount != 3 && cardcount != 5 {
-            return false;
-        }
-        return true;
+        ret && cardcount != 4 && cardcount < 6 && cardcount != 0
     }
     pub fn beter_hand(board: u64, hand: u64) -> bool {
         if is_valid_hand(hand) == false {
@@ -210,7 +204,7 @@ pub mod rules {
     pub fn is_flush(hand: u64) -> bool {
         let mut mask: u64 = 0x1111_1111_1111_1000;
         for _ in 0..4 {
-            if (hand & mask).count_ones() == 5 {
+            if (hand & !mask) == 0 {
                 return true;
             }
             mask <<= 1;
@@ -363,6 +357,8 @@ mod tests {
 
     #[test]
     fn a_rules_sizes() {
+        assert!(rules::is_valid_hand(0) == false);
+        assert!(rules::is_valid_hand(0x1001) == false);
         assert!(rules::is_valid_hand(0b1) == false, "1 invalid card");
         assert!(rules::is_valid_hand(0b1 << 12) == true);
         assert!(rules::is_valid_hand(0b11 << 12) == true);
