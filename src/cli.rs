@@ -511,11 +511,11 @@ pub mod display {
             // Number and Names.
             execute!(gs.srn, MoveTo(0, 3 + row), Print(format!("{}.", p + 1)),)?;
             if p == gs.sm.turn {
-                execute!(gs.srn, Print(&s.on_dark_green()))?;
+                execute!(gs.srn, Print(s.on_dark_green()))?;
             } else if has_passed {
-                execute!(gs.srn, Print(&s.on_dark_grey()))?;
+                execute!(gs.srn, Print(s.on_dark_grey()))?;
             } else {
-                execute!(gs.srn, Print(&s))?;
+                execute!(gs.srn, Print(s))?;
             }
 
             // Cards
