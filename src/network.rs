@@ -225,7 +225,7 @@ pub mod muon {
 
 pub mod common {
     pub const PORT: u16 = 27191;
-    pub const VERSION: u32 = 5;
+    pub const VERSION: u32 = 6;
     pub const MAGICNUMBER: u32 = 0x3267_6962;
     pub const BUFSIZE: usize = 512;
 }
