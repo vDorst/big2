@@ -118,7 +118,8 @@ impl StateMessage {
             );
             return 0xFFFF_FFFF_FFFF_FFFF;
         }
-        let p = player as u64;
+        let mut p = (player as u64) & 0x7;
+        p |= ((self.turn as u64) & 0x7) << 4;
 
         match self.action.action_type {
             StateMessageActionType::PLAY => {
@@ -128,7 +129,7 @@ impl StateMessage {
             }
             StateMessageActionType::PASS => {
                 let mut cards = self.board.to_card();
-                cards |= 0x10;
+                cards |= 0x100;
                 cards |= p;
                 return cards;
             }
@@ -139,13 +140,14 @@ impl StateMessage {
                         ready |= 0x1000 << (i * 4);
                     }
                 }
-                ready |= 0x80;
+                ready |= 0x800;
                 return ready;
             }
             StateMessageActionType::DEAL => {
                 let mut cards = self.your_hand.to_card();
-                cards |= 0x40;
-                cards |= self.your_index as u64;
+                cards |= 0x400;
+                cards |= self.your_index as u64 & 0x7;
+                cards |= ((self.turn as u64) & 0x7) << 4;
                 return cards;
             }
         };
@@ -852,7 +854,7 @@ mod tests {
         ];
         let mut sm = StateMessage::new(Some(buffer));
 
-        assert_eq!(sm.action_msg(), 0x1111080);
+        assert_eq!(sm.action_msg(), 0x1111800);
 
         assert_eq!(sm.current_player().unwrap(), 0);
         assert_eq!(sm.current_player_name().unwrap(), "Tikkie");
@@ -885,7 +887,7 @@ mod tests {
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
         let sm = StateMessage::new(Some(buffer));
-        assert_eq!(sm.action_msg(), 0x1101080);
+        assert_eq!(sm.action_msg(), 0x1101800);
     }
 
     #[test]
@@ -910,7 +912,7 @@ mod tests {
         let sm = StateMessage::new(Some(buffer));
         let cards = sm.action.cards.to_card();
         let trail = sm.action_msg();
-        assert_eq!(trail, 0x21211002);
+        assert_eq!(trail, 0x21211032);
         assert_eq!(trail & 0xFFFF_FFFF_FFFF_F000, cards);
 
         // PLAY:             NG: FULLHOUSE
@@ -933,7 +935,7 @@ mod tests {
         let sm = StateMessage::new(Some(buffer));
         let cards = sm.action.cards.to_card();
         let trail = sm.action_msg();
-        assert_eq!(trail, 0x5E0003);
+        assert_eq!(trail, 0x5E0073);
         assert_eq!(trail & 0xFFFF_FFFF_FFFF_F000, cards);
     }
 
@@ -959,7 +961,7 @@ mod tests {
         let sm = StateMessage::new(Some(buffer));
         let cards = sm.board.to_card();
         let trail = sm.action_msg();
-        assert_eq!(trail, 0x2000000000000013);
+        assert_eq!(trail, 0x2000000000000103);
         assert_eq!(trail & 0xFFFF_FFFF_FFFF_F000, cards);
     }
 }
