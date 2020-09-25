@@ -361,6 +361,7 @@ pub struct SrvGameState {
     pub cards: [u64; 4],
     pub played_cards: u64,
     pub score: [i16; 4],
+    pub card_cnt: [u8; 4],
 }
 
 #[derive(Debug)]
@@ -384,6 +385,7 @@ impl SrvGameState {
             cards: [0; 4],
             played_cards: 0,
             score: [0; 4],
+            card_cnt: [13; 4],
         }
     }
     pub fn deal(&mut self, cards: Option<&[u64]>) {
@@ -400,6 +402,7 @@ impl SrvGameState {
         self.has_passed = 0;
         self.board_score = 0;
         self.has_passed = 0;
+        self.card_cnt = [13; 4];
 
         let mut m: u64 = 0;
         for c in self.cards.iter() {
@@ -408,7 +411,7 @@ impl SrvGameState {
         }
         let im = !(m | 0xFFF);
         println!("! 0x{:16x} M 0x{:16x} count {}", im, m, im.count_ones());
-        assert!(m == 0xFFFF_FFFF_FFFF_F000);
+        // assert!(m == 0xFFFF_FFFF_FFFF_F000);
 
         // Which player to start
         if self.round == 1 {
@@ -449,11 +452,19 @@ impl SrvGameState {
 
         self.cards[p] = pc;
 
-        if pc.count_ones() == 0 {
+        let cnt = hand.count_ones();
+        self.card_cnt[p] -= cnt as u8;
+        if self.card_cnt[p] == 0 {
             println!("No more cards!");
             self.turn = -1;
             return Ok(());
         }
+
+        // if pc.count_ones() == 0 {
+        //     println!("No more cards!");
+        //     self.turn = -1;
+        //     return Ok(());
+        // }
 
         self.next_player();
 
@@ -1041,23 +1052,27 @@ mod tests {
             0x9200200100528000 | 0x40_1008_0000,
             0x1002e06800000 | 0x5b0_0100_0000_0000,
             // Fourth
-            0x10000000000000,
+            0x1019068819840000,
             0x8e42007220280000,
             0x4000080000000000,
             0x400000000000,
-            0x18000010000000,
+            // 5
+            0x61900011c20b000,
             0x10200e0802984000,
             0x81847064c1000000,
             0x2840018000470000,
-            0x840220008000000,
+            // 6
+            0xc503210091a0000,
             0xc081000010041000,
             0x302400e120816000,
             0x2000882000000,
+            // 7
             0xda24004d80800000,
             0x400080008000000,
             0x2100108000001000,
             0x2200000008000,
-            0x82c0020900590000,
+            // 8
+            0x82c4120900590000,
             0x1c00400600026000,
             0x2128086005009000,
             0x4002a590aa800000,
