@@ -1,6 +1,6 @@
 pub mod display {
-    use crate::big2rules;
-    use crate::network;
+    use crate::{big2rules, network};
+    use log::trace;
 
     use std::{
         io::{stdout, Write},
