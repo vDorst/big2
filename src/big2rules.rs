@@ -123,6 +123,7 @@ pub mod cards {
 pub mod rules {
     use super::*;
 
+    #[allow(dead_code)]
     pub fn get_numbers(hand: u64) {
         let mut ranks: [u32; 16] = [0; 16];
         let mut straigth: u64 = 0;
@@ -183,6 +184,7 @@ pub mod rules {
         let cardcount = hand.count_ones();
         ret && cardcount != 4 && cardcount < 6 && cardcount != 0
     }
+    #[allow(dead_code)]
     pub fn beter_hand(board: u64, hand: u64) -> bool {
         if is_valid_hand(hand) == false {
             return false;
@@ -364,7 +366,6 @@ pub struct SrvGameState {
 #[derive(Debug)]
 pub enum SrvGameError {
     NotPlayersTurn,
-    PlayerAlreadyPlayedCard(u64),
     PlayerPlayedIllegalCard(u64),
     InvalidHand,
     AllreadyPassed,

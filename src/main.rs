@@ -135,18 +135,19 @@ fn main() {
         File::create("big2.log").unwrap(),
     );
 
-    struct GameStateServer {
-        cards: [u64; 4],
-        cards_played: u64,
-        sm: network::StateMessage,
-    }
-
     if cli_args.app_mode == AppMode::HOSTONLY {
-        let mut gs = GameStateServer {
-            cards: big2rules::deck::deal(),
-            cards_played: 0,
-            sm: network::StateMessage::new(None),
-        };
+        let mut srv = big2rules::SrvGameState::new(8);
+
+        srv.deal(None);
+
+        srv.play(srv.turn, 0x1000).unwrap();
+
+        srv.pass(srv.turn).unwrap();
+
+        println!("{}", srv.turn);
+
+        error!("Currently not supported!");
+        std::process::exit(1);
     }
 
     if cli_args.app_mode == AppMode::HOST {
