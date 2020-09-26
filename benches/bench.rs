@@ -52,7 +52,6 @@ fn bench_game_srv_obj_deal_full_play_8_rounds(b: &mut Bencher) {
             let player = ((*play as i32 & 0x7) << 29) >> 29;
             let toact = ((*play as i32 & 0x70) << 25) >> 29;
 
-            let mut error: Result<(), big2rules::SrvGameError> = Ok(());
             let hand: u64 = play & 0xFFFF_FFFF_FFFF_F000;
 
             match action {
@@ -65,7 +64,7 @@ fn bench_game_srv_obj_deal_full_play_8_rounds(b: &mut Bencher) {
                     }
                 }
                 0x000 => {
-                    error = gs.play(player, hand);
+                    let error = gs.play(player, hand);
                     if error.is_ok() {
                         let c = gs.cards[player as usize];
                         assert!(c & hand == 0);
@@ -83,6 +82,15 @@ fn bench_game_srv_obj_deal_full_play_8_rounds(b: &mut Bencher) {
                 }
                 _ => (),
             }
+        }
+    });
+}
+
+#[bench]
+fn bench_score_hand(b: &mut Bencher) {
+    b.iter(|| {
+        for hand in benchfactor::gameserver_vectors::TEST_VECTOR_TRAIL_GAME1 {
+            let _score = big2rules::rules::score_hand(*hand);
         }
     });
 }
