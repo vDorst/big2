@@ -9,7 +9,7 @@ mod benchfactor;
 #[bench]
 fn bench_create_game_srv_obj(b: &mut Bencher) {
     b.iter(|| {
-        let mut gs = big2rules::SrvGameState::new(8);
+        let gs = big2rules::SrvGameState::new(8);
         drop(gs);
     });
 }
@@ -35,8 +35,6 @@ fn bench_game_srv_obj_deal_random_cargs(b: &mut Bencher) {
 
 #[bench]
 fn bench_game_srv_obj_deal_full_play_8_rounds(b: &mut Bencher) {
-    let mut i = 0;
-
     b.iter(|| {
         let mut gs = big2rules::SrvGameState::new(8);
         let mut cp: usize = 0;
@@ -75,7 +73,7 @@ fn bench_game_srv_obj_deal_full_play_8_rounds(b: &mut Bencher) {
                     }
                 }
                 0x100 => {
-                    error = gs.pass(player);
+                    gs.pass(player).unwrap();
                 }
                 0x400 => {
                     // Match hand
