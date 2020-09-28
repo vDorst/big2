@@ -15,3 +15,6 @@ clap = "2.33"
 log = "0.4"
 simplelog = "0.8"
 
+
+[workspace]
+members = [".", "module-py3"]
