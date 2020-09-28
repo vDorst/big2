@@ -403,7 +403,7 @@ pub mod display {
                 Print("PASSED".white().on_dark_grey())
             )?;
         } else if gs.sm.action.action_type == network::StateMessageActionType::PLAY {
-            let cards = gs.sm.action.cards.to_card();
+            let cards = gs.sm.action.cards.into_card().unwrap();
             let card_str = cards_str(cards);
             execute!(gs.srn, MoveTo(9, 0), Print(&s), Print(card_str))?;
         } else {
@@ -416,7 +416,7 @@ pub mod display {
             Print(format!("Rounds: {}/{}", gs.sm.round, gs.sm.num_rounds))
         )?;
 
-        let cards = gs.sm.board.to_card();
+        let cards = gs.sm.board.into_card().unwrap();
         let out_str = cards_str(cards);
         execute!(gs.srn, MoveTo(20, 1), Print("Board: "), Print(out_str))?;
 

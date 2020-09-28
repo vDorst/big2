@@ -3,6 +3,7 @@ use log::{debug, error, info, trace};
 use serde::{Deserialize, Serialize};
 
 use std::{
+    convert::TryFrom,
     io::{self, Read, Write},
     mem,
     net::{TcpStream, ToSocketAddrs},
@@ -124,12 +125,12 @@ impl StateMessage {
 
         match self.action.action_type {
             StateMessageActionType::PLAY => {
-                let mut cards = self.action.cards.to_card();
+                let mut cards = self.action.cards.into_card().unwrap();
                 cards |= p;
                 return cards;
             }
             StateMessageActionType::PASS => {
-                let mut cards = self.board.to_card();
+                let mut cards = self.board.into_card().unwrap();
                 cards |= 0x100;
                 cards |= p;
                 return cards;
@@ -218,26 +219,19 @@ pub mod muon {
         }
     }
 
-    impl InlineList8 {
-        pub fn to_card(&self) -> u64 {
-            let mut cards: u64 = 0;
-            if self.count > 0 && self.count < 8 {
-                for c in 0..self.count as usize {
-                    let card = self.data[c];
-                    cards |= card_from_byte(card);
-                }
-            }
-            return cards;
-        }
-        pub fn from_card(hand: u64) -> Self {
+    impl TryFrom<u64> for InlineList8 {
+        type Error = &'static str;
+
+        fn try_from(hand: u64) -> Result<Self, Self::Error> {
             let mut cards = InlineList8 {
                 data: [0; 8],
                 count: 0,
             };
+
             let num_cards = hand.count_ones();
-            if num_cards > 5 || num_cards == 4 {
-                return cards;
-            };
+            if num_cards > 6 || num_cards == 4 || hand & 0xFFF != 0 {
+                return Err("Invalid Hand!");
+            }
 
             cards.count = num_cards as i32;
 
@@ -251,7 +245,28 @@ pub mod muon {
                 cards.data[p] = cards_to_byte(mask);
                 p += 1;
             }
-            return cards;
+            Ok(cards)
+        }
+    }
+
+    impl InlineList8 {
+        // pub fn to_card(&self) -> u64 {
+        //     self.into_card().unwrap()
+        // }
+        pub fn into_card(&self) -> Result<u64, &'static str> {
+            if self.count < 0 || self.count > 8 {
+                return Err("Count out-of-range!");
+            }
+            let mut cards: u64 = 0;
+            for c in 0..self.count as usize {
+                let card = self.data[c];
+                let c = card & 0b1100_1111;
+                if c < 2 || c > 14 {
+                    return Err("Card value out-of-range!");
+                }
+                cards |= card_from_byte(card);
+            }
+            Ok(cards)
         }
     }
 
@@ -447,7 +462,7 @@ pub mod client {
             let sm = PlayMessage {
                 kind: 2,
                 size: mem::size_of::<PlayMessage>() as u32,
-                cards: muon::InlineList8::from_card(cards),
+                cards: muon::InlineList8::try_from(cards).unwrap(),
             };
             let byte_buf = bincode::serialize(&sm).unwrap();
             // println!("action_play: {:x?}", byte_buf);
@@ -581,7 +596,7 @@ mod tests {
         let sm = PlayMessage {
             kind: 2,
             size: mem::size_of::<PlayMessage>() as u32,
-            cards: muon::InlineList8::from_card(cards),
+            cards: muon::InlineList8::try_from(cards).unwrap(),
         };
         let byte_buf = bincode::serialize(&sm).unwrap();
         let packet: &[u8] = &[
@@ -591,69 +606,135 @@ mod tests {
     }
 
     #[test]
-    fn muon_inline8_from_card() {
+    fn muon_inline8_try_from_valid() {
+        // No cards
         let hand: u64 = 0;
-        let muon_hand = muon::InlineList8::from_card(hand);
+        let muon_hand = muon::InlineList8::try_from(hand);
+        assert!(muon_hand.is_ok());
         let il8 = muon::InlineList8 {
             data: [0; 8],
             count: 0,
         };
+        let muon_hand = muon_hand.unwrap();
         assert_eq!(muon_hand, il8);
-        assert_eq!(hand, muon_hand.to_card());
+        let cards = il8.into_card();
+        assert!(cards.is_ok());
+        assert_eq!(hand, cards.unwrap());
 
+        // lowest card 3d
         let hand: u64 = 0x1000;
+        let muon_hand = muon::InlineList8::try_from(hand);
+        assert!(muon_hand.is_ok());
         let il8 = muon::InlineList8 {
             data: [0x3, 0, 0, 0, 0, 0, 0, 0],
             count: 1,
         };
-        let muon_hand = muon::InlineList8::from_card(hand);
+        let muon_hand = muon_hand.unwrap();
         assert_eq!(muon_hand, il8);
-        assert_eq!(hand, muon_hand.to_card());
+        let cards = il8.into_card();
+        assert!(cards.is_ok());
+        assert_eq!(hand, cards.unwrap());
+
+        // higest card 2s
+        let hand: u64 = 0x8000_0000_0000_0000;
+        let muon_hand = muon::InlineList8::try_from(hand);
+        assert!(muon_hand.is_ok());
+        let il8 = muon::InlineList8 {
+            data: [0x32, 0, 0, 0, 0, 0, 0, 0],
+            count: 1,
+        };
+        let muon_hand = muon_hand.unwrap();
+        assert_eq!(muon_hand, il8);
+        let cards = il8.into_card();
+        assert!(cards.is_ok());
+        assert_eq!(hand, cards.unwrap());
 
         let hand: u64 = 0xF100_0000_0000_0000;
         let il8 = muon::InlineList8 {
             data: [14, 2, 18, 34, 50, 0, 0, 0],
             count: 5,
         };
-        let muon_hand = muon::InlineList8::from_card(hand);
+        let muon_hand = muon::InlineList8::try_from(hand).unwrap();
         assert_eq!(muon_hand, il8);
-        assert_eq!(hand, muon_hand.to_card());
-
-        let hand: u64 = 0xF000;
-        let il8 = muon::InlineList8 {
-            data: [0; 8],
-            count: 0,
-        };
-        let muon_hand = muon::InlineList8::from_card(hand);
-        assert_eq!(muon_hand, il8);
-        assert!(muon_hand.to_card() == 0);
+        assert_eq!(hand, muon_hand.into_card().unwrap());
 
         let hand: u64 = 0x1F000;
         let il8 = muon::InlineList8 {
             data: [3, 19, 35, 51, 4, 0, 0, 0],
             count: 5,
         };
-        let muon_hand = muon::InlineList8::from_card(hand);
+        let muon_hand = muon::InlineList8::try_from(hand).unwrap();
         assert_eq!(muon_hand, il8);
-        assert_eq!(hand, muon_hand.to_card());
+        assert_eq!(hand, muon_hand.into_card().unwrap());
 
+        let il8 = muon::InlineList8 {
+            data: [0; 8],
+            count: 0,
+        };
+        assert!(il8.into_card().unwrap() == 0);
+    }
+
+    #[test]
+    fn muon_inline8_try_from_invalid() {
         let hand: u64 = 0xFF000;
-        let il8 = muon::InlineList8 {
-            data: [0; 8],
-            count: 0,
-        };
-        let muon_hand = muon::InlineList8::from_card(hand);
-        assert_eq!(muon_hand, il8);
-        assert!(muon_hand.to_card() == 0);
+        assert!(muon::InlineList8::try_from(hand).is_err());
 
-        let hand: u64 = 0xFFF000;
+        let hand: u64 = 0xF000;
+        assert!(muon::InlineList8::try_from(hand).is_err());
+
+        let hand: u64 = 0x1;
+        assert!(muon::InlineList8::try_from(hand).is_err());
+
+        let hand: u64 = 0x1001;
+        assert!(muon::InlineList8::try_from(hand).is_err());
+
+        let hand: u64 = 0x1100;
+        assert!(muon::InlineList8::try_from(hand).is_err());
+    }
+
+    #[test]
+    fn muon_inline8_into_cards_invalid() {
+        let il8 = muon::InlineList8 {
+            data: [0xFF; 8],
+            count: 1,
+        };
+        assert!(il8.into_card().is_err());
+
         let il8 = muon::InlineList8 {
             data: [0; 8],
-            count: 0,
+            count: 9,
         };
-        let muon_hand = muon::InlineList8::from_card(hand);
-        assert_eq!(muon_hand, il8);
-        assert!(muon_hand.to_card() == 0);
+        assert!(il8.into_card().is_err());
+
+        let il8 = muon::InlineList8 {
+            data: [0; 8],
+            count: -1,
+        };
+        assert!(il8.into_card().is_err());
+
+        let il8 = muon::InlineList8 {
+            data: [0xFF, 0, 0, 0, 0, 0, 0, 0],
+            count: 1,
+        };
+        assert!(il8.into_card().is_err());
+
+        let il8 = muon::InlineList8 {
+            data: [0x4d, 0, 0, 0, 0, 0, 0, 0],
+            count: 1,
+        };
+        assert!(il8.into_card().is_err());
+
+        let il8 = muon::InlineList8 {
+            data: [0x3f, 0, 0, 0, 0, 0, 0, 0],
+            count: 1,
+        };
+        assert!(il8.into_card().is_err());
+
+        let il8 = muon::InlineList8 {
+            data: [0x3d, 0, 0, 0, 0, 0, 0, 0],
+            count: 2,
+        };
+        assert!(il8.into_card().is_err());
     }
     #[test]
     fn statemessage_current_players_names() {
@@ -727,7 +808,7 @@ mod tests {
             0x0, 0x5, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
         ];
         let sm = StateMessage::new(Some(buffer));
-        let cards = sm.action.cards.to_card();
+        let cards = sm.action.cards.into_card().unwrap();
         let trail = sm.action_msg();
         assert_eq!(trail, 0x21211032);
         assert_eq!(trail & 0xFFFF_FFFF_FFFF_F000, cards);
@@ -750,7 +831,7 @@ mod tests {
             0x0, 0x0, 0x0, 0x5, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
         ];
         let sm = StateMessage::new(Some(buffer));
-        let cards = sm.action.cards.to_card();
+        let cards = sm.action.cards.into_card().unwrap();
         let trail = sm.action_msg();
         assert_eq!(trail, 0x5E0073);
         assert_eq!(trail & 0xFFFF_FFFF_FFFF_F000, cards);
@@ -776,7 +857,7 @@ mod tests {
             0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
         ];
         let sm = StateMessage::new(Some(buffer));
-        let cards = sm.board.to_card();
+        let cards = sm.board.into_card().unwrap();
         let trail = sm.action_msg();
         assert_eq!(trail, 0x2000000000000103);
         assert_eq!(trail & 0xFFFF_FFFF_FFFF_F000, cards);

@@ -4,7 +4,21 @@ extern crate test;
 use test::Bencher;
 
 use big2::big2rules;
+use big2::network;
 mod benchfactor;
+
+use std::convert::TryFrom;
+
+#[bench]
+fn bench_inlinelist8_convert(b: &mut Bencher) {
+    b.iter(|| {
+        for hands in [0u64, 0x1000, 0xF100_0000_0000_0000].iter() {
+            let il8 = network::muon::InlineList8::try_from(*hands).unwrap();
+            let cards = il8.into_card().unwrap();
+            assert_eq!(*hands, cards);
+        }
+    });
+}
 
 #[bench]
 fn bench_create_game_srv_obj(b: &mut Bencher) {

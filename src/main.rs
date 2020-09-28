@@ -211,7 +211,7 @@ fn main() {
                         let p = gs.sm.action.player;
                         let name = gs.sm.player_name(p);
                         if name.is_some() {
-                            let cards = gs.sm.action.cards.to_card();
+                            let cards = gs.sm.action.cards.into_card().unwrap();
                             let cards_str = cli::display::cards_str(cards);
                             trace!("PLAY: {:>16}: {}", name.unwrap(), cards_str);
                         }
@@ -335,7 +335,7 @@ fn main() {
                 }
 
                 if gs.sm.action.action_type == network::StateMessageActionType::UPDATE {
-                    gs.board = gs.sm.board.to_card();
+                    gs.board = gs.sm.board.into_card().unwrap();
                     gs.board_score = big2rules::rules::score_hand(gs.board);
                     gs.is_valid_hand = (gs.hand_score > gs.board_score)
                         && (gs.board == 0
