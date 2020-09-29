@@ -24,12 +24,12 @@ def play_a_game():
 
     # Play a new round
 
-    BIG2.deal( [ 0x1111_1111_1111_1000, 0x2222_2222_2222_2000, 0x4444_4444_4444_4000, 0x8888_8888_8888_8000 ] )
+    BIG2.deal( [ 0x8888_8888_8888_8000, 0x1111_1111_1111_1000, 0x2222_2222_2222_2000, 0x4444_4444_4444_4000 ] )
 
     p = BIG2.turn()
     # print ("Board: %x" % BIG2.board())
 
-    c = 0x1000
+    c = 0x8000
     
     while (p != -1):
             try:
@@ -44,4 +44,4 @@ def play_a_game():
 if __name__ == "__main__":
     import timeit
     setup = "from __main__ import play_a_game"
-    print (timeit.timeit("play_a_game()", setup=setup, number=1000000))
+    print (timeit.timeit("play_a_game()", setup=setup, number=100000))
