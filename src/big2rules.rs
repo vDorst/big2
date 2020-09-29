@@ -401,6 +401,7 @@ impl SrvGameState {
         self.board_score = 0;
         self.has_passed = 0;
         self.card_cnt = [13; 4];
+        self.last_action &= 0xFFF;
 
         let mut m: u64 = 0;
         for c in self.cards.iter() {
