@@ -11,123 +11,109 @@ extern crate simplelog;
 
 use simplelog::*;
 
-use clap::{App, Arg};
+use pico_args::{Arguments, Error as paError};
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 enum AppMode {
-    ERROR,
     HOSTONLY,
     HOST,
     CLIENT,
 }
 
+#[derive(Debug, PartialEq)]
 struct CliArgs {
     name: String,
     app_mode: AppMode,
     socket_addr: String,
+    rounds: u8,
+    host_port: u16,
 }
 
-fn parse_args() -> CliArgs {
-    let mut arg = CliArgs {
-        name: "To less arguments".to_string(),
-        app_mode: AppMode::ERROR,
-        socket_addr: "".to_string(),
+fn parse_args(mut args: Arguments) -> Result<CliArgs, paError> {
+    let mut cli_args = CliArgs {
+        name: String::from(""),
+        app_mode: AppMode::CLIENT,
+        socket_addr: String::from(""),
+        rounds: 8,
+        host_port: network::common::PORT,
     };
 
-    let matches = App::new("big2")
-        .version("v4")
-        .about("CLI version of big2")
-        .arg(
-            Arg::with_name("join")
-                .short("j")
-                .long("join")
-                .help("Join a server")
-                .value_name("addr")
-                .takes_value(true),
-        )
-        .arg(
-            Arg::with_name("host")
-                .long("host")
-                .short("h")
-                .help("Be the host")
-                .required_unless("join"),
-        )
-        .arg(
-            Arg::with_name("name")
-                .long("name")
-                .short("n")
-                .value_name("name")
-                .required_unless("hostonly")
-                .help("Your name, max length 16 bytes.")
-                .takes_value(true),
-        )
-        .arg(
-            Arg::with_name("hostonly")
-                .short("o")
-                .long("hostonly")
-                .requires("host")
-                .help("Be host only"),
-        )
-        .arg(
-            Arg::with_name("rounds")
-                .short("r")
-                .long("rounds")
-                .help("number of rounds")
-                .value_name("rounds")
-                .default_value("8")
-                .takes_value(true),
-        )
-        .arg(
-            Arg::with_name("port")
-                .short("p")
-                .long("port")
-                .help("Set host listen port")
-                .value_name("port")
-                .takes_value(true),
-        )
-        .get_matches();
+    let join: Option<String> = args.opt_value_from_str("-join")?;
 
-    let hostonly = matches.is_present("hostonly");
-    let join = matches.is_present("join");
-    let be_host = matches.is_present("host");
+    let name: Option<String> = args.opt_value_from_str("-name")?;
 
-    arg.name = "Missing -host or -client or -hostonly".to_string();
+    let be_host = args.contains("-host");
 
-    if join || be_host {
-        let name: String = matches.value_of("name").unwrap_or("").to_string();
-        println!("Hello {}", name);
-        arg.name = name;
+    let be_hostonly = args.contains("-host-only");
+
+    if join.is_some() && (be_host || be_hostonly) {
+    return Err(paError::ArgumentParsingFailed {
+            cause: "-join combined with -host or -host-only is now allowed.".to_string(),
+        });
     }
 
-    if join {
-        let mut join_addr = matches.value_of("join").unwrap_or("").to_string();
+    if (join.is_some() || be_host) && name.is_none() {
+    return Err(paError::ArgumentParsingFailed {
+            cause: "-join or -host is missing -name".to_string(),
+        });
+    }
+
+
+    if be_host {
+        cli_args.app_mode = AppMode::HOST;
+    }
+
+    if be_hostonly {
+        cli_args.app_mode = AppMode::HOSTONLY;
+    }
+
+    if let Some(name) = name {
+    if name.len() < 1 || name.len() > 16 {
+            return Err(paError::ArgumentParsingFailed {
+            cause: "Name length min 1 max 16 bytes!".to_string(),
+            });
+    }
+    if name.contains(" ") {
+            return Err(paError::ArgumentParsingFailed {
+            cause: "No spaces allowed in name".to_string(),
+            });
+    }
+    cli_args.name = name;
+    }
+
+    if let Some(join_addr) = join {
         if join_addr != "" {
+            let mut join_addr = join_addr;
             // append default port is not provided.
             if !join_addr.contains(":") {
                 join_addr.push(':');
                 join_addr.push_str(&network::common::PORT.to_string());
             }
-            arg.socket_addr = join_addr;
-            arg.app_mode = AppMode::CLIENT;
+            cli_args.socket_addr = join_addr;
+            cli_args.app_mode = AppMode::CLIENT;
         }
     }
 
-    if hostonly {
-        arg.app_mode = AppMode::HOSTONLY;
-    }
-
     if be_host {
-        arg.app_mode = AppMode::HOST;
+        let value: Option<u8> = args.opt_value_from_str("-rounds")?;
+        cli_args.rounds = value.unwrap_or(8);
+
+        let value: Option<u16> = args.opt_value_from_str("-port")?;
+        cli_args.host_port = value.unwrap_or(network::common::PORT);
     }
 
-    return arg;
+    args.finish()?;
+
+    Ok(cli_args)
 }
 
 fn main() {
-    let cli_args = parse_args();
-    if cli_args.app_mode == AppMode::ERROR {
+    let cli_args = parse_args(Arguments::from_env());
+    if let Err(e) = cli_args {
+        println!("Invalid arguments! {:?}", e);
         std::process::exit(1);
     }
+    let cli_args = cli_args.unwrap();
 
     let _ = WriteLogger::init(
         LevelFilter::Trace,
@@ -136,9 +122,11 @@ fn main() {
     );
 
     if cli_args.app_mode == AppMode::HOSTONLY {
-        let mut srv = big2rules::SrvGameState::new(8);
+        let mut srv = big2rules::SrvGameState::new(cli_args.rounds);
 
         srv.deal(None);
+
+    println!("Start game {}/{}", srv.round, srv.rounds);
 
         srv.play(srv.turn, 0x1000).unwrap();
 
@@ -500,4 +488,160 @@ fn main() {
             error!("DISPLAY ERROR {}", e);
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsString;
+
+    fn to_vec(args: &[&str]) -> Vec<OsString> {
+        args.iter().map(|s| s.to_string().into()).collect()
+    }
+
+    // valid argument tests
+
+    #[test]
+    fn argument_test_client_join_name() {
+        let args = Arguments::from_vec(to_vec(&["-join", "10.10.10.10", "-name", "Test"]));
+        let ar = parse_args(args).unwrap();
+        let ans = CliArgs {
+            name: String::from("Test"),
+            app_mode: AppMode::CLIENT,
+            socket_addr: String::from("10.10.10.10:27191"),
+            rounds: 8,
+            host_port: 27191,
+        };
+        assert_eq!(ar, ans);
+    }
+
+    #[test]
+    fn argument_test_host_join_name() {
+        let args = Arguments::from_vec(to_vec(&["-host", "-name", "IamL33T"]));
+        let ar = parse_args(args).unwrap();
+        let ans = CliArgs {
+            name: String::from("IamL33T"),
+            app_mode: AppMode::HOST,
+            socket_addr: String::from(""),
+            rounds: 8,
+            host_port: 27191,
+        };
+        assert_eq!(ar, ans);
+    }
+    #[test]
+    fn argument_test_host_join_name_rounds10() {
+        let args = Arguments::from_vec(to_vec(&["-host", "-name", "IamL33T", "-rounds", "10"]));
+        let ar = parse_args(args).unwrap();
+        let ans = CliArgs {
+            name: String::from("IamL33T"),
+            app_mode: AppMode::HOST,
+            socket_addr: String::from(""),
+            rounds: 10,
+            host_port: 27191,
+        };
+        assert_eq!(ar, ans);
+    }
+
+    // Invalid argument tests
+
+    #[test]
+    fn argument_test_host_join_name_rounds256() {
+        let args = Arguments::from_vec(to_vec(&["-host", "-name", "IamL33T", "-rounds", "256"]));
+        let ar = parse_args(args);
+        match ar {
+            Err(paError::Utf8ArgumentParsingFailed { value: _ , cause: _ } ) => assert!(true),
+            _ => {println!("{:?}", ar); assert!(false)},
+        };
+    }
+
+    #[test]
+    fn argument_test_too_long_name() {
+        let args = Arguments::from_vec(to_vec(&["-host", "-name", "Morethensixteenchars"]));
+        let ar = parse_args(args);
+        match ar {
+            Err(paError::ArgumentParsingFailed { cause: _ } ) => assert!(true),
+            _ => {println!("{:?}", ar); assert!(false)},
+        };
+    }
+
+    #[test]
+    fn argument_test_too_short_name() {
+        let args = Arguments::from_vec(to_vec(&["-host", "-name", ""]));
+        let ar = parse_args(args);
+        match ar {
+            Err(paError::ArgumentParsingFailed { cause: _ } ) => assert!(true),
+            _ => {println!("{:?}", ar); assert!(false)},
+        };
+    }
+
+    #[test]
+    fn argument_test_name_no_value() {
+        let args = Arguments::from_vec(to_vec(&["-host", "-name"]));
+        let ar = parse_args(args);
+        match ar {
+            Err(paError::OptionWithoutAValue (_) ) => assert!(true),
+            _ => {println!("{:?}", ar); assert!(false)},
+        };
+    }
+
+    #[test]
+    fn argument_test_spaces_in_name() {
+        let args = Arguments::from_vec(to_vec(&["-host", "-name", "Space Me"]));
+        let ar = parse_args(args);
+        match ar {
+            Err(paError::ArgumentParsingFailed { cause: _ } ) => assert!(true),
+            _ => {println!("{:?}", ar); assert!(false)},
+        };
+    }
+
+    #[test]
+    fn argument_test_join_host_name() {
+        let args = Arguments::from_vec(to_vec(&["-host", "-name", "ValidName", "-join", "10.10.10.10"]));
+        let ar = parse_args(args);
+        match ar {
+            Err(paError::ArgumentParsingFailed { cause: _ } ) => assert!(true),
+            _ => {println!("{:?}", ar); assert!(false)},
+        };
+    }
+
+    #[test]
+    fn argument_test_host_name_invalid() {
+        let args = Arguments::from_vec(to_vec(&["-host", "-name", "ValidName", "-join", "10.10.10.10"]));
+        let ar = parse_args(args);
+        match ar {
+            Err(paError::ArgumentParsingFailed { cause: _ } ) => assert!(true),
+            _ => {println!("{:?}", ar); assert!(false)},
+        };
+    }
+
+    #[test]
+    fn argument_unused_arguments_invalid() {
+        let args = Arguments::from_vec(to_vec(&["-invalidoption", "-name", "ValidName", "-join", "10.10.10.10"]));
+        let ar = parse_args(args);
+        match ar {
+            Err(paError::UnusedArgsLeft { 0: _ } ) => assert!(true),
+            _ => {println!("{:?}", ar); assert!(false)},
+        };
+    }
+
+    #[test]
+    fn argument_test_join_no_value() {
+        let args = Arguments::from_vec(to_vec(&["-join", "-name", "ValidName"]));
+        let ar = parse_args(args);
+        match ar {
+            Err(paError::ArgumentParsingFailed { cause: _ } ) => assert!(true),
+            _ => {println!("{:?}", ar); assert!(false)},
+        };
+    }
+
+    #[test]
+    fn argument_test_join_no_value_other_order() {
+        let args = Arguments::from_vec(to_vec(&["-name", "ValidName", "-join"]));
+        let ar = parse_args(args);
+        match ar {
+            Err(paError::OptionWithoutAValue (_) ) => assert!(true),
+            _ => {println!("{:?}", ar); assert!(false)},
+        };
+    }
+
 }
