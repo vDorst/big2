@@ -405,10 +405,10 @@ impl SrvGameState {
         let mut m: u64 = 0;
         for c in self.cards.iter() {
             m |= c;
-            println!("C 0x{:16x} count {}", c, c.count_ones());
+            // println!("C 0x{:16x} count {}", c, c.count_ones());
         }
         let im = !(m | 0xFFF);
-        println!("! 0x{:16x} M 0x{:16x} count {}", im, m, im.count_ones());
+        // println!("! 0x{:16x} M 0x{:16x} count {}", im, m, im.count_ones());
         // assert!(m == 0xFFFF_FFFF_FFFF_F000);
 
         // Which player to start
@@ -416,7 +416,7 @@ impl SrvGameState {
             self.turn = self.cards.iter().position(|&x| x & 0x1000 != 0).unwrap() as i32;
         } else {
             let p = (self.last_action & 0x3) as i32;
-            println!("Last action {:16x} P{}", self.last_action, p);
+            // println!("Last action {:16x} P{}", self.last_action, p);
             self.turn = p;
         }
     }
@@ -453,7 +453,7 @@ impl SrvGameState {
         let cnt = hand.count_ones();
         self.card_cnt[p] -= cnt as u8;
         if self.card_cnt[p] == 0 {
-            println!("No more cards!");
+            // println!("No more cards!");
             self.turn = -1;
             return Ok(());
         }
@@ -488,10 +488,10 @@ impl SrvGameState {
         let mut next = self.turn;
 
         if self.board_score == 0x23f || self.board_score == 0x13f || self.board_score == 0x33f {
-            println!(
-                "Play 2s which is the highest card bs {:3x}",
-                self.board_score
-            );
+            // println!(
+            //     "Play 2s which is the highest card bs {:3x}",
+            //     self.board_score
+            // );
             self.board_score = 0;
             self.has_passed = 0;
             return;
@@ -501,14 +501,14 @@ impl SrvGameState {
             next = (next + 1) & 0x3;
 
             let b = 1 << next;
-            println!(
-                "    TURN {} NEXT {} HP {:x} B {:x} SKIP {:x}",
-                self.turn,
-                next,
-                self.has_passed,
-                b,
-                self.has_passed & b
-            );
+            // println!(
+            //     "    TURN {} NEXT {} HP {:x} B {:x} SKIP {:x}",
+            //     self.turn,
+            //     next,
+            //     self.has_passed,
+            //     b,
+            //     self.has_passed & b
+            // );
 
             if self.has_passed & b == 0 {
                 break;
@@ -518,7 +518,7 @@ impl SrvGameState {
             // everyone has passed.
             self.board_score = 0;
             self.has_passed = 0;
-            println!("\tEveryone has passed bs {:3x}", self.board_score);
+            // println!("\tEveryone has passed bs {:3x}", self.board_score);
         }
 
         self.turn = next;
