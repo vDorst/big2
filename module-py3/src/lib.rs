@@ -52,10 +52,16 @@ impl GameServer {
             _ => Err(PyValueError::new_err("Unknown")),
         }
     }
-    pub fn deal(&mut self, cards: Option<u64>) -> PyResult<()> {
+    pub fn deal(&mut self, cards: Option< Vec::<u64> >) -> PyResult<()> {
         if cards.is_none() {
             self.gs.deal(None)
-        };
+        } else {
+    	    let cl = cards.unwrap();
+    	    if cl.len() != 4 {
+    		return Err(PyValueError::new_err("List must be 4 items!"));
+    	    }
+    	    self.gs.deal( Some(&cl) );
+        }
         Ok(())
     }
     pub fn turn(&self) -> PyResult<i32> {
