@@ -1,22 +1,17 @@
-use crate::network;
-
-pub const RANKS: [u8; 13] = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
-
 pub mod deck {
-    use super::*;
     use rand::seq::SliceRandom;
     use rand::thread_rng;
 
-    pub const NUMBER_OF_CARDS: u8 = 52;
-    pub const START_BIT: u8 = 12;
+    const NUMBER_OF_CARDS: u8 = 52;
+    const START_BIT: u8 = 12;
 
     pub fn deal() -> [u64; 4] {
         // Create and shulle deck of cards
         let deck = {
             let mut deck = Vec::<u8>::with_capacity(52);
 
-            for s in 0..deck::NUMBER_OF_CARDS {
-                let card_bit: u8 = s as u8 + deck::START_BIT;
+            for s in 0..NUMBER_OF_CARDS {
+                let card_bit: u8 = s as u8 + START_BIT;
                 deck.push(card_bit);
             }
 
@@ -124,67 +119,6 @@ pub mod rules {
     use super::*;
 
     #[allow(dead_code)]
-    pub fn get_numbers(hand: u64) {
-        let mut ranks: [u32; 16] = [0; 16];
-        let mut straigth: u64 = 0;
-        let mut tripps: u32 = 0;
-        let mut quads: u32 = 0;
-        let mut straigths: u32 = 0;
-        let mut doubles: u32 = 0;
-
-        for r in RANKS.iter() {
-            let idx: usize = (*r).into();
-            ranks[idx] = cards::cnt_rank(hand, idx as u64) as u32;
-            if ranks[idx] != 0 {
-                straigth |= 1 << r;
-            }
-            if ranks[idx] == 2 {
-                doubles += 1;
-            }
-            if ranks[idx] == 3 {
-                tripps += 1;
-            }
-            if ranks[idx] == 4 {
-                quads += 1;
-            }
-        }
-        let mut mask = 0b11111;
-        for _ in 4..16 {
-            if straigth & mask == mask {
-                straigths += 1;
-            }
-            mask <<= 1;
-        }
-        // A2345
-        mask = 0b1100_0000_0011_1000;
-        if straigth & mask == mask {
-            straigths += 1;
-        };
-        // 23456
-        mask = 0b1000_0000_0111_1000;
-        if straigth & mask == mask {
-            straigths += 1;
-        };
-
-        let flushs = has_flush(hand);
-
-        let fullhouse = std::cmp::min(doubles, tripps)
-            + std::cmp::min(doubles, quads)
-            + std::cmp::min(tripps, quads);
-        println!(
-            "R{:x?} S{:16b} {:x} D{:x} T{:x} Q{:x} FH{:x} FL{:x}",
-            ranks, straigth, straigths, doubles, tripps, quads, fullhouse, flushs
-        );
-    }
-    pub fn is_valid_hand(hand: u64) -> bool {
-        // Check cards range. Only the upper 52 bits are used.
-        let ret: bool = (hand & 0xFFF) == 0;
-
-        // Check number of cards played. count = 1, 2, 3 or 5 is valid.
-        let cardcount = hand.count_ones();
-        ret && cardcount != 4 && cardcount < 6 && cardcount != 0
-    }
-    #[allow(dead_code)]
     pub fn beter_hand(board: u64, hand: u64) -> bool {
         if is_valid_hand(hand) == false {
             return false;
@@ -200,6 +134,14 @@ pub mod rules {
         }
         return true;
     }
+    pub fn is_valid_hand(hand: u64) -> bool {
+        // Check cards range. Only the upper 52 bits are used.
+        let ret: bool = (hand & 0xFFF) == 0;
+
+        // Check number of cards played. count = 1, 2, 3 or 5 is valid.
+        let cardcount = hand.count_ones();
+        ret && cardcount != 4 && cardcount < 6 && cardcount != 0
+    }
     pub fn is_flush(hand: u64) -> bool {
         let mut mask: u64 = 0x1111_1111_1111_1000;
         for _ in 0..4 {
@@ -210,27 +152,16 @@ pub mod rules {
         }
         return false;
     }
-    pub fn has_flush(hand: u64) -> u8 {
-        let mut mask: u64 = 0x1111_1111_1111_1000;
-        let mut flushs: u8 = 0;
-        for _ in 0..4 {
-            if (hand & mask).count_ones() >= 5 {
-                flushs += 1;
-            }
-            mask <<= 1;
-        }
-        return flushs;
-    }
     pub fn score_hand(hand: u64) -> u64 {
         // Score:
         //  0xKNN = One, Pair and Straigth, Flush
         //    |++- highest card: bit nummer of the highest card
-        //        +--- Kind: Kind::ONE or Kind::TWO
+        //    +--- Kind: Kind::ONE or Kind::TWO
 
         //  0xK0R = Set, Quad, FullHouse
         //    ||+- Rank: Only the RANK. Because only one RANK of each can exists.
         //    |+-- Zero
-        //        +--- Kind: Kind::QUADS or Kind::SET or Kind::FULLHOUSE
+        //    +--- Kind: Kind::QUADS or Kind::SET or Kind::FULLHOUSE
 
         if is_valid_hand(hand) == false {
             return 0;
@@ -336,18 +267,6 @@ pub mod rules {
 
         return 0;
     }
-}
-
-pub struct GameState {
-    pub sm: network::StateMessage,
-    pub srn: std::io::Stdout,
-    pub board: u64,
-    pub board_score: u64,
-    pub cards_selected: u64,
-    pub auto_pass: bool,
-    pub i_am_ready: bool,
-    pub is_valid_hand: bool,
-    pub hand_score: u64,
 }
 
 pub struct SrvGameState {
