@@ -281,6 +281,7 @@ pub struct SrvGameState {
     pub played_cards: u64,
     pub score: [i16; 4],
     pub card_cnt: [u8; 4],
+    pub names: [ [u8; 16]; 4],
 }
 
 #[derive(Debug)]
@@ -305,6 +306,7 @@ impl SrvGameState {
             played_cards: 0,
             score: [0; 4],
             card_cnt: [13; 4],
+            names: [ [0; 16]; 4],
         }
     }
     pub fn deal(&mut self, cards: Option<&[u64]>) {

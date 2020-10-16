@@ -21,13 +21,15 @@ type Tx = mpsc::Sender<Vec<u8>>;
 struct GameServerState {
     clients: HashMap<SocketAddr, Tx>,
     names: HashMap<SocketAddr, String>,
+    gs: big2rules::SrvGameState,
 }
 
 impl GameServerState {
-    pub fn new() -> Self {
+    pub fn new(rounds: u8) -> Self {
         GameServerState {
             clients: HashMap::new(),
             names: HashMap::new(),
+            gs: big2rules::SrvGameState::new(rounds),
         }
     }
     pub fn seats_left(&self) -> bool {
@@ -53,24 +55,31 @@ impl GameServerState {
     }
 
     async fn join(&mut self, addr: SocketAddr, name: String) -> Result<(), Box<dyn Error>> {
-        self.names.insert(addr, name);
+        let idx = self.clients.len() & 0x3;
 
-        let buffer = vec![
-            5u8, 0, 0, 0, 0xe0, 0, 0, 0, 1, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0x15, 7,
-            0x37, 0x28, 0x38, 0x39, 0xa, 0x2b, 0x3b, 0x2c, 0x1d, 0x3d, 2, 0, 0, 0, 0xd, 0, 0, 0,
-            0x54, 0x69, 0x6b, 0x6b, 0x69, 0x65, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0,
-            0, 9, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0x68, 0x6f, 0x73, 0x74, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0x52, 0x65,
-            0x6e, 0x65, 0x31, 0x32, 0x33, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0xb,
-            0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0x52, 0x65, 0x6e, 0x65, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0xd, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0x16, 0x26, 0, 0,
-            0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0,
-        ];
+        let str_size = std::cmp::min(name.len(), 16);
+        let nb = &name.as_bytes()[..str_size];
 
-        self.broadcast(addr, buffer).await?;
+        self.gs.names[idx][..str_size].clone_from_slice(nb);
+
+        self.send_state_update(addr).await?;
+
         Ok(())
     }
+
+    /// Send a `LineCodec` encoded message to every peer, except
+    /// for the sender.
+    async fn send_state_update(&mut self, sender: SocketAddr) -> Result<(), Box<dyn Error>> {
+        for peer in self.clients.iter_mut() {
+            let message = self.gs.to_statemessage(0);
+            println!("send_state_update {:?} to {}", message, peer.0);
+            if let Err(e) = peer.1.send(message).await {
+                println!("broadcast error {:?}", e);
+            }
+        }
+        Ok(())
+    }
+
 
     /// Send a `LineCodec` encoded message to every peer, except
     /// for the sender.
@@ -122,8 +131,11 @@ async fn big2_handler(
                     let muon_ret = muon::parse_packet(nbytes, &buf);
                     match muon_ret {
                         Ok(muon::StateMessageActions::Join(name)) => {
-                            gs.lock().await.join(remote_ip, name).await?;
+                            {
+                                gs.lock().await.join(remote_ip, name).await?;
+                            }
                             joined = true;
+
                         },
                         _ => { println!("Invalid packet! {:?}", buf);
                             let _ = socket.write(&"Invalid UTF8\n".as_bytes()).await?;
@@ -172,14 +184,30 @@ async fn big2_handler(
                         break;
                     }
                     Ok(nbytes) => {
-                        let rec = String::from_utf8(buf[0..nbytes-1].to_vec());
+                        let rec = muon::parse_packet(nbytes, &buf);
+
                         match rec {
                             Ok(s) => {
-                                println!("client send: {}", s);
-                                // gs.lock().await.broadcast(remote_ip, &s).await?;
+                                {
+                                    let mut g = gs.lock().await;
+                                    match s {
+                                        muon::StateMessageActions::Pass => {
+                                            if g.gs.pass(0).is_ok() {
+                                                g.send_state_update(remote_ip).await?;
+                                            }
+                                        },
+                                        muon::StateMessageActions::Play(cards) => {
+                                            if g.gs.play(0,cards).is_ok() {
+                                                g.send_state_update(remote_ip).await?;
+                                            }
+                                        },
+                                        // muon::StateMessageActions::Ready => (),
+                                        _ => (),
+                                    }
+                                }
                             }
                             Err(_) => {
-                                socket.write(&"Invalid UTF8\n".as_bytes()).await?;
+                                println!("Error");
                             }
                         }
                     }
@@ -202,7 +230,7 @@ async fn big2_handler(
 }
 
 pub async fn start_server(listener: TcpListener) {
-    let peers = Arc::new(Mutex::new(GameServerState::new()));
+    let peers = Arc::new(Mutex::new(GameServerState::new(8)));
 
     let mut listener = listener;
     loop {

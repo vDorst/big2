@@ -8,6 +8,28 @@ use std::{
     mem,
 };
 
+impl big2rules::SrvGameState {
+    pub fn to_statemessage(&self, player: usize) -> Vec<u8> {
+        let mut sm = StateMessage::new(None);
+
+        sm.turn = self.turn;
+        sm.round = self.round as u32;
+        sm.num_rounds = self.rounds as u32;
+        sm.board = InlineList8::try_from(sm.board).unwrap();
+
+
+        for p in 0..=3 {
+            sm.players[p].score = self.score[p] as i32;
+            sm.players[p].num_cards = self.card_cnt[p] as i32;
+            sm.players[p].name = String16::from_vec(self.names[p].to_vec());
+        }
+
+        sm.your_index = player as i32;
+
+        bincode::serialize(&sm).unwrap()
+    }
+}
+
 impl StateMessage {
     pub fn new(init_buffer: Option<&[u8]>) -> Self {
         let buf: &[u8];
@@ -19,6 +41,7 @@ impl StateMessage {
         }
         let mut sm: StateMessage = bincode::deserialize(&buf).unwrap();
         sm.size = mem::size_of::<StateMessage>() as u32;
+        sm.kind = MT_STATE;
         sm
     }
     pub fn current_player(&self) -> Option<usize> {
@@ -176,7 +199,6 @@ impl String16 {
     }
 
     fn try_to_string(&self) -> Result<String,()> {
-        let mut s = String::with_capacity(16);
         if self.count < 0 || self.count > 16 {
             return Err(());
         }
@@ -194,6 +216,15 @@ impl String16 {
         let mut name_bytes: [u8; 16] = [0; 16];
         let nb = &name.as_bytes()[..str_size];
         name_bytes[..str_size].clone_from_slice(nb);
+        String16 {
+            count: str_size as i32,
+            data: name_bytes,
+        }
+    }
+    fn from_vec(name: Vec<u8>) -> Self {
+        let str_size = std::cmp::min(name.len(), 16);
+        let mut name_bytes: [u8; 16] = [0; 16];
+        name_bytes[..str_size].clone_from_slice(&name[..str_size]);
         String16 {
             count: str_size as i32,
             data: name_bytes,
