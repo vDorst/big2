@@ -1,5 +1,8 @@
-use std::net::SocketAddr;
 use tokio::net::TcpListener;
+
+#[cfg(test)]
+use std::net::SocketAddr;
+#[cfg(test)]
 use tokio::task::JoinHandle;
 
 mod client;
@@ -13,8 +16,9 @@ fn main() {
     let listener = rt.block_on(TcpListener::bind("127.0.0.1:27191")).unwrap();
     let addr = listener.local_addr().unwrap();
     println!("Starting server at {:?}", addr);
-    let server_handle = rt.block_on(async move { server::start_server(listener).await });
+    rt.block_on(async move { server::start_server(listener).await });
 }
+
 
 #[tokio::test]
 async fn test_connect() {
@@ -34,6 +38,7 @@ async fn test_connect() {
     };
 }
 
+#[cfg(test)]
 async fn start_server() -> (SocketAddr, JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();

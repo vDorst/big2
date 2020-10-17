@@ -1,30 +1,63 @@
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
 use crate::big2rules;
-use log::{debug, error, info, trace};
+use crate::server;
+//use log::{debug, error, info, trace};
+use log::{trace};
 use serde::{Deserialize, Serialize};
 use bincode;
+
 
 use std::{
     convert::TryFrom,
     mem,
 };
 
-impl big2rules::SrvGameState {
+impl server::GameServerState {
     pub fn to_statemessage(&self, player: usize) -> Vec<u8> {
         let mut sm = StateMessage::new(None);
 
-        sm.turn = self.turn;
-        sm.round = self.round as u32;
-        sm.num_rounds = self.rounds as u32;
-        sm.board = InlineList8::try_from(sm.board).unwrap();
-
+        sm.turn = self.gs.turn;
+        sm.round = self.gs.round as u32;
+        sm.num_rounds = self.gs.rounds as u32;
+        sm.board = InlineList8::try_from(self.gs.last_action & 0xFFFF_FFFF_FFFF_F000).unwrap();
 
         for p in 0..=3 {
-            sm.players[p].score = self.score[p] as i32;
-            sm.players[p].num_cards = self.card_cnt[p] as i32;
-            sm.players[p].name = String16::from_vec(self.names[p].to_vec());
+            sm.players[p].score = self.gs.score[p] as i32;
+            sm.players[p].num_cards = self.gs.card_cnt[p] as i32;
+            sm.players[p].name = if self.clients[p].addr.is_none() { String16::from_str("") } else { String16::from_vec(self.clients[p].name.to_vec()) };
+            let mask = 1 << p;
+            if self.gs.turn == -1 {
+                sm.players[p].is_ready = self.gs.has_passed & mask != 0;
+                sm.players[p].has_passed_this_cycle = false;
+            } else {
+                sm.players[p].is_ready = true;
+                sm.players[p].has_passed_this_cycle = self.gs.has_passed & mask != 0;
+            }
         }
 
         sm.your_index = player as i32;
+        sm.your_hand = InlineList16::try_from(self.gs.cards[player]).unwrap();
+
+        if self.gs.last_action & 0x70 == big2rules::SrvGameState::ACTION_PLAY {
+            sm.action.action_type = StateMessageActionType::PLAY;
+            sm.action.player = (self.gs.last_action & 0x03) as i32;
+            sm.action.cards = InlineList8::try_from(self.gs.last_action & 0xFFFF_FFFF_FFFF_F000).unwrap();
+        }
+
+        if self.gs.last_action & 0x70 == big2rules::SrvGameState::ACTION_PASS {
+            sm.action.action_type = StateMessageActionType::PASS;
+            sm.action.player = (self.gs.last_action & 0x03) as i32;
+        }
+
+        if self.gs.last_action & 0x70 == big2rules::SrvGameState::ACTION_DEAL {
+            sm.action.action_type = StateMessageActionType::DEAL;
+        }
+
+        if self.gs.last_action & 0x70 != 0 {
+            sm.action.is_end_of_cycle = self.gs.last_action & big2rules::SrvGameState::END_OF_CYCLE == big2rules::SrvGameState::END_OF_CYCLE;
+        }
 
         bincode::serialize(&sm).unwrap()
     }
@@ -152,7 +185,7 @@ struct PlayMessage {
     cards: InlineList8,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 struct StateMessageAction {
     pub action_type: StateMessageActionType,
     pub player: i32,
@@ -196,6 +229,11 @@ impl String16 {
             Ok(st) => s = st,
         }
         return s;
+    }
+
+    pub fn to_vec(&self) -> Vec<u8> {
+        let cnt: usize = self.count as usize;
+        self.data[..cnt].to_vec()
     }
 
     fn try_to_string(&self) -> Result<String,()> {
@@ -254,6 +292,36 @@ impl InlineList16 {
             }
         }
         return cards;
+    }
+}
+
+impl TryFrom<u64> for InlineList16 {
+    type Error = &'static str;
+
+    fn try_from(hand: u64) -> Result<Self, Self::Error> {
+        let mut cards = InlineList16 {
+            data: [0; 16],
+            count: 0,
+        };
+
+        let num_cards = hand.count_ones();
+        if num_cards > 13 || num_cards == 4 || hand & 0xFFF != 0 {
+            return Err("Invalid Hand!");
+        }
+
+        cards.count = num_cards as i32;
+
+        let mut hand = hand;
+        let mut p: usize = 0;
+        while hand != 0 {
+            let zeros = hand.trailing_zeros() as u64;
+
+            let mask = 1 << zeros;
+            hand ^= mask;
+            cards.data[p] = cards_to_byte(mask);
+            p += 1;
+        }
+        Ok(cards)
     }
 }
 
@@ -329,7 +397,7 @@ fn cards_to_byte(card: u64) -> u8 {
 
 #[derive(Debug)]
 pub enum StateMessageActions {
-    Join(String),
+    Join(big2rules::Name),
     Play(u64),
     Pass,
     Ready,
@@ -387,8 +455,6 @@ pub fn parse_packet(bytes: usize, buffer: &[u8]) -> Result<StateMessageActions, 
 
     let dm: DetectMessage = bincode::deserialize(&buffer).unwrap();
 
-    println!("Kind {}, Size {}", dm.kind, dm.size);
-
     if dm.kind == MT_JOIN {
         if dm.size as usize > bytes || dm.size as usize != mem::size_of::<JoinMessage>() {
             println!("Invalid size");
@@ -411,13 +477,51 @@ pub fn parse_packet(bytes: usize, buffer: &[u8]) -> Result<StateMessageActions, 
             println!("Invalid name");
             return Err(StateMessageError::PacketInvalid);
         }
+        let name = big2rules::Name::from_vec(jm.name.data.to_vec());
+        return Ok(StateMessageActions::Join(name));
+    }
 
-        return Ok(StateMessageActions::Join(name.unwrap()));
+    if dm.kind == MT_PLAY {
+        if dm.size as usize > bytes || dm.size as usize != mem::size_of::<PlayMessage>() {
+            println!("Invalid size");
+            return Err(StateMessageError::PacketInvalid);
+        }
+        let pm: PlayMessage = bincode::deserialize(&buffer).unwrap();
+
+        let cards = pm.cards.into_card();
+
+        match cards {
+            Err(e) => {
+                println!("Error {}", e);
+                return Err(StateMessageError::PacketInvalid);
+            },
+            Ok(cards) => return Ok(StateMessageActions::Play(cards)),
+        }
+    }
+
+    if dm.kind == MT_PASS {
+        if dm.size as usize > bytes || dm.size as usize != mem::size_of::<StateMessage>() {
+            println!("Invalid size");
+            return Err(StateMessageError::PacketInvalid);
+        }
+
+        return Ok(StateMessageActions::Pass);
+    }
+
+    if dm.kind == MT_READY {
+        if dm.size as usize > bytes || dm.size as usize != mem::size_of::<StateMessage>() {
+            println!("Invalid size");
+            return Err(StateMessageError::PacketInvalid);
+        }
+
+        return Ok(StateMessageActions::Ready);
     }
 
     if dm.kind == MT_HEARTBEAT && dm.size == 264 {
         return Ok(StateMessageActions::Heartbeat);
     }
+
+    println!("Unknown packet: Kind {}, Size {}", dm.kind, dm.size);
 
     Err(StateMessageError::InvalidKind)
 }
@@ -432,7 +536,7 @@ mod tests {
         let ret = parse_packet(jmb.len(), &jmb);
         println!("{:?}", ret);
         match ret {
-            Ok(StateMessageActions::Join(name)) => assert_eq!(name, String::from("Rene")),
+            Ok(StateMessageActions::Join(name)) => assert_eq!(name.to_vec(), big2rules::Name::from_str("Rene").to_vec()),
             _ => assert!(false),
         }
     }
@@ -459,4 +563,82 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_state_message_action_type() {
+        let at = StateMessageActionType::UPDATE;
+        let b = bincode::serialize(&at).unwrap();
+        assert_eq!(b, [0,0,0,0]);
+
+        let at = StateMessageActionType::DEAL;
+        let b = bincode::serialize(&at).unwrap();
+        assert_eq!(b, [1,0,0,0]);
+
+        let at = StateMessageActionType::PLAY;
+        let b = bincode::serialize(&at).unwrap();
+        assert_eq!(b, [2,0,0,0]);
+
+        let at = StateMessageActionType::PASS;
+        let b = bincode::serialize(&at).unwrap();
+        assert_eq!(b, [3,0,0,0]);
+    }
+
+
+    #[test]
+    fn test_state_message_action() {
+        let at = StateMessageAction { 
+            action_type: StateMessageActionType::UPDATE,
+            cards: InlineList8::try_from(0).unwrap(),
+            player: 0,
+            is_end_of_cycle: false,
+            padding: [0; 3],
+        };
+        let b = bincode::serialize(&at).unwrap();
+        assert_eq!(b, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+
+        let at = StateMessageAction {
+            action_type: StateMessageActionType::DEAL,
+            player: 0,
+            cards: InlineList8::try_from(0).unwrap(),
+            is_end_of_cycle: false,
+            padding: [0; 3],
+        };
+        let b = bincode::serialize(&at).unwrap();
+        assert_eq!(b, [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+
+        let at = StateMessageAction {
+            action_type: StateMessageActionType::PLAY,
+            player: 3,
+            cards: InlineList8::try_from(0x1000).unwrap(),
+            is_end_of_cycle: true,
+            padding: [0; 3],
+        };
+        let b = bincode::serialize(&at).unwrap();
+        assert_eq!(b, [2, 0, 0, 0, 3, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]);
+
+        let at2: StateMessageAction = bincode::deserialize(&b).unwrap();
+        assert_eq!(at, at2);
+
+        let at = StateMessageAction {
+            action_type: StateMessageActionType::PLAY,
+            player: 2,
+            cards: InlineList8::try_from(0xF000_1000).unwrap(),
+            is_end_of_cycle: false,
+            padding: [0; 3],
+        };
+        let b = bincode::serialize(&at).unwrap();
+        assert_eq!(b, [2, 0, 0, 0, 2, 0, 0, 0, 3, 7, 23, 39, 55, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
+
+        let at = StateMessageAction {
+            action_type: StateMessageActionType::PASS,
+            player: 3,
+            cards: InlineList8::try_from(0).unwrap(),
+            is_end_of_cycle: false,
+            padding: [0; 3],
+        };
+        let b = bincode::serialize(&at).unwrap();
+        assert_eq!(b, [3, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+
+
+      
+    }
 }

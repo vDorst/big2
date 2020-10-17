@@ -1,5 +1,6 @@
-use std::collections::HashMap;
-use std::error::Error;
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
 use std::sync::Arc;
 use tokio::io::AsyncReadExt;
 use tokio::net::{TcpListener, TcpStream};
@@ -10,7 +11,12 @@ use tokio::time::{self, Duration};
 use std::net::SocketAddr;
 use tokio::sync::mpsc;
 
-use log::{error, info, trace};
+use rand::seq::SliceRandom;
+use rand::thread_rng;
+
+use log::{error};
+
+use thiserror::Error;
 
 use crate::big2rules;
 use crate::muon;
@@ -18,63 +24,111 @@ use crate::muon;
 /// Shorthand for the transmit half of the message channel.
 type Tx = mpsc::Sender<Vec<u8>>;
 
-struct GameServerState {
-    clients: HashMap<SocketAddr, Tx>,
-    names: HashMap<SocketAddr, String>,
-    gs: big2rules::SrvGameState,
+
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("Invalid String!")]
+    InvalidString,
+    #[error("TCP disconnected")]
+    Disconnect(#[from] std::io::Error),
+
+    #[error("No Seats left")]
+    NoSeatsLeft,
+
+    #[error("Peer not in list")]
+    PeerNotInList,
+
+    #[error("SendError")]
+    SendError(#[from] mpsc::error::SendError<Vec<u8>> ),
+}
+
+pub struct Peer {
+    pub name: big2rules::Name,
+    pub addr: Option<SocketAddr>,
+    pub tx: Option<Tx>,
+}
+
+
+pub struct GameServerState {
+    pub clients: Vec<Peer>,
+    pub gs: big2rules::SrvGameState,
 }
 
 impl GameServerState {
     pub fn new(rounds: u8) -> Self {
+        let mut clients = Vec::with_capacity(4);
+        for _ in 1..=4 {
+            clients.push( Peer { name: big2rules::Name::new(), addr: None, tx: None} );
+        }
+        assert_eq!(clients.len(), 4);
+
         GameServerState {
-            clients: HashMap::new(),
-            names: HashMap::new(),
+            clients: clients,
             gs: big2rules::SrvGameState::new(rounds),
         }
     }
     pub fn seats_left(&self) -> bool {
         self.clients.len() != 4
     }
+
     /// Create a new instance of `Peer`.
-    async fn new_client(&mut self, addr: SocketAddr, tx: Tx) -> Result<(), Box<dyn Error>> {
+    fn new_client(&mut self, addr: SocketAddr, tx: Tx, name: big2rules::Name) -> Result<usize, Error> {
+        let mut free = Vec::<usize>::with_capacity(4);
+
+        for (i, c) in self.clients.iter_mut().enumerate() {
+            if c.addr.is_none() {
+                if c.name == name {
+                    c.addr = Some(addr);
+                    c.tx = Some(tx);
+                    return Ok(i);
+                }
+                free.push(i);
+            }
+        }
+
+        if free.len() == 0 {
+            return Err(Error::NoSeatsLeft);
+        }
+
+        free.shuffle(&mut thread_rng());
+
+        let idx = free[0];
+
         // Add an entry for this `Peer` in the shared state map.
-        self.clients.insert(addr, tx);
+        self.clients[idx].addr = Some(addr);
+        self.clients[idx].tx = Some(tx);
+        self.clients[idx].name = name;
 
-        println!("Add client {}", addr);
-
-        Ok(())
+        Ok(idx)
     }
-    async fn remove_client(&mut self, addr: SocketAddr) -> Result<(), Box<dyn Error>> {
-        println!("Remove client {}", addr);
-        self.clients.remove(&addr);
-        if let Some(name) = self.names.remove(&addr) {
-            let msg = vec![123];
-            self.broadcast(addr, msg).await?;
+    async fn remove_client(&mut self, addr: SocketAddr) -> Result<(), Error> {
+
+        for peer in self.clients.iter_mut(){
+            if peer.addr == Some(addr) {
+                peer.addr = None;
+                peer.tx = None;
+                return Ok(());
+            }
         }
-        Ok(())
-    }
 
-    async fn join(&mut self, addr: SocketAddr, name: String) -> Result<(), Box<dyn Error>> {
-        let idx = self.clients.len() & 0x3;
-
-        let str_size = std::cmp::min(name.len(), 16);
-        let nb = &name.as_bytes()[..str_size];
-
-        self.gs.names[idx][..str_size].clone_from_slice(nb);
-
-        self.send_state_update(addr).await?;
-
-        Ok(())
+        Err( Error::PeerNotInList )
     }
 
     /// Send a `LineCodec` encoded message to every peer, except
     /// for the sender.
-    async fn send_state_update(&mut self, sender: SocketAddr) -> Result<(), Box<dyn Error>> {
-        for peer in self.clients.iter_mut() {
-            let message = self.gs.to_statemessage(0);
-            println!("send_state_update {:?} to {}", message, peer.0);
-            if let Err(e) = peer.1.send(message).await {
-                println!("broadcast error {:?}", e);
+    async fn send_state_update(&mut self) -> Result<(), Error> {
+        for (p, peer) in self.clients.iter().enumerate() {
+            if peer.addr.is_some() && peer.tx.is_some() {
+                let message = self.to_statemessage(p);
+                if p == 0 { println!("Send StateMessage {:?}", message); }
+
+                let mut tx = peer.tx.to_owned().unwrap();
+
+                if let Err(e) = tx.send(message.clone()).await {
+                    return Err(Error::SendError(e));
+                }
+
+                //println!("Send StateMessage {:?} to {}", message, peer.addr.unwrap());
             }
         }
         Ok(())
@@ -83,12 +137,15 @@ impl GameServerState {
 
     /// Send a `LineCodec` encoded message to every peer, except
     /// for the sender.
-    async fn broadcast(&mut self, sender: SocketAddr, message: Vec<u8>) -> Result<(), Box<dyn Error>> {
-        for peer in self.clients.iter_mut() {
-            if let Err(e) = peer.1.send(message.clone()).await {
-                println!("broadcast error {:?}", e);
+    async fn broadcast(&mut self, sender: SocketAddr, message: Vec<u8>) -> Result<(), Error> {
+        for peer in self.clients.iter() {
+            if peer.addr.is_some() && peer.tx.is_some() {
+                let mut tx = peer.tx.to_owned().unwrap();
+                if let Err(e) = tx.send(message.clone()).await {
+                    println!("broadcast error {:?}", e);
+                }
+                println!("Send message {:?} to {}", message, peer.addr.unwrap());
             }
-            println!("Send message {:?} to {}", message, peer.0);
         }
         Ok(())
     }
@@ -97,25 +154,17 @@ impl GameServerState {
 async fn big2_handler(
     gs: Arc<Mutex<GameServerState>>,
     mut socket: TcpStream,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), Error> {
     let remote_ip = socket.peer_addr()?;
     println!("big2_handler: New connection from {}", remote_ip);
 
-    {
-        if !gs.lock().await.seats_left() {
-            println!("No more seats left!");
-            socket.write(&"No more seats left!\n".as_bytes()).await?;
-            return Ok(());
-        }
-    }
-
     // Add an entry for this `Peer` in the shared state map.
     let (tx, mut rx) = tokio::sync::mpsc::channel(8);
-    gs.lock().await.new_client(remote_ip, tx).await?;
 
     let mut timeout_timer = time::delay_for(Duration::from_secs(5));
 
     let mut joined = false;
+    let mut idx: usize = 0;
     // Read the first line from the `LineCodec` stream to get the username.
     let mut buf = [0u8; 512];
     tokio::select! {
@@ -132,10 +181,21 @@ async fn big2_handler(
                     match muon_ret {
                         Ok(muon::StateMessageActions::Join(name)) => {
                             {
-                                gs.lock().await.join(remote_ip, name).await?;
-                            }
-                            joined = true;
+                                let mut b = gs.lock().await;
+                                println!("Add client {} name {}", remote_ip, name.to_string());
+                                idx = b.new_client(remote_ip, tx, name)?;
+                                if b.gs.turn == -1 {
+                                    b.gs.has_passed |= 1 << idx;
+                                }
+                                b.gs.last_action = 0;
+                                b.send_state_update().await?;
+                                joined = true;
 
+                                if b.gs.turn == -1 && b.gs.has_passed == 0xF {
+                                    b.gs.deal(None);
+                                    b.send_state_update().await?;
+                                }
+                            }
                         },
                         _ => { println!("Invalid packet! {:?}", buf);
                             let _ = socket.write(&"Invalid UTF8\n".as_bytes()).await?;
@@ -150,7 +210,10 @@ async fn big2_handler(
     }
 
     if !joined {
-        gs.lock().await.remove_client(remote_ip).await?;
+        let mut b = gs.lock().await;
+        b.remove_client(remote_ip).await?;
+        b.gs.last_action = 0;
+        b.send_state_update().await?;
         return Ok(());
     }
 
@@ -164,7 +227,7 @@ async fn big2_handler(
                 match to_clt {
                     Some(to_clt) =>
                     {
-                        println!("Write to client {:?}", to_clt);
+                        // println!("Write to client {:?}", to_clt);
                         socket.write(&to_clt).await?;
                     }
                     None => {
@@ -192,13 +255,15 @@ async fn big2_handler(
                                     let mut g = gs.lock().await;
                                     match s {
                                         muon::StateMessageActions::Pass => {
-                                            if g.gs.pass(0).is_ok() {
-                                                g.send_state_update(remote_ip).await?;
+                                            println!("Player {} Passed", idx);
+                                            if g.gs.pass(idx as i32).is_ok() {
+                                                g.send_state_update().await?;
                                             }
                                         },
                                         muon::StateMessageActions::Play(cards) => {
-                                            if g.gs.play(0,cards).is_ok() {
-                                                g.send_state_update(remote_ip).await?;
+                                            println!("Player {} Play", idx);
+                                            if g.gs.play(idx as i32, cards).is_ok() {
+                                                g.send_state_update().await?;
                                             }
                                         },
                                         // muon::StateMessageActions::Ready => (),
@@ -224,7 +289,11 @@ async fn big2_handler(
         }
     }
 
-    gs.lock().await.remove_client(remote_ip).await?;
+    {
+        let mut b = gs.lock().await;
+        b.remove_client(remote_ip).await?;
+        b.send_state_update().await?;
+    }
 
     Ok(())
 }

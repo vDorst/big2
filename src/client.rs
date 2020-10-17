@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
 use tokio::net::{ToSocketAddrs, TcpStream};
 use std::io::{Result};
 use tokio::io::{AsyncWriteExt};
