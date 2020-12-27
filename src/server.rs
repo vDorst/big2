@@ -114,29 +114,23 @@ impl GameServerState {
         Err( Error::PeerNotInList )
     }
 
-    /// Send a `LineCodec` encoded message to every peer, except
-    /// for the sender.
     async fn send_state_update(&mut self) -> Result<(), Error> {
         for (p, peer) in self.clients.iter().enumerate() {
             if peer.addr.is_some() && peer.tx.is_some() {
                 let message = self.to_statemessage(p);
-                if p == 0 { println!("Send StateMessage {:?}", message); }
+                // if p == 0 { println!("Send StateMessage {:?}", message); }
 
                 let mut tx = peer.tx.to_owned().unwrap();
 
                 if let Err(e) = tx.send(message.clone()).await {
                     return Err(Error::SendError(e));
                 }
-
-                //println!("Send StateMessage {:?} to {}", message, peer.addr.unwrap());
             }
         }
         Ok(())
     }
 
 
-    /// Send a `LineCodec` encoded message to every peer, except
-    /// for the sender.
     async fn broadcast(&mut self, sender: SocketAddr, message: Vec<u8>) -> Result<(), Error> {
         for peer in self.clients.iter() {
             if peer.addr.is_some() && peer.tx.is_some() {
@@ -144,7 +138,7 @@ impl GameServerState {
                 if let Err(e) = tx.send(message.clone()).await {
                     println!("broadcast error {:?}", e);
                 }
-                println!("Send message {:?} to {}", message, peer.addr.unwrap());
+                // println!("Send message {:?} to {}", message, peer.addr.unwrap());
             }
         }
         Ok(())
@@ -180,21 +174,19 @@ async fn big2_handler(
                     let muon_ret = muon::parse_packet(nbytes, &buf);
                     match muon_ret {
                         Ok(muon::StateMessageActions::Join(name)) => {
-                            {
-                                let mut b = gs.lock().await;
-                                println!("Add client {} name {}", remote_ip, name.to_string());
-                                idx = b.new_client(remote_ip, tx, name)?;
-                                if b.gs.turn == -1 {
-                                    b.gs.has_passed |= 1 << idx;
-                                }
-                                b.gs.last_action = 0;
-                                b.send_state_update().await?;
-                                joined = true;
+                            let mut b = gs.lock().await;
+                            println!("Add client {} name {}", remote_ip, name.to_string());
+                            idx = b.new_client(remote_ip, tx, name)?;
+                            if b.gs.turn == -1 {
+                                b.gs.has_passed |= 1 << idx;
+                            }
+                            b.gs.last_action = 0;
+                            b.send_state_update().await?;
+                            joined = true;
 
-                                if b.gs.turn == -1 && b.gs.has_passed == 0xF {
-                                    b.gs.deal(None);
-                                    b.send_state_update().await?;
-                                }
+                            if b.gs.turn == -1 && b.gs.has_passed == 0xF {
+                                b.gs.deal(None);
+                                b.send_state_update().await?;
                             }
                         },
                         _ => { println!("Invalid packet! {:?}", buf);
@@ -255,18 +247,23 @@ async fn big2_handler(
                                     let mut g = gs.lock().await;
                                     match s {
                                         muon::StateMessageActions::Pass => {
-                                            println!("Player {} Passed", idx);
                                             if g.gs.pass(idx as i32).is_ok() {
+                                                println!("{}. {} PASSED", idx, g.clients[idx].name.to_string());
                                                 g.send_state_update().await?;
                                             }
                                         },
                                         muon::StateMessageActions::Play(cards) => {
-                                            println!("Player {} Play", idx);
                                             if g.gs.play(idx as i32, cards).is_ok() {
+                                                println!("{}. {} PLAYS {}", idx, g.clients[idx].name.to_string(), big2rules::cards::cards_to_string(cards) );
                                                 g.send_state_update().await?;
                                             }
                                         },
-                                        // muon::StateMessageActions::Ready => (),
+                                        muon::StateMessageActions::Ready => {
+                                            if g.gs.ready(idx as i32).is_ok() {
+                                                println!("{}. {} READY", idx, g.clients[idx].name.to_string());
+                                                g.send_state_update().await?;
+                                            }
+                                        },
                                         _ => (),
                                     }
                                 }

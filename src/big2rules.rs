@@ -5,8 +5,8 @@ pub mod deck {
     use rand::seq::SliceRandom;
     use rand::thread_rng;
 
-    const NUMBER_OF_CARDS: u8 = 52;
-    const START_BIT: u8 = 12;
+    pub const NUMBER_OF_CARDS: u8 = 52;
+    pub const START_BIT: u8 = 12;
 
     pub fn deal() -> [u64; 4] {
         // Create and shulle deck of cards
@@ -51,6 +51,8 @@ pub mod deck {
 }
 
 pub mod cards {
+    use super::deck;
+
     #[non_exhaustive]
     pub struct Kind;
     #[non_exhaustive]
@@ -115,6 +117,46 @@ pub mod cards {
 
     pub fn has_suit(card: u64) -> u64 {
         return 1 << (card_selected(card) & 0x3);
+    }
+
+    fn cards_to_utf8(card: u64, card_str: &mut String) {
+        //             0123456789ABCDEF
+        let rank_str: Vec<u8> = ".+-3456789TJQKA2".into();
+        let rank: usize;
+        let suit: u64;
+
+        rank = has_rank_idx(card) as usize;
+        suit = has_suit(card);
+
+        card_str.push(rank_str[rank] as char);
+
+        if suit == Kind::DIAMONDS {
+            card_str.push_str("\u{2666}");
+        }
+        if suit == Kind::CLUBS {
+            card_str.push_str("\u{2663}");
+        }
+        if suit == Kind::HEARTS {
+            card_str.push_str("\u{2665}");
+        }
+        if suit == Kind::SPADES {
+            card_str.push_str("\u{2660}");
+        }
+    }
+
+    pub fn cards_to_string(card: u64) -> String {
+        let mut out_str = String::from("");
+        for c in 0..self::deck::NUMBER_OF_CARDS {
+            let bit: u64 = (self::deck::START_BIT + c) as u64;
+            let dsp_card = card & (1 << bit);
+            if dsp_card == 0 {
+                continue;
+            }
+            cards_to_utf8(dsp_card as u64, &mut out_str);
+
+            out_str.push(' ');
+        }
+        out_str
     }
 }
 
@@ -286,28 +328,18 @@ impl Name {
 
     pub fn from_str(name: &str) -> Self {
         assert!(name.len() <= 16);
-        let mut n = Name { 0: Vec::<u8>::with_capacity(16) };
-        let mut bname = name.as_bytes().to_vec();
-        bname.resize_with(16, Default::default);
-        n.0.append(&mut bname);
-        n
+        Name { 0: name.as_bytes().to_vec() }
     }
 
     pub fn from_vec(name: Vec<u8>) -> Self {
         assert!(name.len() <= 16);
-        println!("{:?} len {} cap {}", name, name.len(), name.capacity());
-        let mut n = Name { 0: Vec::<u8>::with_capacity(16) };
-        println!("{:?} len {} cap {}", n.0, n.0.len(), n.0.capacity());
-        let mut name = name;
-        name.resize_with(16, Default::default);
-        n.0.append(&mut name);
-        n
+        Name { 0: name }
     }
     pub fn to_vec(&self) -> Vec<u8> {
         self.0.clone()
     }
 }
-
+#[derive(Debug)]
 pub struct SrvGameState {
     pub prev_action: u64,
     pub last_action: u64,
@@ -337,6 +369,8 @@ impl SrvGameState {
     pub const ACTION_DEAL: u64 = 0x10;
     pub const ACTION_PLAY: u64 = 0x20;
     pub const ACTION_PASS: u64 = 0x40;
+
+    pub const ACTION_MASK: u64 = Self::ACTION_DEAL | Self::ACTION_PLAY | Self::ACTION_PASS;
 
     pub fn new(rounds: u8) -> Self {
         SrvGameState {
@@ -372,10 +406,10 @@ impl SrvGameState {
         let mut m: u64 = 0;
         for c in self.cards.iter() {
             m |= c;
-            println!("C 0x{:16x} count {}", c, c.count_ones());
+            // println!("C 0x{:16x} count {}", c, c.count_ones());
         }
         let im = !(m | 0xFFF);
-        println!("! 0x{:16x} M 0x{:16x} count {}", im, m, im.count_ones());
+        // println!("! 0x{:16x} M 0x{:16x} count {}", im, m, im.count_ones());
         // assert!(m == 0xFFFF_FFFF_FFFF_F000);
 
         // Which player to start
@@ -383,12 +417,12 @@ impl SrvGameState {
             self.turn = self.cards.iter().position(|&x| x & 0x1000 != 0).unwrap() as i32;
         } else {
             let p = (self.last_action & 0x3) as i32;
-            println!("Last action {:16x} P{}", self.last_action, p);
+            // println!("Last action {:16x} P{}", self.last_action, p);
             self.turn = p;
         }
 
         self.prev_action = self.last_action;
-        self.last_action = 0x1 | (self.turn as u64);
+        self.last_action = Self::ACTION_DEAL | (self.turn as u64);
     }
     pub fn play(&mut self, player: i32, hand: u64) -> Result<(), SrvGameError> {
         if player != self.turn {
@@ -413,7 +447,7 @@ impl SrvGameState {
         }
 
         self.prev_action = self.last_action;
-        self.last_action = hand | SrvGameState::ACTION_DEAL | (p as u64) | ((self.last_action & 0x3) << 2);
+        self.last_action = hand | SrvGameState::ACTION_PLAY | (p as u64) | ((self.last_action & 0x3) << 2);
 
         self.board_score = score;
         self.cards[p] ^= hand;
@@ -423,7 +457,7 @@ impl SrvGameState {
 
         if self.card_cnt[p] == 0 {
             self.calc_score();
-            println!("No more cards! Score: {:?}", self.score);
+            // println!("No more cards! Score: {:?}", self.score);
             self.turn = -1;
 
             return Ok(());
@@ -439,6 +473,7 @@ impl SrvGameState {
 
         Ok(())
     }
+
     pub fn pass(&mut self, player: i32) -> Result<(), SrvGameError> {
         if player != self.turn {
             return Err(SrvGameError::NotPlayersTurn);
@@ -458,6 +493,30 @@ impl SrvGameState {
         Ok(())
     }
 
+    pub fn ready(&mut self, player: i32) -> Result<(), SrvGameError> {
+        if player != self.turn {
+            return Err(SrvGameError::NotPlayersTurn);
+        }
+        let b = 1 << player;
+        if b & self.has_passed != 0 {
+            return Err(SrvGameError::AllreadyPassed);
+        }
+
+        self.has_passed |= b;
+
+        if self.has_passed == 0xF {
+            self.deal(None);
+        }
+
+        Ok(())
+    }
+
+    fn end_of_cycle(&mut self) {
+        self.board_score = 0;
+        self.has_passed = 0;
+        self.last_action |= SrvGameState::END_OF_CYCLE;
+    }
+
     fn next_player(&mut self) {
         let mut next = self.turn;
 
@@ -466,8 +525,7 @@ impl SrvGameState {
                 "Play 2s which is the highest card bs {:3x}",
                 self.board_score
             );
-            self.board_score = 0;
-            self.has_passed = 0;
+            self.end_of_cycle();
             return;
         }
 
@@ -475,14 +533,14 @@ impl SrvGameState {
             next = (next + 1) & 0x3;
 
             let b = 1 << next;
-            println!(
-                "    TURN {} NEXT {} HP {:x} B {:x} SKIP {:x}",
-                self.turn,
-                next,
-                self.has_passed,
-                b,
-                self.has_passed & b
-            );
+            // println!(
+            //     "    TURN {} NEXT {} HP {:x} B {:x} SKIP {:x}",
+            //     self.turn,
+            //     next,
+            //     self.has_passed,
+            //     b,
+            //     self.has_passed & b
+            // );
 
             if self.has_passed & b == 0 {
                 break;
@@ -490,15 +548,14 @@ impl SrvGameState {
         }
         if self.has_passed.count_ones() == 3 {
             // everyone has passed.
-            self.board_score = 0;
-            self.has_passed = 0;
-            self.last_action |= SrvGameState::END_OF_CYCLE;
-            println!("\tEveryone has passed bs {:3x}", self.board_score);
+            println!("Everyone has passed: End Of Cycle!");
+            self.end_of_cycle();
         }
 
         self.turn = next;
         return;
     }
+
     fn calc_score(&mut self) {
         let mut t: i16 = 0;
 
@@ -818,26 +875,26 @@ mod tests_name_type {
     fn name_from_str_valid() {
         let name = Name::from_str("");
         let vec = name.to_vec();
-        assert_eq!(vec.len(), 16);
-        assert_eq!(vec, vec![0; 16]);
+        assert_eq!(vec.len(), 0);
+        assert_eq!(vec, vec![0; 0]);
 
         let name = Name::from_str("PlayerName");
         let vec = name.to_vec();
-        assert_eq!(vec.len(), 16);
-        assert_eq!(vec, vec![80, 108, 97, 121, 101, 114, 78, 97, 109, 101, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(vec.len(), 10);
+        assert_eq!(vec, vec![80, 108, 97, 121, 101, 114, 78, 97, 109, 101]);
     }
 
     #[test]
     fn name_from_vec_valid() {
         let name = Name::from_vec(Vec::new());
         let vec = name.to_vec();
-        assert_eq!(vec.len(), 16);
-        assert_eq!(vec, vec![0; 16]);
+        assert_eq!(vec.len(), 0);
+        assert_eq!(vec, vec![]);
 
         let name = Name::from_vec(vec![80, 108, 97, 121, 101, 114, 78, 97, 109, 101]);
         let vec = name.to_vec();
-        assert_eq!(vec.len(), 16);
-        assert_eq!(vec, vec![80, 108, 97, 121, 101, 114, 78, 97, 109, 101, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(vec.len(), 10);
+        assert_eq!(vec, vec![80, 108, 97, 121, 101, 114, 78, 97, 109, 101]);
 
         let name = Name::from_vec(vec![80, 108, 97, 121, 101, 114, 78, 97, 109, 101, 0, 0, 0, 0, 0, 0]);
         let vec = name.to_vec();
@@ -852,7 +909,7 @@ mod tests_name_type {
         let name = Name::from_str("I have a to long name!");
     }
 
-    
+
     #[test]
     #[should_panic]
     fn name_from_vec_invalid() {
