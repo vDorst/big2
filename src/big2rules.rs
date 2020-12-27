@@ -351,6 +351,7 @@ pub struct GameState {
 }
 
 pub struct SrvGameState {
+    pub prev_action: u64,
     pub last_action: u64,
     pub board_score: u64,
     pub has_passed: u8,
@@ -374,6 +375,7 @@ pub enum SrvGameError {
 impl SrvGameState {
     pub fn new(rounds: u8) -> Self {
         SrvGameState {
+            prev_action: 0,
             last_action: 0,
             board_score: 0,
             has_passed: 0,
@@ -427,7 +429,7 @@ impl SrvGameState {
         }
 
         let p: usize = player as usize & 0x3;
-        let mut pc = self.cards[p];
+        let pc = self.cards[p];
         let illegal_cards = (pc ^ hand) & hand;
 
         if illegal_cards != 0 {
@@ -443,19 +445,20 @@ impl SrvGameState {
             return Err(SrvGameError::InvalidHand);
         }
 
+        self.prev_action = self.last_action;
+        self.last_action = hand | (p as u64) | ((self.last_action & 0x3) << 2);
+
         self.board_score = score;
-        self.last_action = hand | (p as u64);
-
-        pc ^= hand;
-        // pc &= !hand;
-
-        self.cards[p] = pc;
+        self.cards[p] ^= hand;
 
         let cnt = hand.count_ones();
         self.card_cnt[p] -= cnt as u8;
+
         if self.card_cnt[p] == 0 {
-            // println!("No more cards!");
+            self.calc_score();
+            println!("No more cards! Score: {:?}", self.score);
             self.turn = -1;
+
             return Ok(());
         }
 
@@ -524,6 +527,45 @@ impl SrvGameState {
 
         self.turn = next;
         return;
+    }
+    fn calc_score(&mut self) {
+        let mut t: i16 = 0;
+
+        let prev_player = self.prev_action as usize & 0x3;
+        let curr_player = self.last_action as usize & 0x3;
+        let hand = self.last_action & 0xFFFF_FFFF_FFFF_F000;
+
+        // Assist!
+        let assisted = self.board_score & 0xF00 == 0x100
+            && prev_player != curr_player
+            && hand < self.cards[prev_player];
+
+        if assisted {
+            println!(
+                "Assist! PP{} {:16x} CP{} {:16x}",
+                prev_player, self.cards[prev_player], self.turn, hand,
+            )
+        }
+
+        let mut delta_score: [i16; 4] = [0; 4];
+        for i in 0..4 {
+            let mut s = self.card_cnt[i] as i16;
+            if s == 13 {
+                s *= 3
+            } else if s > 9 {
+                s *= 2
+            };
+            t += s;
+            delta_score[i] = s;
+        }
+        if assisted {
+            self.score[prev_player] -= t
+        } else {
+            for i in 0..4 {
+                self.score[i] -= delta_score[i];
+            }
+        }
+        self.score[self.turn as usize] += t;
     }
 }
 
@@ -679,7 +721,7 @@ mod tests {
             rules::score_hand(0x1100_0000_0011_1000) == cards::Kind::STRAIGHTFLUSH | 0x3c | 0x80
         );
 
-        // BARBAGE
+        // GARBAGE
         assert!(rules::score_hand(0x0001_0311 << 12) == 0);
     }
     #[test]
@@ -712,5 +754,85 @@ mod tests {
         let card: u64 = 0x8000_0000_0000_0000;
         assert!(cards::has_rank_idx(card) == cards::Rank::TWO);
         assert!(cards::has_suit(card) == cards::Kind::SPADES);
+    }
+
+    #[test]
+    fn assist_test() {
+        let mut gs = SrvGameState::new(1);
+        gs.deal(Some(&[
+            0x1111_1111_1111_1000,
+            0x2222_2222_2222_2000,
+            0x4444_4444_4444_4000,
+            0x8888_8888_8888_8000,
+        ]));
+        assert_eq!(gs.turn, 0);
+
+        // reduct cards
+        gs.cards = [0x24000, 0x8000, 0x2000, 0x1000];
+        gs.card_cnt = [2, 1, 1, 1];
+
+        match gs.play(0, 0x4000) {
+            Ok(_) => assert!(true),
+            Err(_) => assert!(false),
+        }
+        match gs.play(1, 0x8000) {
+            Ok(_) => assert!(true),
+            Err(_) => assert!(false),
+        }
+        assert_eq!(gs.score, [-3, 3, 0, 0]);
+    }
+    #[test]
+    fn non_assist_test() {
+        let mut gs = SrvGameState::new(1);
+        gs.deal(Some(&[
+            0x1111_1111_1111_1000,
+            0x2222_2222_2222_2000,
+            0x4444_4444_4444_4000,
+            0x8888_8888_8888_8000,
+        ]));
+        assert_eq!(gs.turn, 0);
+
+        // reduct cards
+        gs.cards = [0x5000, 0x8000, 0x2000, 0x40000];
+        gs.card_cnt = [2, 1, 1, 1];
+
+        match gs.play(0, 0x4000) {
+            Ok(_) => assert!(true),
+            Err(_) => assert!(false),
+        }
+        match gs.play(1, 0x8000) {
+            Ok(_) => assert!(true),
+            Err(_) => assert!(false),
+        }
+        assert_eq!(gs.score, [-1, 3, -1, -1]);
+    }
+    #[test]
+    fn score_multiply_test() {
+        let mut gs = SrvGameState::new(1);
+        gs.deal(Some(&[
+            0x1111_1111_1111_1000,
+            0x2222_2222_2222_2000,
+            0x8444_4444_4444_4000,
+            0x4888_8888_8888_8000,
+        ]));
+        assert_eq!(gs.turn, 0);
+
+        // reduct cards
+        gs.cards[2] = 0x8000_0000_0000_0000;
+        gs.card_cnt[2] = 1;
+
+        match gs.play(0, 0x1000) {
+            Ok(_) => assert!(true),
+            Err(_) => assert!(false),
+        }
+        match gs.play(1, 0x2000) {
+            Ok(_) => assert!(true),
+            Err(_) => assert!(false),
+        }
+        match gs.play(2, 0x8000_0000_0000_0000) {
+            Ok(_) => assert!(true),
+            Err(_) => assert!(false),
+        }
+        assert_eq!(gs.score, [-24, -24, 87, -39]);
     }
 }

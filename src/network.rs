@@ -341,6 +341,11 @@ pub mod client {
 
             let bytes = ret.unwrap();
 
+            if bytes == 0 {
+                error!("TCP: Socket closed!");
+                break;
+            }
+
             if bytes < mem::size_of::<client::DetectMessage>() {
                 error!("TCP: Packet too small {}", bytes);
                 thread::sleep(Duration::from_millis(1000));
