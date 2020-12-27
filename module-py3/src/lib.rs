@@ -53,13 +53,13 @@ impl GameClient {
     pub fn join(&mut self, addr: String, name: String) -> PyResult<()> {
         let client = client::TcpClient::connect(addr);
 
-        if let Err(e) = client {
+        if let Err(_e) = client {
             return Err(PyValueError::new_err("Unable to connect"));
         }
 
         let mut ts = client.unwrap();
 
-        if let Err(e) = ts.send_join_msg(&name) {
+        if let Err(_e) = ts.send_join_msg(&name) {
             return Err(PyValueError::new_err("Unable to send join msg"));
         }
 
@@ -68,22 +68,24 @@ impl GameClient {
         return Ok(());
     }
 
-    // pub fn action_play(self, hand: u64) -> PyResult<()> {
-    //     let ts = self.ts.unwrap();
-    //     let ret = ts.action_play(hand);
-    //     if ret.is_err() == true {
-    //         return Err(PyValueError::new_err("TCP error: Unable to send PLAY."));
-    //     }
-    //     Ok(())
-    // }
-    // pub fn action_pass(self) -> PyResult<()> {
-    //     let ts = self.ts.unwrap();
-    //     let ret = ts.action_pass();
-    //     if ret.is_err() == true {
-    //         return Err(PyValueError::new_err("TCP error: Unable to send PASS."));
-    //     }
-    //     Ok(())
-    // }
+    pub fn action_play(&mut self, hand: u64) -> PyResult<()> {
+        let mut ts = self.ts.take().unwrap();
+        let ret = ts.action_play(hand);
+        self.ts = Some(ts);
+        if ret.is_err() == true {
+            return Err(PyValueError::new_err("TCP error: Unable to send PLAY."));
+        }
+        Ok(())
+    }
+    pub fn action_pass(&mut self) -> PyResult<()> {
+        let mut ts = self.ts.take().unwrap();
+        let ret = ts.action_pass();
+        self.ts = Some(ts);
+        if ret.is_err() == true {
+            return Err(PyValueError::new_err("TCP error: Unable to send PASS."));
+        }
+        Ok(())
+    }
     pub fn turn(&self) -> PyResult<i32> {
         Ok(self.sm.turn)
     }
@@ -94,10 +96,22 @@ impl GameClient {
         Ok(self.board_score)
     }
 
-    pub fn poll(&self) -> PyResult<Option<u64>> {
-        let ts = self.ts.unwrap();
+    // Returns your index number between 0-3.
+    // If your_index equals turn then it is your turn!
+    pub fn your_index(&self) -> PyResult<i32> {
+        Ok(self.sm.your_index)
+    }
+
+    pub fn my_turn(&self) -> PyResult<bool> {
+        Ok(self.sm.your_index == self.sm.turn)
+    }
+
+    pub fn poll(&mut self) -> PyResult<Option<u64>> {
+        let mut ts = self.ts.take().unwrap();
         let ret = ts.check_buffer();
-        if let Err(e) = ret {
+        self.ts = Some(ts);
+
+        if let Err(_e) = ret {
             return Err(PyValueError::new_err("TCP error: Unable POLL DATA"));
         }
         let buffer_sm = ret.unwrap();
