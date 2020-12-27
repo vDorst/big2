@@ -20,6 +20,24 @@ pub enum StateMessageActionType {
     PASS = 3,
 }
 
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Message {
+    kind: u32,
+    size: u32,
+    pad: [u64; 256 / std::mem::size_of::<u64>()],
+}
+
+impl Message {
+    pub fn new(kind: u32) -> Self {
+        Self {
+            kind: kind,
+            size: std::mem::size_of::<Message>() as u32,
+            pad: [0; 32],
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct JoinMessage {
     kind: u32,
@@ -441,8 +459,7 @@ pub mod client {
         }
 
         pub fn action_pass(&mut self) -> Result<usize, io::Error> {
-            let mut sm = StateMessage::new(None);
-            sm.kind = 3;
+            let sm = Message::new(3);
             let byte_buf = bincode::serialize(&sm).unwrap();
             // println!("{:?}", byte_buf);
             let ret = self.tx.send(byte_buf);
@@ -453,8 +470,7 @@ pub mod client {
         }
 
         pub fn action_ready(&mut self) -> Result<usize, io::Error> {
-            let mut sm = StateMessage::new(None);
-            sm.kind = 4;
+            let sm = Message::new(4);
             let byte_buf = bincode::serialize(&sm).unwrap();
             let ret = self.tx.send(byte_buf);
             if ret.is_err() {
@@ -866,5 +882,15 @@ mod tests {
         let trail = sm.action_msg();
         assert_eq!(trail, 0x2000000000000103);
         assert_eq!(trail & 0xFFFF_FFFF_FFFF_F000, cards);
+    }
+
+    #[test]
+    fn message_struct_size() {
+        assert_eq!(std::mem::size_of::<Message>(), 264);
+    }
+
+    #[test]
+    fn statemessage_struct_size() {
+        assert_eq!(std::mem::size_of::<StateMessage>(), 224);
     }
 }
