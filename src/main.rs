@@ -13,7 +13,7 @@ mod muon;
 
 fn main() {
     let mut rt = tokio::runtime::Runtime::new().unwrap();
-    let listener = rt.block_on(TcpListener::bind("127.0.0.1:27191")).unwrap();
+    let listener = rt.block_on(TcpListener::bind("0.0.0.0:27191")).unwrap();
     let addr = listener.local_addr().unwrap();
     println!("Starting server at {:?}", addr);
     rt.block_on(async move { server::start_server(listener).await });

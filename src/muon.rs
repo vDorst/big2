@@ -212,6 +212,12 @@ struct StateMessage {
     pub board: InlineList8,
     pub action: StateMessageAction,
 }
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Message {
+    kind: u32,
+    size: u32,
+    pad: [u64; 256 / std::mem::size_of::<u64>()],
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 struct String16 {
@@ -489,7 +495,7 @@ pub fn parse_packet(bytes: usize, buffer: &[u8]) -> Result<StateMessageActions, 
 
     if dm.kind == MT_PLAY {
         if dm.size as usize > bytes || dm.size as usize != mem::size_of::<PlayMessage>() {
-            println!("Invalid size");
+            println!("MT_PLAY: Invalid size");
             return Err(StateMessageError::PacketInvalid);
         }
         let pm: PlayMessage = bincode::deserialize(&buffer).unwrap();
@@ -506,8 +512,8 @@ pub fn parse_packet(bytes: usize, buffer: &[u8]) -> Result<StateMessageActions, 
     }
 
     if dm.kind == MT_PASS {
-        if dm.size as usize > bytes || dm.size as usize != mem::size_of::<StateMessage>() {
-            println!("Invalid size");
+        if dm.size as usize > bytes || dm.size as usize != mem::size_of::<Message>() {
+            println!("MT_PASS: Invalid size");
             return Err(StateMessageError::PacketInvalid);
         }
 
@@ -515,8 +521,8 @@ pub fn parse_packet(bytes: usize, buffer: &[u8]) -> Result<StateMessageActions, 
     }
 
     if dm.kind == MT_READY {
-        if dm.size as usize > bytes || dm.size as usize != mem::size_of::<StateMessage>() {
-            println!("Invalid size");
+        if dm.size as usize > bytes || dm.size as usize != mem::size_of::<Message>() {
+            println!("MT_READY: Invalid size");
             return Err(StateMessageError::PacketInvalid);
         }
 
