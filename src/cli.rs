@@ -11,7 +11,7 @@ pub mod display {
         cursor::{MoveTo, RestorePosition, SavePosition},
         event::{
             poll, read, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers,
-            MouseButton, MouseEvent,
+            MouseButton, MouseEvent, MouseEventKind,
         },
         execute,
         //queue,
@@ -100,9 +100,7 @@ pub mod display {
             LeaveAlternateScreen,
             Clear(ClearType::All),
             Print("Bye".white().on_dark_grey()),
-        )?;
-
-        Ok(())
+        )
     }
 
     pub fn poll_user_events() -> UserEvent {
@@ -123,11 +121,13 @@ pub mod display {
         }
     }
 
-    fn handle_mouse_events(event: crossterm::event::MouseEvent) -> UserEvent {
-        if let MouseEvent::Down(btn, x, y, _) = event {
-            if btn == MouseButton::Right {
-                return UserEvent::CLEAR;
-            }
+    fn handle_mouse_events(event: MouseEvent) -> UserEvent {
+        if let MouseEventKind::Down(MouseButton::Right) = event.kind {
+            return UserEvent::CLEAR;
+        }
+        if let MouseEventKind::Down(MouseButton::Left) = event.kind {
+            let x = event.column;
+            let y = event.row;
             if y == 3 || y == 2 {
                 if x == 24 || x == 25 {
                     return UserEvent::TOGGLECARD1;
@@ -410,11 +410,8 @@ pub mod display {
             execute!(gs.srn, MoveTo(9, 0), Clear(ClearType::CurrentLine))?;
         }
 
-        execute!(
-            gs.srn,
-            MoveTo(0, 1),
-            Print(format!("Rounds: {}/{}", gs.sm.round, gs.sm.num_rounds))
-        )?;
+        let s = format!("Rounds: {}/{}", gs.sm.round, gs.sm.num_rounds);
+        execute!(gs.srn, MoveTo(0, 1), Print(s))?;
 
         let cards = gs.sm.board.into_card().unwrap();
         let out_str = cards_str(cards);

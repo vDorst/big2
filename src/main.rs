@@ -47,17 +47,16 @@ fn parse_args(mut args: Arguments) -> Result<CliArgs, paError> {
     let be_hostonly = args.contains("-host-only");
 
     if join.is_some() && (be_host || be_hostonly) {
-    return Err(paError::ArgumentParsingFailed {
+        return Err(paError::ArgumentParsingFailed {
             cause: "-join combined with -host or -host-only is now allowed.".to_string(),
         });
     }
 
     if (join.is_some() || be_host) && name.is_none() {
-    return Err(paError::ArgumentParsingFailed {
+        return Err(paError::ArgumentParsingFailed {
             cause: "-join or -host is missing -name".to_string(),
         });
     }
-
 
     if be_host {
         cli_args.app_mode = AppMode::HOST;
@@ -68,17 +67,17 @@ fn parse_args(mut args: Arguments) -> Result<CliArgs, paError> {
     }
 
     if let Some(name) = name {
-    if name.len() < 1 || name.len() > 16 {
+        if name.len() < 1 || name.len() > 16 {
             return Err(paError::ArgumentParsingFailed {
-            cause: "Name length min 1 max 16 bytes!".to_string(),
+                cause: "Name length min 1 max 16 bytes!".to_string(),
             });
-    }
-    if name.contains(" ") {
+        }
+        if name.contains(" ") {
             return Err(paError::ArgumentParsingFailed {
-            cause: "No spaces allowed in name".to_string(),
+                cause: "No spaces allowed in name".to_string(),
             });
-    }
-    cli_args.name = name;
+        }
+        cli_args.name = name;
     }
 
     if let Some(join_addr) = join {
@@ -126,7 +125,7 @@ fn main() {
 
         srv.deal(None);
 
-    println!("Start game {}/{}", srv.round, srv.rounds);
+        println!("Start game {}/{}", srv.round, srv.rounds);
 
         srv.play(srv.turn, 0x1000).unwrap();
 
@@ -181,12 +180,12 @@ fn main() {
             sm: network::StateMessage::new(None),
         };
 
-        loop {
+        // Game loop
+        'gameloop: loop {
             let ret = ts.check_buffer();
             if let Err(e) = ret {
-                let _ = cli::display::close(gs.srn);
-                error!("Error {:?}", e);
-                std::process::exit(1);
+                error!("Error: TCPStream: {:?}", e);
+                break 'gameloop;
             }
             let buffer_sm = ret.unwrap();
 
@@ -487,6 +486,9 @@ fn main() {
         if let Err(e) = cli::display::board(&mut gs) {
             error!("DISPLAY ERROR {}", e);
         }
+
+        // close cli right way
+        let _ = cli::display::close(gs.srn);
     }
 }
 
@@ -549,8 +551,11 @@ mod tests {
         let args = Arguments::from_vec(to_vec(&["-host", "-name", "IamL33T", "-rounds", "256"]));
         let ar = parse_args(args);
         match ar {
-            Err(paError::Utf8ArgumentParsingFailed { value: _ , cause: _ } ) => assert!(true),
-            _ => {println!("{:?}", ar); assert!(false)},
+            Err(paError::Utf8ArgumentParsingFailed { value: _, cause: _ }) => assert!(true),
+            _ => {
+                println!("{:?}", ar);
+                assert!(false)
+            }
         };
     }
 
@@ -559,8 +564,11 @@ mod tests {
         let args = Arguments::from_vec(to_vec(&["-host", "-name", "Morethensixteenchars"]));
         let ar = parse_args(args);
         match ar {
-            Err(paError::ArgumentParsingFailed { cause: _ } ) => assert!(true),
-            _ => {println!("{:?}", ar); assert!(false)},
+            Err(paError::ArgumentParsingFailed { cause: _ }) => assert!(true),
+            _ => {
+                println!("{:?}", ar);
+                assert!(false)
+            }
         };
     }
 
@@ -569,8 +577,11 @@ mod tests {
         let args = Arguments::from_vec(to_vec(&["-host", "-name", ""]));
         let ar = parse_args(args);
         match ar {
-            Err(paError::ArgumentParsingFailed { cause: _ } ) => assert!(true),
-            _ => {println!("{:?}", ar); assert!(false)},
+            Err(paError::ArgumentParsingFailed { cause: _ }) => assert!(true),
+            _ => {
+                println!("{:?}", ar);
+                assert!(false)
+            }
         };
     }
 
@@ -579,8 +590,11 @@ mod tests {
         let args = Arguments::from_vec(to_vec(&["-host", "-name"]));
         let ar = parse_args(args);
         match ar {
-            Err(paError::OptionWithoutAValue (_) ) => assert!(true),
-            _ => {println!("{:?}", ar); assert!(false)},
+            Err(paError::OptionWithoutAValue(_)) => assert!(true),
+            _ => {
+                println!("{:?}", ar);
+                assert!(false)
+            }
         };
     }
 
@@ -589,38 +603,68 @@ mod tests {
         let args = Arguments::from_vec(to_vec(&["-host", "-name", "Space Me"]));
         let ar = parse_args(args);
         match ar {
-            Err(paError::ArgumentParsingFailed { cause: _ } ) => assert!(true),
-            _ => {println!("{:?}", ar); assert!(false)},
+            Err(paError::ArgumentParsingFailed { cause: _ }) => assert!(true),
+            _ => {
+                println!("{:?}", ar);
+                assert!(false)
+            }
         };
     }
 
     #[test]
     fn argument_test_join_host_name() {
-        let args = Arguments::from_vec(to_vec(&["-host", "-name", "ValidName", "-join", "10.10.10.10"]));
+        let args = Arguments::from_vec(to_vec(&[
+            "-host",
+            "-name",
+            "ValidName",
+            "-join",
+            "10.10.10.10",
+        ]));
         let ar = parse_args(args);
         match ar {
-            Err(paError::ArgumentParsingFailed { cause: _ } ) => assert!(true),
-            _ => {println!("{:?}", ar); assert!(false)},
+            Err(paError::ArgumentParsingFailed { cause: _ }) => assert!(true),
+            _ => {
+                println!("{:?}", ar);
+                assert!(false)
+            }
         };
     }
 
     #[test]
     fn argument_test_host_name_invalid() {
-        let args = Arguments::from_vec(to_vec(&["-host", "-name", "ValidName", "-join", "10.10.10.10"]));
+        let args = Arguments::from_vec(to_vec(&[
+            "-host",
+            "-name",
+            "ValidName",
+            "-join",
+            "10.10.10.10",
+        ]));
         let ar = parse_args(args);
         match ar {
-            Err(paError::ArgumentParsingFailed { cause: _ } ) => assert!(true),
-            _ => {println!("{:?}", ar); assert!(false)},
+            Err(paError::ArgumentParsingFailed { cause: _ }) => assert!(true),
+            _ => {
+                println!("{:?}", ar);
+                assert!(false)
+            }
         };
     }
 
     #[test]
     fn argument_unused_arguments_invalid() {
-        let args = Arguments::from_vec(to_vec(&["-invalidoption", "-name", "ValidName", "-join", "10.10.10.10"]));
+        let args = Arguments::from_vec(to_vec(&[
+            "-invalidoption",
+            "-name",
+            "ValidName",
+            "-join",
+            "10.10.10.10",
+        ]));
         let ar = parse_args(args);
         match ar {
-            Err(paError::UnusedArgsLeft { 0: _ } ) => assert!(true),
-            _ => {println!("{:?}", ar); assert!(false)},
+            Err(paError::UnusedArgsLeft { 0: _ }) => assert!(true),
+            _ => {
+                println!("{:?}", ar);
+                assert!(false)
+            }
         };
     }
 
@@ -629,8 +673,11 @@ mod tests {
         let args = Arguments::from_vec(to_vec(&["-join", "-name", "ValidName"]));
         let ar = parse_args(args);
         match ar {
-            Err(paError::ArgumentParsingFailed { cause: _ } ) => assert!(true),
-            _ => {println!("{:?}", ar); assert!(false)},
+            Err(paError::ArgumentParsingFailed { cause: _ }) => assert!(true),
+            _ => {
+                println!("{:?}", ar);
+                assert!(false)
+            }
         };
     }
 
@@ -639,9 +686,11 @@ mod tests {
         let args = Arguments::from_vec(to_vec(&["-name", "ValidName", "-join"]));
         let ar = parse_args(args);
         match ar {
-            Err(paError::OptionWithoutAValue (_) ) => assert!(true),
-            _ => {println!("{:?}", ar); assert!(false)},
+            Err(paError::OptionWithoutAValue(_)) => assert!(true),
+            _ => {
+                println!("{:?}", ar);
+                assert!(false)
+            }
         };
     }
-
 }
