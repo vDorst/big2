@@ -200,6 +200,16 @@ pub mod rules {
         }
         return true;
     }
+
+    pub fn higher_single_card(board: u64, hand: u64) -> u64 {
+        let mask: u64 = u64::MAX.wrapping_shl(board.trailing_zeros());
+        let higher_cards = hand & mask;
+        let mask: u64 = 1u64.wrapping_shl(higher_cards.trailing_zeros());
+        let better_card = hand & mask;
+
+        better_card
+    }
+
     pub fn is_flush(hand: u64) -> bool {
         let mut mask: u64 = 0x1111_1111_1111_1000;
         for _ in 0..4 {
@@ -833,5 +843,32 @@ mod tests {
             Err(_) => assert!(false),
         }
         assert_eq!(gs.score, [-24, -24, 87, -39]);
+    }
+
+    #[test]
+    fn better_single_card() {
+        let board: u64 = 0x0_1000;
+        let my_hand: u64 = 0x1_2000;
+        let play = rules::higher_single_card(board, my_hand);
+        assert_eq!(play, 0x2000);
+
+        let board: u64 = 0x2000;
+        let my_hand: u64 = 0x1_1000;
+        let play = rules::higher_single_card(board, my_hand);
+        assert_eq!(play, 0x1_0000);
+
+        let board: u64 = 0x8000_0000_0000_0000;
+        let play = rules::higher_single_card(board, my_hand);
+        assert_eq!(play, 0);
+
+        let board: u64 = 0x4000_0000_0000_0000;
+        let my_hand: u64 = 0x8000_0000_0000_0000;
+        let play = rules::higher_single_card(board, my_hand);
+        assert_eq!(play, 0x8000_0000_0000_0000);
+
+        let board: u64 = 0x0;
+        let my_hand: u64 = 0xFFF8_0000_0000_0000;
+        let play = rules::higher_single_card(board, my_hand);
+        assert_eq!(play, 0x8_0000_0000_0000);
     }
 }

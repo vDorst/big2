@@ -27,6 +27,7 @@ struct CliArgs {
     socket_addr: String,
     rounds: u8,
     host_port: u16,
+    auto_play: bool,
 }
 
 fn parse_args(mut args: Arguments) -> Result<CliArgs, paError> {
@@ -36,6 +37,7 @@ fn parse_args(mut args: Arguments) -> Result<CliArgs, paError> {
         socket_addr: String::from(""),
         rounds: 8,
         host_port: network::common::PORT,
+        auto_play: args.contains("-auto-play"),
     };
 
     let join: Option<String> = args.opt_value_from_str("-join")?;
@@ -263,7 +265,12 @@ fn main() {
                     if let Err(e) = cli::display::board(&mut gs) {
                         error!("DISPLAY ERROR {}", e);
                     }
-                    let ten_millis = time::Duration::from_millis(1000);
+                    let delay = if cli_args.auto_play == false {
+                        1000
+                    } else {
+                        500
+                    };
+                    let ten_millis = time::Duration::from_millis(delay);
                     thread::sleep(ten_millis);
 
                     if gs.sm.action.action_type == network::StateMessageActionType::PLAY {
@@ -333,16 +340,32 @@ fn main() {
                     }
                 }
 
-                // Pass / Auto Pass
-                let p = gs.sm.your_index as usize;
-                if gs.sm.turn == gs.sm.your_index
-                    && gs.auto_pass
-                    && !gs.sm.players[p].has_passed_this_cycle
-                {
-                    if ts.action_pass().is_err() {
+                println!("\n\n\r\n## B 0x{:16x} T {}##", gs.board, gs.sm.turn);
+                // Auto play
+                if cli_args.auto_play {
+                    if gs.sm.turn == -1 {
+                        if gs.sm.players[gs.sm.your_index as usize].is_ready == false
+                            && gs.i_am_ready == false
+                        {
+                            let _ = ts.action_ready();
+                            gs.i_am_ready = true;
+                            continue;
+                        }
+                    }
+                    if gs.sm.turn == gs.sm.your_index {
+                        let hand = gs.sm.your_hand.to_card();
+                        let better_card = big2rules::rules::higher_single_card(gs.board, hand);
+                        println!(
+                            "\n\n\r\n-- B 0x{:16x} H 0x{:16x} C 0x{:16x} --",
+                            gs.board, hand, better_card
+                        );
+                        if better_card == 0 {
+                            let _ = ts.action_pass();
+                        } else {
+                            let _ = ts.action_play(better_card);
+                        }
                         continue;
                     }
-                    continue;
                 }
             }
 
@@ -513,6 +536,7 @@ mod tests {
             socket_addr: String::from("10.10.10.10:27191"),
             rounds: 8,
             host_port: 27191,
+            auto_play: false,
         };
         assert_eq!(ar, ans);
     }
@@ -527,6 +551,7 @@ mod tests {
             socket_addr: String::from(""),
             rounds: 8,
             host_port: 27191,
+            auto_play: false,
         };
         assert_eq!(ar, ans);
     }
@@ -540,6 +565,7 @@ mod tests {
             socket_addr: String::from(""),
             rounds: 10,
             host_port: 27191,
+            auto_play: false,
         };
         assert_eq!(ar, ans);
     }
