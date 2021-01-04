@@ -116,10 +116,16 @@ fn main() {
     }
     let cli_args = cli_args.unwrap();
 
+    let logfilename = if cli_args.app_mode == AppMode::CLIENT {
+        format!("{}.log", &cli_args.name)
+    } else {
+        String::from("big2.log")
+    };
+
     let _ = WriteLogger::init(
         LevelFilter::Trace,
         Config::default(),
-        File::create("big2.log").unwrap(),
+        File::create(logfilename).unwrap(),
     );
 
     if cli_args.app_mode == AppMode::HOSTONLY {
@@ -268,7 +274,7 @@ fn main() {
                     let delay = if cli_args.auto_play == false {
                         1000
                     } else {
-                        500
+                        10
                     };
                     let ten_millis = time::Duration::from_millis(delay);
                     thread::sleep(ten_millis);
@@ -340,13 +346,19 @@ fn main() {
                     }
                 }
 
-                println!("\n\n\r\n## B 0x{:16x} T {}##", gs.board, gs.sm.turn);
+                // println!("\n\n\r\n## B 0x{:16x} T {:2} ##", gs.board, gs.sm.turn);
                 // Auto play
                 if cli_args.auto_play {
+                    for p in gs.sm.players.iter() {
+                        if p.name.count == 0 {
+                            continue 'gameloop;
+                        }
+                    }
                     if gs.sm.turn == -1 {
                         if gs.sm.players[gs.sm.your_index as usize].is_ready == false
                             && gs.i_am_ready == false
                         {
+                            // println!("\n\n\r\n## READY ###");
                             let _ = ts.action_ready();
                             gs.i_am_ready = true;
                             continue;
@@ -355,10 +367,10 @@ fn main() {
                     if gs.sm.turn == gs.sm.your_index {
                         let hand = gs.sm.your_hand.to_card();
                         let better_card = big2rules::rules::higher_single_card(gs.board, hand);
-                        println!(
-                            "\n\n\r\n-- B 0x{:16x} H 0x{:16x} C 0x{:16x} --",
-                            gs.board, hand, better_card
-                        );
+                        // println!(
+                        //     "\n\n\r\n-- B 0x{:16x} H 0x{:16x} C 0x{:16x} --",
+                        //     gs.board, hand, better_card
+                        // );
                         if better_card == 0 {
                             let _ = ts.action_pass();
                         } else {

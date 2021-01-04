@@ -20,7 +20,6 @@ pub enum StateMessageActionType {
     PASS = 3,
 }
 
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Message {
     kind: u32,
@@ -312,7 +311,7 @@ pub mod common {
     pub const PORT: u16 = 27191;
     pub const VERSION: u32 = 6;
     pub const MAGICNUMBER: u32 = 0x3267_6962;
-    pub const BUFSIZE: usize = 512;
+    pub const BUFSIZE: usize = 4096;
 }
 
 pub mod client {
@@ -327,19 +326,20 @@ pub mod client {
     fn thread_tcp(mut ts: TcpStream, tx: Sender<Vec<u8>>, rx: Receiver<Vec<u8>>) {
         let mut buffer = [0; common::BUFSIZE];
 
-        loop {
+        'tcp_loop: loop {
             let tx_data = rx.try_recv();
-            if let Err(e) = tx_data {
-                if e == std::sync::mpsc::TryRecvError::Disconnected {
+            match tx_data {
+                Err(std::sync::mpsc::TryRecvError::Empty) => (),
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                     error!("TCP: TX channel disconnected");
                     break;
                 }
-            }
-            if let Ok(data) = tx_data {
-                trace!("TCP: PUSH: {:x?}", data);
-                let ret = ts.write(&data);
-                if let Err(e) = ret {
-                    error!("TCP: Error write. {}", e);
+                Ok(data) => {
+                    trace!("TCP: PUSH: {:x?}", data);
+                    let ret = ts.write(&data);
+                    if let Err(e) = ret {
+                        error!("TCP: Error write. {}", e);
+                    }
                 }
             }
 
@@ -348,7 +348,7 @@ pub mod client {
             if let Err(e) = ret {
                 // if readtimeout then continue.
                 if e.kind() == io::ErrorKind::TimedOut {
-                    continue;
+                    ();
                 }
                 if e.kind() == io::ErrorKind::WouldBlock {
                     continue;
@@ -357,42 +357,67 @@ pub mod client {
                 break;
             }
 
-            let bytes = ret.unwrap();
+            let mut n_bytes = ret.unwrap();
 
-            if bytes == 0 {
-                error!("TCP: Socket closed!");
+            info!("TCP: Got Bytes {}", n_bytes);
+
+            if n_bytes == 0 {
+                info!("Connection Closed!");
                 break;
             }
 
-            if bytes < mem::size_of::<client::DetectMessage>() {
-                error!("TCP: Packet too small {}", bytes);
-                thread::sleep(Duration::from_millis(1000));
-                continue;
+            let mut pos: usize = 0;
+
+            if n_bytes > 264 {
+                trace!("SM {:?}", &buffer[0..n_bytes]);
             }
 
-            let dm: client::DetectMessage = bincode::deserialize(&buffer).unwrap();
+            const DM_SIZE: usize = mem::size_of::<client::DetectMessage>();
+            while n_bytes >= DM_SIZE {
+                let dm: client::DetectMessage =
+                    bincode::deserialize(&buffer[pos..].to_vec()).unwrap();
 
-            // Update
-            if dm.kind == 5 && dm.size as usize == mem::size_of::<StateMessage>() {
-                trace!("TCP: <T>SM: {:?}", &buffer[0..dm.size as usize]);
-                let buffer = buffer.to_vec();
-                let ret = tx.send(buffer);
-                if ret.is_err() {
-                    break;
+                // Update
+                const SM_SIZE: usize = mem::size_of::<StateMessage>();
+                if dm.kind == 5 && dm.size as usize == SM_SIZE {
+                    if n_bytes < SM_SIZE {
+                        continue 'tcp_loop;
+                    }
+
+                    let buf = buffer[pos..pos + SM_SIZE].to_vec();
+
+                    info!("TCP: P{} B{} SM: {:?}", pos, n_bytes, buf);
+                    let ret = tx.send(buf);
+                    if ret.is_err() {
+                        error!("TCP: MPSC TX ERROR {:?}", ret.unwrap_err());
+                        break;
+                    }
+                    pos += SM_SIZE;
+                    n_bytes -= SM_SIZE;
+                    continue;
                 }
-                continue;
-            }
 
-            // HeartbeatMessage
-            if dm.kind == 6 && dm.size == 264 {
-                trace!("TCP: <T>HB");
-                continue;
-            }
+                // HeartbeatMessage
+                const M_SIZE: usize = mem::size_of::<Message>();
+                if dm.kind == 6 && dm.size as usize == M_SIZE {
+                    info!("TCP: <T>HB");
+                    pos += M_SIZE;
+                    n_bytes -= M_SIZE;
+                    continue;
+                }
 
-            if (dm.size as usize) == buffer.len() {
-                trace!("TCP: GET: {:x?}", &buffer[0..dm.size as usize]);
-            } else {
-                error!("TCP: Invalid packet!");
+                if (dm.size as usize) == buffer.len() {
+                    error!("TCP: GET: {:x?}", &buffer[0..dm.size as usize]);
+                } else {
+                    error!(
+                        "TCP: Invalid packet! - Bytes {} Kind {} Size {} - {:?} -",
+                        n_bytes,
+                        dm.kind,
+                        dm.size,
+                        &buffer[0..n_bytes]
+                    );
+                }
+                continue 'tcp_loop;
             }
         }
     }
@@ -427,7 +452,7 @@ pub mod client {
                 match ret {
                     Err(_) => continue,
                     Ok(s) => {
-                        s.set_read_timeout(Some(Duration::from_millis(100)))?;
+                        s.set_read_timeout(Some(Duration::from_millis(10)))?;
                         let (tx, rx) = std::sync::mpsc::channel();
                         let (tx1, rx1) = std::sync::mpsc::channel();
 
@@ -892,5 +917,92 @@ mod tests {
     #[test]
     fn statemessage_struct_size() {
         assert_eq!(std::mem::size_of::<StateMessage>(), 224);
+    }
+
+    #[test]
+    fn parse_packet() {
+        let buffer: &[u8] = &[
+            5, 0, 0, 0, 224, 0, 0, 0, 7, 0, 0, 0, 8, 0, 0, 0, 255, 255, 255, 255, 3, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 66, 79, 84, 48, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 240, 255, 255, 255, 5, 0, 0, 0, 251, 255, 255, 255, 0, 0,
+            0, 0, 66, 79, 84, 49, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 14, 0, 0, 0, 6,
+            0, 0, 0, 250, 255, 255, 255, 1, 0, 0, 0, 66, 79, 84, 50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 4, 0, 0, 0, 239, 255, 255, 255, 7, 0, 0, 0, 249, 255, 255, 255, 1, 0, 0, 0, 66,
+            79, 84, 51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 19, 0, 0, 0, 0, 0, 0, 0,
+            18, 0, 0, 0, 1, 0, 0, 0, 59, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 224, 0, 0, 0, 7, 0, 0, 0,
+            8, 0, 0, 0, 255, 255, 255, 255, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 66, 79, 84, 48, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 240,
+            255, 255, 255, 5, 0, 0, 0, 251, 255, 255, 255, 1, 0, 0, 0, 66, 79, 84, 49, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 14, 0, 0, 0, 6, 0, 0, 0, 250, 255, 255, 255, 1, 0,
+            0, 0, 66, 79, 84, 50, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 239, 255, 255,
+            255, 7, 0, 0, 0, 249, 255, 255, 255, 1, 0, 0, 0, 66, 79, 84, 51, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 4, 0, 0, 0, 19, 0, 0, 0, 0, 0, 0, 0, 18, 0, 0, 0, 1, 0, 0, 0, 59, 0, 0,
+            0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 5, 0, 0, 0, 224, 0, 0, 0, 8, 0, 0, 0, 8, 0, 0, 0, 3, 0, 0, 0, 3, 0, 0, 0,
+            19, 37, 23, 24, 56, 9, 10, 42, 11, 43, 60, 13, 46, 0, 0, 0, 13, 0, 0, 0, 66, 79, 84,
+            48, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 240, 255, 255, 255, 13, 0, 0, 0,
+            251, 255, 255, 255, 1, 0, 0, 0, 66, 79, 84, 49, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4,
+            0, 0, 0, 14, 0, 0, 0, 13, 0, 0, 0, 250, 255, 255, 255, 1, 0, 0, 0, 66, 79, 84, 50, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 239, 255, 255, 255, 13, 0, 0, 0, 249, 255,
+            255, 255, 1, 0, 0, 0, 66, 79, 84, 51, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0,
+            19, 0, 0, 0, 13, 0, 0, 0, 18, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 8,
+            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        let mut n_bytes = buffer.len();
+        let mut pos: usize = 0;
+
+        const DM_SIZE: usize = mem::size_of::<self::DetectMessage>();
+        while n_bytes >= DM_SIZE {
+            println!("Bytes {} Pos {}", n_bytes, pos);
+
+            let dm: self::DetectMessage =
+                bincode::deserialize(&buffer[pos..pos + DM_SIZE].to_vec()).unwrap();
+
+            // Update
+            const SM_SIZE: usize = mem::size_of::<StateMessage>();
+            if dm.kind == 5 && dm.size as usize == SM_SIZE {
+                if n_bytes < SM_SIZE {
+                    break;
+                }
+
+                let buf = buffer[pos..pos + SM_SIZE].to_vec();
+
+                info!("TCP: P{} B{} SM: {:?}", pos, n_bytes, buf);
+                pos += SM_SIZE;
+                n_bytes -= SM_SIZE;
+                continue;
+            }
+
+            // HeartbeatMessage
+            const M_SIZE: usize = mem::size_of::<Message>();
+            if dm.kind == 6 && dm.size as usize == M_SIZE {
+                info!("TCP: <T>HB");
+                pos += M_SIZE;
+                n_bytes -= M_SIZE;
+                continue;
+            }
+
+            if (dm.size as usize) == buffer.len() {
+                error!("TCP: GET: {:x?}", &buffer[0..dm.size as usize]);
+            } else {
+                error!(
+                    "TCP: Invalid packet! - Bytes {} Kind {} Size {} - {:?} -",
+                    n_bytes,
+                    dm.kind,
+                    dm.size,
+                    &buffer[0..n_bytes]
+                );
+            }
+        }
     }
 }
