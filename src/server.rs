@@ -14,7 +14,7 @@ use tokio::sync::mpsc;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 
-use log::{error};
+use log::error;
 
 use thiserror::Error;
 
@@ -23,7 +23,6 @@ use crate::muon;
 
 /// Shorthand for the transmit half of the message channel.
 type Tx = mpsc::Sender<Vec<u8>>;
-
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -39,7 +38,7 @@ pub enum Error {
     PeerNotInList,
 
     #[error("SendError")]
-    SendError(#[from] mpsc::error::SendError<Vec<u8>> ),
+    SendError(#[from] mpsc::error::SendError<Vec<u8>>),
 }
 
 pub struct Peer {
@@ -47,7 +46,6 @@ pub struct Peer {
     pub addr: Option<SocketAddr>,
     pub tx: Option<Tx>,
 }
-
 
 pub struct GameServerState {
     pub clients: Vec<Peer>,
@@ -58,7 +56,11 @@ impl GameServerState {
     pub fn new(rounds: u8) -> Self {
         let mut clients = Vec::with_capacity(4);
         for _ in 1..=4 {
-            clients.push( Peer { name: big2rules::Name::new(), addr: None, tx: None} );
+            clients.push(Peer {
+                name: big2rules::Name::new(),
+                addr: None,
+                tx: None,
+            });
         }
         assert_eq!(clients.len(), 4);
 
@@ -72,7 +74,12 @@ impl GameServerState {
     }
 
     /// Create a new instance of `Peer`.
-    fn new_client(&mut self, addr: SocketAddr, tx: Tx, name: big2rules::Name) -> Result<usize, Error> {
+    fn new_client(
+        &mut self,
+        addr: SocketAddr,
+        tx: Tx,
+        name: big2rules::Name,
+    ) -> Result<usize, Error> {
         let mut free = Vec::<usize>::with_capacity(4);
 
         for (i, c) in self.clients.iter_mut().enumerate() {
@@ -102,8 +109,7 @@ impl GameServerState {
         Ok(idx)
     }
     async fn remove_client(&mut self, addr: SocketAddr) -> Result<(), Error> {
-
-        for peer in self.clients.iter_mut(){
+        for peer in self.clients.iter_mut() {
             if peer.addr == Some(addr) {
                 peer.addr = None;
                 peer.tx = None;
@@ -111,7 +117,7 @@ impl GameServerState {
             }
         }
 
-        Err( Error::PeerNotInList )
+        Err(Error::PeerNotInList)
     }
 
     async fn send_state_update(&mut self) -> Result<(), Error> {
@@ -130,7 +136,6 @@ impl GameServerState {
         Ok(())
     }
 
-
     async fn broadcast(&mut self, sender: SocketAddr, message: Vec<u8>) -> Result<(), Error> {
         for peer in self.clients.iter() {
             if peer.addr.is_some() && peer.tx.is_some() {
@@ -145,10 +150,7 @@ impl GameServerState {
     }
 }
 
-async fn big2_handler(
-    gs: Arc<Mutex<GameServerState>>,
-    mut socket: TcpStream,
-) -> Result<(), Error> {
+async fn big2_handler(gs: Arc<Mutex<GameServerState>>, mut socket: TcpStream) -> Result<(), Error> {
     let remote_ip = socket.peer_addr()?;
     println!("big2_handler: New connection from {}", remote_ip);
 
@@ -180,7 +182,7 @@ async fn big2_handler(
                             if b.gs.turn == -1 {
                                 b.gs.has_passed |= 1 << idx;
                             }
-                            b.gs.last_action = 0;
+                            // b.gs.last_action = 0;
                             b.send_state_update().await?;
                             joined = true;
 

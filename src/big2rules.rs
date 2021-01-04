@@ -319,7 +319,9 @@ pub struct Name(Vec<u8>);
 
 impl Name {
     pub fn new() -> Self {
-        Name { 0: Vec::<u8>::with_capacity(16) }
+        Name {
+            0: Vec::<u8>::with_capacity(16),
+        }
     }
 
     pub fn to_string(&self) -> String {
@@ -328,7 +330,9 @@ impl Name {
 
     pub fn from_str(name: &str) -> Self {
         assert!(name.len() <= 16);
-        Name { 0: name.as_bytes().to_vec() }
+        Name {
+            0: name.as_bytes().to_vec(),
+        }
     }
 
     pub fn from_vec(name: Vec<u8>) -> Self {
@@ -447,7 +451,8 @@ impl SrvGameState {
         }
 
         self.prev_action = self.last_action;
-        self.last_action = hand | SrvGameState::ACTION_PLAY | (p as u64) | ((self.last_action & 0x3) << 2);
+        self.last_action =
+            hand | SrvGameState::ACTION_PLAY | (p as u64) | ((self.last_action & 0x3) << 2);
 
         self.board_score = score;
         self.cards[p] ^= hand;
@@ -486,7 +491,10 @@ impl SrvGameState {
         self.has_passed |= b;
 
         self.prev_action = self.last_action;
-        self.last_action = SrvGameState::ACTION_PASS | (self.turn as u64);
+
+        // Don't clear board cards
+        self.last_action &= 0xFFFF_FFFF_FFFF_F000;
+        self.last_action |= SrvGameState::ACTION_PASS | (self.turn as u64);
 
         self.next_player();
 
@@ -865,8 +873,6 @@ mod tests {
     }
 }
 
-
-
 #[cfg(test)]
 mod tests_name_type {
     use super::*;
@@ -896,12 +902,16 @@ mod tests_name_type {
         assert_eq!(vec.len(), 10);
         assert_eq!(vec, vec![80, 108, 97, 121, 101, 114, 78, 97, 109, 101]);
 
-        let name = Name::from_vec(vec![80, 108, 97, 121, 101, 114, 78, 97, 109, 101, 0, 0, 0, 0, 0, 0]);
+        let name = Name::from_vec(vec![
+            80, 108, 97, 121, 101, 114, 78, 97, 109, 101, 0, 0, 0, 0, 0, 0,
+        ]);
         let vec = name.to_vec();
         assert_eq!(vec.len(), 16);
-        assert_eq!(vec, vec![80, 108, 97, 121, 101, 114, 78, 97, 109, 101, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(
+            vec,
+            vec![80, 108, 97, 121, 101, 114, 78, 97, 109, 101, 0, 0, 0, 0, 0, 0]
+        );
     }
-
 
     #[test]
     #[should_panic]
@@ -909,10 +919,11 @@ mod tests_name_type {
         let name = Name::from_str("I have a to long name!");
     }
 
-
     #[test]
     #[should_panic]
     fn name_from_vec_invalid() {
-        let name = Name::from_vec(vec![80, 108, 97, 121, 101, 114, 78, 97, 109, 101, 0, 0, 0, 0, 0, 0, 0]);
+        let name = Name::from_vec(vec![
+            80, 108, 97, 121, 101, 114, 78, 97, 109, 101, 0, 0, 0, 0, 0, 0, 0,
+        ]);
     }
 }
