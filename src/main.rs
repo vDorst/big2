@@ -365,6 +365,9 @@ fn main() {
                         }
                     }
                     if gs.sm.turn == gs.sm.your_index {
+                        if gs.sm.board.count > 1 {
+                            let _ = ts.action_pass();
+                        }
                         let hand = gs.sm.your_hand.to_card();
                         let better_card = big2rules::rules::higher_single_card(gs.board, hand);
                         // println!(
