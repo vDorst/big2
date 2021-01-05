@@ -4,15 +4,11 @@
 use crate::big2rules;
 use crate::server;
 //use log::{debug, error, info, trace};
-use log::{trace};
-use serde::{Deserialize, Serialize};
 use bincode;
+use log::trace;
+use serde::{Deserialize, Serialize};
 
-
-use std::{
-    convert::TryFrom,
-    mem,
-};
+use std::{convert::TryFrom, mem};
 
 impl server::GameServerState {
     pub fn to_statemessage(&self, player: usize) -> Vec<u8> {
@@ -26,7 +22,11 @@ impl server::GameServerState {
         for p in 0..=3 {
             sm.players[p].score = self.gs.score[p] as i32;
             sm.players[p].num_cards = self.gs.card_cnt[p] as i32;
-            sm.players[p].name = if self.clients[p].addr.is_none() { String16::from_str("") } else { String16::from_vec(self.clients[p].name.to_vec()) };
+            sm.players[p].name = if self.clients[p].addr.is_none() {
+                String16::from_str("")
+            } else {
+                String16::from_vec(self.clients[p].name.to_vec())
+            };
             let mask = 1 << p;
             if self.gs.turn == -1 {
                 sm.players[p].is_ready = self.gs.has_passed & mask != 0;
@@ -38,30 +38,36 @@ impl server::GameServerState {
         }
 
         sm.your_index = player as i32;
-        let hand =InlineList16::try_from(self.gs.cards[player]);
+        let hand = InlineList16::try_from(self.gs.cards[player]);
         if hand.is_err() {
             println!("{:?}", self.gs);
         } else {
             sm.your_hand = hand.unwrap()
         }
 
-        if self.gs.last_action & big2rules::SrvGameState::ACTION_MASK == big2rules::SrvGameState::ACTION_PLAY {
-            sm.action.action_type = StateMessageActionType::PLAY;
-            sm.action.player = (self.gs.last_action & 0x03) as i32;
-            sm.action.cards = InlineList8::try_from(self.gs.last_action & 0xFFFF_FFFF_FFFF_F000).unwrap();
+        match self.gs.last_action & big2rules::SrvGameState::ACTION_MASK {
+            big2rules::SrvGameState::ACTION_PLAY => {
+                sm.action.action_type = StateMessageActionType::PLAY;
+                sm.action.player = (self.gs.last_action & 0x03) as i32;
+                sm.action.cards =
+                    InlineList8::try_from(self.gs.last_action & 0xFFFF_FFFF_FFFF_F000).unwrap();
+            }
+            big2rules::SrvGameState::ACTION_PASS => {
+                sm.action.action_type = StateMessageActionType::PASS;
+                sm.action.player = (self.gs.last_action & 0x03) as i32;
+            }
+            big2rules::SrvGameState::ACTION_DEAL => {
+                sm.action.action_type = StateMessageActionType::DEAL;
+            }
+            big2rules::SrvGameState::ACTION_UPDATE => {}
+            e => println!("Unknown {}", e),
         }
 
-        if self.gs.last_action & big2rules::SrvGameState::ACTION_MASK == big2rules::SrvGameState::ACTION_PASS {
-            sm.action.action_type = StateMessageActionType::PASS;
-            sm.action.player = (self.gs.last_action & 0x03) as i32;
-        }
-
-        if self.gs.last_action & big2rules::SrvGameState::ACTION_MASK == big2rules::SrvGameState::ACTION_DEAL {
-            sm.action.action_type = StateMessageActionType::DEAL;
-        }
-
-        if self.gs.last_action & big2rules::SrvGameState::ACTION_MASK != 0 {
-            sm.action.is_end_of_cycle = self.gs.last_action & big2rules::SrvGameState::END_OF_CYCLE == big2rules::SrvGameState::END_OF_CYCLE;
+        if self.gs.last_action & big2rules::SrvGameState::ACTION_MASK
+            != big2rules::SrvGameState::ACTION_UPDATE
+        {
+            sm.action.is_end_of_cycle = self.gs.last_action & big2rules::SrvGameState::END_OF_CYCLE
+                == big2rules::SrvGameState::END_OF_CYCLE;
         }
 
         bincode::serialize(&sm).unwrap()
@@ -247,7 +253,7 @@ impl String16 {
         self.data[..cnt].to_vec()
     }
 
-    fn try_to_string(&self) -> Result<String,()> {
+    fn try_to_string(&self) -> Result<String, ()> {
         if self.count < 0 || self.count > 16 {
             return Err(());
         }
@@ -458,9 +464,7 @@ pub fn create_heartbeat_msg() -> Vec<u8> {
     hb.to_vec()
 }
 
-
 pub fn parse_packet(bytes: usize, buffer: &[u8]) -> Result<StateMessageActions, StateMessageError> {
-
     if bytes < mem::size_of::<DetectMessage>() {
         return Err(StateMessageError::PacketInvalid);
     }
@@ -506,7 +510,7 @@ pub fn parse_packet(bytes: usize, buffer: &[u8]) -> Result<StateMessageActions, 
             Err(e) => {
                 println!("Error {}", e);
                 return Err(StateMessageError::PacketInvalid);
-            },
+            }
             Ok(cards) => return Ok(StateMessageActions::Play(cards)),
         }
     }
@@ -544,18 +548,58 @@ mod tests {
 
     #[test]
     fn parse_join_valid() {
-        let jmb: &[u8] = &[1, 0, 0, 0, 36, 0, 0, 0, 98, 105, 103, 50, 6, 0, 0, 0, 82, 101, 110, 101, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let jmb: &[u8] = &[
+            1, 0, 0, 0, 36, 0, 0, 0, 98, 105, 103, 50, 6, 0, 0, 0, 82, 101, 110, 101, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
         let ret = parse_packet(jmb.len(), &jmb);
         println!("{:?}", ret);
         match ret {
-            Ok(StateMessageActions::Join(name)) => assert_eq!(name.to_vec(), big2rules::Name::from_str("Rene").to_vec()),
+            Ok(StateMessageActions::Join(name)) => {
+                assert_eq!(name.to_vec(), big2rules::Name::from_str("Rene").to_vec())
+            }
             _ => assert!(false),
         }
     }
 
     #[test]
     fn parse_join_invalid_magicnumber() {
-        let jmb: &[u8] = &[1, 0, 0, 0, 36, 0, 0, 0, 99, 105, 103, 50, 6, 0, 0, 0, 82, 101, 110, 101, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let jmb: &[u8] = &[
+            1, 0, 0, 0, 36, 0, 0, 0, 99, 105, 103, 50, 6, 0, 0, 0, 82, 101, 110, 101, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
         let ret = parse_packet(jmb.len(), &jmb);
         println!("{:?}", ret);
         match ret {
@@ -565,7 +609,18 @@ mod tests {
     }
     #[test]
     fn create_and_parse_heartbeat_msg() {
-        let hb_vector = vec![6u8, 0, 0, 0, 8, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let hb_vector = vec![
+            6u8, 0, 0, 0, 8, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0,
+        ];
         let hb_msg = create_heartbeat_msg();
         assert_eq!(hb_vector, hb_msg);
         let ret = parse_packet(hb_vector.len(), &hb_vector);
@@ -579,21 +634,20 @@ mod tests {
     fn test_state_message_action_type() {
         let at = StateMessageActionType::UPDATE;
         let b = bincode::serialize(&at).unwrap();
-        assert_eq!(b, [0,0,0,0]);
+        assert_eq!(b, [0, 0, 0, 0]);
 
         let at = StateMessageActionType::DEAL;
         let b = bincode::serialize(&at).unwrap();
-        assert_eq!(b, [1,0,0,0]);
+        assert_eq!(b, [1, 0, 0, 0]);
 
         let at = StateMessageActionType::PLAY;
         let b = bincode::serialize(&at).unwrap();
-        assert_eq!(b, [2,0,0,0]);
+        assert_eq!(b, [2, 0, 0, 0]);
 
         let at = StateMessageActionType::PASS;
         let b = bincode::serialize(&at).unwrap();
-        assert_eq!(b, [3,0,0,0]);
+        assert_eq!(b, [3, 0, 0, 0]);
     }
-
 
     #[test]
     fn test_state_message_action() {
@@ -605,7 +659,10 @@ mod tests {
             padding: [0; 3],
         };
         let b = bincode::serialize(&at).unwrap();
-        assert_eq!(b, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(
+            b,
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        );
 
         let at = StateMessageAction {
             action_type: StateMessageActionType::DEAL,
@@ -615,7 +672,10 @@ mod tests {
             padding: [0; 3],
         };
         let b = bincode::serialize(&at).unwrap();
-        assert_eq!(b, [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(
+            b,
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        );
 
         let at = StateMessageAction {
             action_type: StateMessageActionType::PLAY,
@@ -625,7 +685,10 @@ mod tests {
             padding: [0; 3],
         };
         let b = bincode::serialize(&at).unwrap();
-        assert_eq!(b, [2, 0, 0, 0, 3, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]);
+        assert_eq!(
+            b,
+            [2, 0, 0, 0, 3, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]
+        );
 
         let at2: StateMessageAction = bincode::deserialize(&b).unwrap();
         assert_eq!(at, at2);
@@ -638,7 +701,10 @@ mod tests {
             padding: [0; 3],
         };
         let b = bincode::serialize(&at).unwrap();
-        assert_eq!(b, [2, 0, 0, 0, 2, 0, 0, 0, 3, 7, 23, 39, 55, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(
+            b,
+            [2, 0, 0, 0, 2, 0, 0, 0, 3, 7, 23, 39, 55, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0]
+        );
 
         let at = StateMessageAction {
             action_type: StateMessageActionType::PASS,
@@ -648,19 +714,28 @@ mod tests {
             padding: [0; 3],
         };
         let b = bincode::serialize(&at).unwrap();
-        assert_eq!(b, [3, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(
+            b,
+            [3, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        );
     }
 
     #[test]
     fn test_string_to_muon_string16_valid() {
         let name_vec = vec![65u8, 66, 67, 68];
         let name_str16 = String16::from_vec(name_vec);
-        assert_eq!(name_str16.data, [65u8, 66, 67, 68, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(
+            name_str16.data,
+            [65u8, 66, 67, 68, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        );
         assert_eq!(name_str16.count, 4);
 
         let name_str = "test";
         let name_str16 = String16::from_str(name_str);
-        assert_eq!(name_str16.data, [116, 101, 115, 116, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(
+            name_str16.data,
+            [116, 101, 115, 116, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        );
         assert_eq!(name_str16.count, 4);
 
         assert_eq!(name_str16.to_string(), String::from("test"));

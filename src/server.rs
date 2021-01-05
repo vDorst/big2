@@ -21,6 +21,8 @@ use thiserror::Error;
 use crate::big2rules;
 use crate::muon;
 
+use big2rules::SrvGameError;
+
 /// Shorthand for the transmit half of the message channel.
 type Tx = mpsc::Sender<Vec<u8>>;
 
@@ -211,10 +213,10 @@ async fn big2_handler(gs: Arc<Mutex<GameServerState>>, mut socket: TcpStream) ->
         return Ok(());
     }
 
-    loop {
+    '_loop: loop {
         let mut buf = [0u8; 512];
 
-        let mut hartbeat_timer = time::delay_for(Duration::from_secs(5));
+        let mut hartbeat_timer = time::delay_for(Duration::from_secs(15));
 
         tokio::select! {
             to_clt = rx.recv() => {
@@ -226,19 +228,19 @@ async fn big2_handler(gs: Arc<Mutex<GameServerState>>, mut socket: TcpStream) ->
                     }
                     None => {
                         println!("Channel RX: None");
-                        break;
+                        break '_loop;
                     }
                 }
             }
             nbytes = socket.read(&mut buf) => {
                 match nbytes {
                     Err(e) => {
-                        println!("TCP Error ! {:?}", e);
-                        break;
+                        println!("TCP Error loop ! {:?}", e);
+                        break '_loop;
                     }
                     Ok(0) => {
                         println!("Socket closed!");
-                        break;
+                        break '_loop;
                     }
                     Ok(nbytes) => {
                         let rec = muon::parse_packet(nbytes, &buf);
@@ -261,12 +263,15 @@ async fn big2_handler(gs: Arc<Mutex<GameServerState>>, mut socket: TcpStream) ->
                                             }
                                         },
                                         muon::StateMessageActions::Ready => {
-                                            if g.gs.ready(idx as i32).is_ok() {
+                                            let ret = g.gs.ready(idx as i32);
+                                            if ret.is_err() {
+                                                println!("READY ERROR {:?}", ret.unwrap_err());
+                                            } else {
                                                 println!("{}. {} READY", idx, g.clients[idx].name.to_string());
                                                 g.send_state_update().await?;
                                             }
                                         },
-                                        _ => (),
+                                        _ => println!("UNKNOWN PACKET! {:x?}", &buf[0..nbytes]),
                                     }
                                 }
                             }
@@ -290,7 +295,9 @@ async fn big2_handler(gs: Arc<Mutex<GameServerState>>, mut socket: TcpStream) ->
 
     {
         let mut b = gs.lock().await;
+        println!("{}. {} Disconnected!", idx, b.clients[idx].name.to_string());
         b.remove_client(remote_ip).await?;
+
         b.send_state_update().await?;
     }
 

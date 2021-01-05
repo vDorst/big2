@@ -401,6 +401,10 @@ impl SrvGameState {
         }
 
         // Setup
+        if self.round == self.rounds {
+            self.round = 0;
+            self.score = [0; 4];
+        }
         self.round += 1;
         self.has_passed = 0;
         self.board_score = 0;
@@ -462,7 +466,7 @@ impl SrvGameState {
 
         if self.card_cnt[p] == 0 {
             self.calc_score();
-            // println!("No more cards! Score: {:?}", self.score);
+            println!("No more cards! Score: {:?}", self.score);
             self.turn = -1;
 
             return Ok(());
@@ -502,9 +506,6 @@ impl SrvGameState {
     }
 
     pub fn ready(&mut self, player: i32) -> Result<(), SrvGameError> {
-        if player != self.turn {
-            return Err(SrvGameError::NotPlayersTurn);
-        }
         let b = 1 << player;
         if b & self.has_passed != 0 {
             return Err(SrvGameError::AllreadyPassed);
