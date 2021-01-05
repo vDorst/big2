@@ -2,14 +2,14 @@
 #![allow(unused_variables)]
 
 use std::sync::Arc;
-use tokio::io::AsyncReadExt;
-use tokio::net::{TcpListener, TcpStream};
-use tokio::prelude::*;
-use tokio::sync::Mutex;
-use tokio::time::{self, Duration};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{TcpListener, TcpSocket, TcpStream},
+    sync::{mpsc, Mutex},
+    time::{self, sleep, Duration},
+};
 
 use std::net::SocketAddr;
-use tokio::sync::mpsc;
 
 use rand::seq::SliceRandom;
 use rand::thread_rng;
@@ -20,8 +20,6 @@ use thiserror::Error;
 
 use crate::big2rules;
 use crate::muon;
-
-use big2rules::SrvGameError;
 
 /// Shorthand for the transmit half of the message channel.
 type Tx = mpsc::Sender<Vec<u8>>;
@@ -157,9 +155,10 @@ async fn big2_handler(gs: Arc<Mutex<GameServerState>>, mut socket: TcpStream) ->
     println!("big2_handler: New connection from {}", remote_ip);
 
     // Add an entry for this `Peer` in the shared state map.
-    let (tx, mut rx) = tokio::sync::mpsc::channel(8);
+    let (tx, mut rx) = mpsc::channel(8);
 
-    let mut timeout_timer = time::delay_for(Duration::from_secs(5));
+    let timeout_timer = sleep(Duration::from_secs(5));
+    tokio::pin!(timeout_timer);
 
     let mut joined = false;
     let mut idx: usize = 0;
@@ -216,7 +215,8 @@ async fn big2_handler(gs: Arc<Mutex<GameServerState>>, mut socket: TcpStream) ->
     '_loop: loop {
         let mut buf = [0u8; 512];
 
-        let mut hartbeat_timer = time::delay_for(Duration::from_secs(15));
+        let hartbeat_timer = sleep(Duration::from_secs(15));
+        tokio::pin!(hartbeat_timer);
 
         tokio::select! {
             to_clt = rx.recv() => {
