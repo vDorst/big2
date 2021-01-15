@@ -2,10 +2,7 @@ pub mod display {
     use crate::{big2rules, network};
     use log::trace;
 
-    use std::{
-        io::{stdout, Write},
-        time::Duration,
-    };
+    use std::{io::stdout, time::Duration};
 
     use crossterm::{
         cursor::{MoveTo, RestorePosition, SavePosition},
