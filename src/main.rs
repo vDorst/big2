@@ -346,6 +346,18 @@ fn main() {
                     }
                 }
 
+                // Pass / Auto Pass
+                let p = gs.sm.your_index as usize;
+                if gs.sm.turn == gs.sm.your_index
+                    && gs.auto_pass
+                    && !gs.sm.players[p].has_passed_this_cycle
+                {
+                    if ts.action_pass().is_err() {
+                        continue;
+                    }
+                    continue;
+                }
+
                 // println!("\n\n\r\n## B 0x{:16x} T {:2} ##", gs.board, gs.sm.turn);
                 // Auto play
                 if cli_args.auto_play {
