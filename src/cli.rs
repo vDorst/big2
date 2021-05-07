@@ -1,6 +1,6 @@
 pub mod display {
     use crate::{big2rules, network};
-    use log::trace;
+    use log::{debug, trace};
 
     use std::{io::stdout, time::Duration};
 
@@ -21,7 +21,7 @@ pub mod display {
         Result,
     };
 
-    #[derive(PartialEq)]
+    #[derive(PartialEq, Debug)]
     pub enum UserEvent {
         NOTHING,
         PLAY,
@@ -85,7 +85,7 @@ pub mod display {
 
         enable_raw_mode()?;
 
-        return Ok(srn);
+        Ok(srn)
     }
 
     pub fn close(mut srn: std::io::Stdout) -> Result<()> {
@@ -112,9 +112,9 @@ pub mod display {
         let cli_user_event = read().unwrap();
 
         match cli_user_event {
-            Event::Key(key_event) => return handle_key_events(key_event),
-            Event::Mouse(mouse_event) => return handle_mouse_events(mouse_event),
-            Event::Resize(_, _) => return UserEvent::RESIZE,
+            Event::Key(key_event) => handle_key_events(key_event),
+            Event::Mouse(mouse_event) => handle_mouse_events(mouse_event),
+            Event::Resize(_, _) => UserEvent::RESIZE,
         }
     }
 
@@ -167,19 +167,19 @@ pub mod display {
                 }
             }
             if y == 1 {
-                if x >= 43 && x <= 49 {
+                if (43..=49).contains(&x) {
                     return UserEvent::PLAY;
                 }
-                if x >= 55 && x <= 62 {
+                if (55..=62).contains(&x) {
                     return UserEvent::PASS;
                 }
-                if x >= 66 && x <= 74 {
+                if (66..=74).contains(&x) {
                     return UserEvent::READY;
                 }
             }
             trace!("{:?}", event);
         }
-        return UserEvent::NOTHING;
+        UserEvent::NOTHING
     }
 
     fn handle_key_events(event: crossterm::event::KeyEvent) -> UserEvent {
@@ -188,26 +188,30 @@ pub mod display {
         }
 
         match event.code {
-            KeyCode::Char('r') => return UserEvent::READY,
-            KeyCode::Char('`') => return UserEvent::CLEAR,
-            KeyCode::Esc => return UserEvent::QUIT,
-            KeyCode::Enter => return UserEvent::PLAY,
-            KeyCode::Char('/') => return UserEvent::PASS,
-            KeyCode::Char('1') => return UserEvent::TOGGLECARD1,
-            KeyCode::Char('2') => return UserEvent::TOGGLECARD2,
-            KeyCode::Char('3') => return UserEvent::TOGGLECARD3,
-            KeyCode::Char('4') => return UserEvent::TOGGLECARD4,
-            KeyCode::Char('5') => return UserEvent::TOGGLECARD5,
-            KeyCode::Char('6') => return UserEvent::TOGGLECARD6,
-            KeyCode::Char('7') => return UserEvent::TOGGLECARD7,
-            KeyCode::Char('8') => return UserEvent::TOGGLECARD8,
-            KeyCode::Char('9') => return UserEvent::TOGGLECARD9,
-            KeyCode::Char('0') => return UserEvent::TOGGLECARD10,
-            KeyCode::Char('-') => return UserEvent::TOGGLECARD11,
-            KeyCode::Char('=') => return UserEvent::TOGGLECARD12,
-            KeyCode::Backspace => return UserEvent::TOGGLECARD13,
-            KeyCode::Char('d') => return UserEvent::RESIZE,
-            _ => return UserEvent::NOTHING,
+            KeyCode::Char('r') => UserEvent::READY,
+            KeyCode::Char('`') => UserEvent::CLEAR,
+            KeyCode::Char('q') => UserEvent::QUIT,
+            KeyCode::Esc => {
+                debug!("ESC!: {:?}", event);
+                UserEvent::NOTHING
+            }
+            KeyCode::Enter => UserEvent::PLAY,
+            KeyCode::Char('/') => UserEvent::PASS,
+            KeyCode::Char('1') => UserEvent::TOGGLECARD1,
+            KeyCode::Char('2') => UserEvent::TOGGLECARD2,
+            KeyCode::Char('3') => UserEvent::TOGGLECARD3,
+            KeyCode::Char('4') => UserEvent::TOGGLECARD4,
+            KeyCode::Char('5') => UserEvent::TOGGLECARD5,
+            KeyCode::Char('6') => UserEvent::TOGGLECARD6,
+            KeyCode::Char('7') => UserEvent::TOGGLECARD7,
+            KeyCode::Char('8') => UserEvent::TOGGLECARD8,
+            KeyCode::Char('9') => UserEvent::TOGGLECARD9,
+            KeyCode::Char('0') => UserEvent::TOGGLECARD10,
+            KeyCode::Char('-') => UserEvent::TOGGLECARD11,
+            KeyCode::Char('=') => UserEvent::TOGGLECARD12,
+            KeyCode::Backspace => UserEvent::TOGGLECARD13,
+            KeyCode::Char('d') => UserEvent::RESIZE,
+            _ => UserEvent::NOTHING,
         }
     }
 
@@ -238,16 +242,16 @@ pub mod display {
         }
 
         if suit == big2rules::cards::Kind::DIAMONDS {
-            card_str.push_str("\u{2666}");
+            card_str.push('\u{2666}');
         }
         if suit == big2rules::cards::Kind::CLUBS {
-            card_str.push_str("\u{2663}");
+            card_str.push('\u{2663}');
         }
         if suit == big2rules::cards::Kind::HEARTS {
-            card_str.push_str("\u{2665}");
+            card_str.push('\u{2665}');
         }
         if suit == big2rules::cards::Kind::SPADES {
-            card_str.push_str("\u{2660}");
+            card_str.push('\u{2660}');
         }
 
         card_str.push_str(COL_NORMAL);
@@ -301,7 +305,7 @@ pub mod display {
         }
         buf.push_str(&format!("€{:4}", score));
         buf.push_str(COL_NORMAL);
-        return buf;
+        buf
     }
 
     // 0         1         2         3         4         5         6         7
@@ -352,12 +356,10 @@ pub mod display {
 
         if has_passed_this_cycle {
             execute!(gs.srn, Print("[X] PASS".white().on_dark_grey()))?;
+        } else if gs.auto_pass {
+            execute!(gs.srn, Print("[v] PASS".white().on_blue()))?;
         } else {
-            if gs.auto_pass {
-                execute!(gs.srn, Print("[v] PASS".white().on_blue()))?;
-            } else {
-                execute!(gs.srn, Print("[ ] PASS".white().on_red()))?;
-            }
+            execute!(gs.srn, Print("[ ] PASS".white().on_red()))?;
         }
         execute!(gs.srn, RestorePosition)?;
         Ok(())
@@ -386,7 +388,7 @@ pub mod display {
             cards_to_utf8(card, &mut card_str);
             card_str.push(' ');
         }
-        return card_str;
+        card_str
     }
 
     pub fn board(gs: &mut big2rules::GameState) -> Result<()> {
@@ -415,16 +417,16 @@ pub mod display {
         execute!(gs.srn, MoveTo(20, 1), Print("Board: "), Print(out_str))?;
 
         let mut p = gs.sm.your_index;
-        if p < 0 || p > 3 {
+        if !(0..=3).contains(&p) {
             p = 0;
         }
 
         if gs.sm.turn == -1 {
             execute!(gs.srn, MoveTo(0, 3))?;
-            for _ in 0..4 {
+            for _ in 0..=3 {
                 let player = &gs.sm.players[p as usize];
                 let name = player.name.to_string();
-                let name = if name == "" {
+                let name = if name.is_empty() {
                     String::from("-- Empty Seat --")
                 } else {
                     name
@@ -460,7 +462,7 @@ pub mod display {
         for row in 0..4 {
             let player = &gs.sm.players[p as usize];
             let name = player.name.to_string();
-            let name: String = if name != "" {
+            let name = if !name.is_empty() {
                 name
             } else {
                 String::from("-- Empty Seat --")
@@ -517,7 +519,7 @@ pub mod display {
                 gs.srn,
                 Print(format!("#{:2}", n_cards)),
                 Print(format!(" {}{}", out_str, no_cards)),
-                Print(format!("{}", score_str(player_score))),
+                Print(score_str(player_score)),
             )?;
 
             // Passed Text

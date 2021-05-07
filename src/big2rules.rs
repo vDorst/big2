@@ -13,10 +13,10 @@ pub mod deck {
     pub fn deal() -> [u64; 4] {
         // Create and shulle deck of cards
         let deck = {
-            let mut deck = Vec::<u8>::with_capacity(52);
+            let mut deck = Vec::<u8>::with_capacity(self::NUMBER_OF_CARDS as usize);
 
             for s in 0..deck::NUMBER_OF_CARDS {
-                let card_bit: u8 = s as u8 + deck::START_BIT;
+                let card_bit: u8 = s + deck::START_BIT;
                 deck.push(card_bit);
             }
 
@@ -26,15 +26,17 @@ pub mod deck {
             }
             deck
         };
-        return deal_cards(deck);
+        deal_cards(deck)
     }
     fn deal_cards(cards: Vec<u8>) -> [u64; 4] {
         let mut players_hand: [u64; 4] = [0, 0, 0, 0];
         let mut p: usize = 0;
         let mut c: usize = 0;
 
-        for r in cards {
-            let card_bit = 1 << r;
+        assert!(cards.len() == 52);
+
+        for card in cards {
+            let card_bit = 1 << card;
             players_hand[p] |= card_bit;
             c += 1;
             if c == 13 {
@@ -48,7 +50,8 @@ pub mod deck {
             (players_hand[0] | players_hand[1] | players_hand[2] | players_hand[3])
                 == 0xFFFF_FFFF_FFFF_F000u64
         );
-        return players_hand;
+
+        players_hand
     }
 }
 
@@ -100,23 +103,23 @@ pub mod cards {
 
     pub fn has_rank(hand: u64, rank: u64) -> u64 {
         let mask = Kind::SUITMASK << (rank << 2);
-        return hand & mask;
+        hand & mask
     }
 
     pub fn cnt_rank(hand: u64, rank: u64) -> u64 {
-        return has_rank(hand, rank).count_ones() as u64;
+        has_rank(hand, rank).count_ones() as u64
     }
 
     pub fn card_selected(card: u64) -> u64 {
-        return card.trailing_zeros() as u64;
+        card.trailing_zeros() as u64
     }
 
     pub fn has_rank_idx(card: u64) -> u64 {
-        return card_selected(card) >> 2;
+        card_selected(card) >> 2
     }
 
     pub fn has_suit(card: u64) -> u64 {
-        return 1 << (card_selected(card) & 0x3);
+        1 << (card_selected(card) & 0x3)
     }
 }
 
@@ -186,7 +189,7 @@ pub mod rules {
     }
     #[allow(dead_code)]
     pub fn beter_hand(board: u64, hand: u64) -> bool {
-        if is_valid_hand(hand) == false {
+        if !is_valid_hand(hand) {
             return false;
         }
 
@@ -198,16 +201,16 @@ pub mod rules {
         if card_cnt_board != 0 && card_cnt_board != card_cnt_hand {
             return false;
         }
-        return true;
+
+        true
     }
 
     pub fn higher_single_card(board: u64, hand: u64) -> u64 {
         let mask: u64 = u64::MAX.wrapping_shl(board.trailing_zeros());
         let higher_cards = hand & mask;
         let mask: u64 = 1u64.wrapping_shl(higher_cards.trailing_zeros());
-        let better_card = hand & mask;
 
-        better_card
+        hand & mask
     }
 
     pub fn is_flush(hand: u64) -> bool {
@@ -218,7 +221,8 @@ pub mod rules {
             }
             mask <<= 1;
         }
-        return false;
+
+        false
     }
     pub fn has_flush(hand: u64) -> u8 {
         let mut mask: u64 = 0x1111_1111_1111_1000;
@@ -229,7 +233,8 @@ pub mod rules {
             }
             mask <<= 1;
         }
-        return flushs;
+
+        flushs
     }
     pub fn score_hand(hand: u64) -> u64 {
         // Score:
@@ -242,7 +247,7 @@ pub mod rules {
         //    |+-- Zero
         //        +--- Kind: Kind::QUADS or Kind::SET or Kind::FULLHOUSE
 
-        if is_valid_hand(hand) == false {
+        if !is_valid_hand(hand) {
             return 0;
         }
         let card_cnt_hand: u64 = hand.count_ones().into();
@@ -344,7 +349,7 @@ pub mod rules {
             return cards::Kind::FLUSH | highest_card;
         }
 
-        return 0;
+        0
     }
 }
 
@@ -391,7 +396,7 @@ impl SrvGameState {
             has_passed: 0,
             turn: -1,
             round: 0,
-            rounds: rounds,
+            rounds,
             cards: [0; 4],
             played_cards: 0,
             score: [0; 4],
@@ -535,7 +540,6 @@ impl SrvGameState {
         }
 
         self.turn = next;
-        return;
     }
     fn calc_score(&mut self) {
         let mut t: i16 = 0;
@@ -557,21 +561,21 @@ impl SrvGameState {
         }
 
         let mut delta_score: [i16; 4] = [0; 4];
-        for i in 0..4 {
-            let mut s = self.card_cnt[i] as i16;
+        for (item, card_cnt) in delta_score.iter_mut().zip(self.card_cnt.iter()) {
+            let mut s = *(card_cnt) as i16;
             if s == 13 {
                 s *= 3
             } else if s > 9 {
                 s *= 2
             };
             t += s;
-            delta_score[i] = s;
+            *item = s;
         }
         if assisted {
             self.score[prev_player] -= t
         } else {
-            for i in 0..4 {
-                self.score[i] -= delta_score[i];
+            for (score, d_score) in self.score.iter_mut().zip(delta_score.iter()) {
+                *score -= *d_score;
             }
         }
         self.score[self.turn as usize] += t;

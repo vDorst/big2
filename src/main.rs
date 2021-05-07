@@ -15,9 +15,9 @@ use pico_args::{Arguments, Error as paError};
 
 #[derive(Debug, PartialEq)]
 enum AppMode {
-    HOSTONLY,
-    HOST,
-    CLIENT,
+    HostOnly,
+    Host,
+    Client,
 }
 
 #[derive(Debug, PartialEq)]
@@ -33,7 +33,7 @@ struct CliArgs {
 fn parse_args(mut args: Arguments) -> Result<CliArgs, paError> {
     let mut cli_args = CliArgs {
         name: String::from(""),
-        app_mode: AppMode::CLIENT,
+        app_mode: AppMode::Client,
         socket_addr: String::from(""),
         rounds: 8,
         host_port: network::common::PORT,
@@ -61,20 +61,20 @@ fn parse_args(mut args: Arguments) -> Result<CliArgs, paError> {
     }
 
     if be_host {
-        cli_args.app_mode = AppMode::HOST;
+        cli_args.app_mode = AppMode::Host;
     }
 
     if be_hostonly {
-        cli_args.app_mode = AppMode::HOSTONLY;
+        cli_args.app_mode = AppMode::HostOnly;
     }
 
     if let Some(name) = name {
-        if name.len() < 1 || name.len() > 16 {
+        if !(1..=16).contains(&name.len()) {
             return Err(paError::ArgumentParsingFailed {
                 cause: "Name length min 1 max 16 bytes!".to_string(),
             });
         }
-        if name.contains(" ") {
+        if name.contains(' ') {
             return Err(paError::ArgumentParsingFailed {
                 cause: "No spaces allowed in name".to_string(),
             });
@@ -83,15 +83,15 @@ fn parse_args(mut args: Arguments) -> Result<CliArgs, paError> {
     }
 
     if let Some(join_addr) = join {
-        if join_addr != "" {
+        if !join_addr.is_empty() {
             let mut join_addr = join_addr;
             // append default port is not provided.
-            if !join_addr.contains(":") {
+            if !join_addr.contains(':') {
                 join_addr.push(':');
                 join_addr.push_str(&network::common::PORT.to_string());
             }
             cli_args.socket_addr = join_addr;
-            cli_args.app_mode = AppMode::CLIENT;
+            cli_args.app_mode = AppMode::Client;
         }
     }
 
@@ -116,7 +116,7 @@ fn main() {
     }
     let cli_args = cli_args.unwrap();
 
-    let logfilename = if cli_args.app_mode == AppMode::CLIENT {
+    let logfilename = if cli_args.app_mode == AppMode::Client {
         format!("{}.log", &cli_args.name)
     } else {
         String::from("big2.log")
@@ -128,7 +128,7 @@ fn main() {
         File::create(logfilename).unwrap(),
     );
 
-    if cli_args.app_mode == AppMode::HOSTONLY {
+    if cli_args.app_mode == AppMode::HostOnly {
         let mut srv = big2rules::SrvGameState::new(cli_args.rounds);
 
         srv.deal(None);
@@ -145,12 +145,12 @@ fn main() {
         std::process::exit(1);
     }
 
-    if cli_args.app_mode == AppMode::HOST {
+    if cli_args.app_mode == AppMode::Host {
         error!("Currently not supported!");
         std::process::exit(1);
     }
 
-    if cli_args.app_mode == AppMode::CLIENT {
+    if cli_args.app_mode == AppMode::Client {
         let l = cli_args.socket_addr.len();
         let title = format!(
             "Name: {} Table {}",
@@ -170,14 +170,14 @@ fn main() {
 
         let mut ts = client.unwrap();
 
-        if let Err(e) = ts.send_join_msg(&cli_args.name) {
+        if let Err(e) = ts.send_join_msg(cli_args.name) {
             let _ = cli::display::close(srn);
             print!("{}\r\n", e);
             std::process::exit(1);
         }
 
         let mut gs = big2rules::GameState {
-            srn: srn,
+            srn,
             board: 0,
             board_score: 0,
             cards_selected: 0,
@@ -198,8 +198,8 @@ fn main() {
             let buffer_sm = ret.unwrap();
 
             // Process new StateMessage
-            if buffer_sm.is_some() {
-                gs.sm = buffer_sm.unwrap();
+            if let Some(buffer) = buffer_sm {
+                gs.sm = buffer;
                 trace!("TRAIL: {:16x}h", gs.sm.action_msg());
                 match gs.sm.action.action_type {
                     network::StateMessageActionType::PLAY => {
@@ -251,12 +251,9 @@ fn main() {
                         String::from("Waiting for users ready")
                     }
                 } else {
-                    let name = gs.sm.current_player_name();
-                    if name.is_none() {
-                        String::from("Unknown")
-                    } else {
-                        name.unwrap()
-                    }
+                    gs.sm
+                        .current_player_name()
+                        .unwrap_or_else(|| String::from("Unknown"))
                 };
                 trace!("toACT: {}", next_str);
 
@@ -271,16 +268,12 @@ fn main() {
                     if let Err(e) = cli::display::board(&mut gs) {
                         error!("DISPLAY ERROR {}", e);
                     }
-                    let delay = if cli_args.auto_play == false {
-                        1000
-                    } else {
-                        10
-                    };
+                    let delay = if !cli_args.auto_play { 1000 } else { 10 };
                     let ten_millis = time::Duration::from_millis(delay);
                     thread::sleep(ten_millis);
 
                     if gs.sm.action.action_type == network::StateMessageActionType::PLAY {
-                        gs.sm.board = gs.sm.action.cards.clone();
+                        gs.sm.board = gs.sm.action.cards;
                     }
                     gs.sm.action.action_type = network::StateMessageActionType::UPDATE;
 
@@ -366,15 +359,14 @@ fn main() {
                             continue 'gameloop;
                         }
                     }
-                    if gs.sm.turn == -1 {
-                        if gs.sm.players[gs.sm.your_index as usize].is_ready == false
-                            && gs.i_am_ready == false
-                        {
-                            // println!("\n\n\r\n## READY ###");
-                            let _ = ts.action_ready();
-                            gs.i_am_ready = true;
-                            continue;
-                        }
+                    if gs.sm.turn == -1
+                        && !gs.sm.players[gs.sm.your_index as usize].is_ready
+                        && !gs.i_am_ready
+                    {
+                        // println!("\n\n\r\n## READY ###");
+                        let _ = ts.action_ready();
+                        gs.i_am_ready = true;
+                        continue;
                     }
                     if gs.sm.turn == gs.sm.your_index {
                         if gs.sm.board.count > 1 {
@@ -401,6 +393,8 @@ fn main() {
             if user_event != cli::display::UserEvent::NOTHING {
                 let mut toggle_card = 0;
 
+                debug!("USEREVENT: {:?}", user_event);
+
                 if user_event == cli::display::UserEvent::RESIZE {
                     if let Err(e) = cli::display::clear(&mut gs.srn) {
                         error!("DISPLAY ERROR {}", e);
@@ -412,6 +406,7 @@ fn main() {
                 }
 
                 if user_event == cli::display::UserEvent::QUIT {
+                    info!("User QUIT!");
                     network::client::disconnect(ts);
                     break;
                 }
@@ -500,11 +495,11 @@ fn main() {
                     let you = &gs.sm.players[me_index as usize];
                     if is_your_turn {
                         // Pass
-                        if user_event == cli::display::UserEvent::PASS && !you.has_passed_this_cycle
+                        if user_event == cli::display::UserEvent::PASS
+                            && !you.has_passed_this_cycle
+                            && ts.action_pass().is_err()
                         {
-                            if ts.action_pass().is_err() {
-                                continue;
-                            }
+                            continue;
                         }
 
                         // Play hand
@@ -559,7 +554,7 @@ mod tests {
         let ar = parse_args(args).unwrap();
         let ans = CliArgs {
             name: String::from("Test"),
-            app_mode: AppMode::CLIENT,
+            app_mode: AppMode::Client,
             socket_addr: String::from("10.10.10.10:27191"),
             rounds: 8,
             host_port: 27191,
@@ -574,7 +569,7 @@ mod tests {
         let ar = parse_args(args).unwrap();
         let ans = CliArgs {
             name: String::from("IamL33T"),
-            app_mode: AppMode::HOST,
+            app_mode: AppMode::Host,
             socket_addr: String::from(""),
             rounds: 8,
             host_port: 27191,
@@ -588,7 +583,7 @@ mod tests {
         let ar = parse_args(args).unwrap();
         let ans = CliArgs {
             name: String::from("IamL33T"),
-            app_mode: AppMode::HOST,
+            app_mode: AppMode::Host,
             socket_addr: String::from(""),
             rounds: 10,
             host_port: 27191,
