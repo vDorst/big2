@@ -1,6 +1,5 @@
-use crate::network;
-
-pub const RANKS: [u8; 13] = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+#![allow(dead_code)]
+#![allow(unused_variables)]
 
 pub mod deck {
     use super::*;
@@ -56,6 +55,8 @@ pub mod deck {
 }
 
 pub mod cards {
+    use super::deck;
+
     #[non_exhaustive]
     pub struct Kind;
     #[non_exhaustive]
@@ -121,72 +122,51 @@ pub mod cards {
     pub fn has_suit(card: u64) -> u64 {
         1 << (card_selected(card) & 0x3)
     }
+
+    fn cards_to_utf8(card: u64, card_str: &mut String) {
+        //             0123456789ABCDEF
+        let rank_str: Vec<u8> = ".+-3456789TJQKA2".into();
+        let rank: usize;
+        let suit: u64;
+
+        rank = has_rank_idx(card) as usize;
+        suit = has_suit(card);
+
+        card_str.push(rank_str[rank] as char);
+
+        if suit == Kind::DIAMONDS {
+            card_str.push_str("\u{2666}");
+        }
+        if suit == Kind::CLUBS {
+            card_str.push_str("\u{2663}");
+        }
+        if suit == Kind::HEARTS {
+            card_str.push_str("\u{2665}");
+        }
+        if suit == Kind::SPADES {
+            card_str.push_str("\u{2660}");
+        }
+    }
+
+    pub fn cards_to_string(card: u64) -> String {
+        let mut out_str = String::from("");
+        for c in 0..self::deck::NUMBER_OF_CARDS {
+            let bit: u64 = (self::deck::START_BIT + c) as u64;
+            let dsp_card = card & (1 << bit);
+            if dsp_card == 0 {
+                continue;
+            }
+            cards_to_utf8(dsp_card as u64, &mut out_str);
+
+            out_str.push(' ');
+        }
+        out_str
+    }
 }
 
 pub mod rules {
     use super::*;
 
-    #[allow(dead_code)]
-    pub fn get_numbers(hand: u64) {
-        let mut ranks: [u32; 16] = [0; 16];
-        let mut straigth: u64 = 0;
-        let mut tripps: u32 = 0;
-        let mut quads: u32 = 0;
-        let mut straigths: u32 = 0;
-        let mut doubles: u32 = 0;
-
-        for r in RANKS.iter() {
-            let idx: usize = (*r).into();
-            ranks[idx] = cards::cnt_rank(hand, idx as u64) as u32;
-            if ranks[idx] != 0 {
-                straigth |= 1 << r;
-            }
-            if ranks[idx] == 2 {
-                doubles += 1;
-            }
-            if ranks[idx] == 3 {
-                tripps += 1;
-            }
-            if ranks[idx] == 4 {
-                quads += 1;
-            }
-        }
-        let mut mask = 0b11111;
-        for _ in 4..16 {
-            if straigth & mask == mask {
-                straigths += 1;
-            }
-            mask <<= 1;
-        }
-        // A2345
-        mask = 0b1100_0000_0011_1000;
-        if straigth & mask == mask {
-            straigths += 1;
-        };
-        // 23456
-        mask = 0b1000_0000_0111_1000;
-        if straigth & mask == mask {
-            straigths += 1;
-        };
-
-        let flushs = has_flush(hand);
-
-        let fullhouse = std::cmp::min(doubles, tripps)
-            + std::cmp::min(doubles, quads)
-            + std::cmp::min(tripps, quads);
-        println!(
-            "R{:x?} S{:16b} {:x} D{:x} T{:x} Q{:x} FH{:x} FL{:x}",
-            ranks, straigth, straigths, doubles, tripps, quads, fullhouse, flushs
-        );
-    }
-    pub fn is_valid_hand(hand: u64) -> bool {
-        // Check cards range. Only the upper 52 bits are used.
-        let ret: bool = (hand & 0xFFF) == 0;
-
-        // Check number of cards played. count = 1, 2, 3 or 5 is valid.
-        let cardcount = hand.count_ones();
-        ret && cardcount != 4 && cardcount < 6 && cardcount != 0
-    }
     #[allow(dead_code)]
     pub fn beter_hand(board: u64, hand: u64) -> bool {
         if !is_valid_hand(hand) {
@@ -203,6 +183,14 @@ pub mod rules {
         }
 
         true
+    }
+    pub fn is_valid_hand(hand: u64) -> bool {
+        // Check cards range. Only the upper 52 bits are used.
+        let ret: bool = (hand & 0xFFF) == 0;
+
+        // Check number of cards played. count = 1, 2, 3 or 5 is valid.
+        let cardcount = hand.count_ones();
+        ret && cardcount != 4 && cardcount < 6 && cardcount != 0
     }
 
     pub fn higher_single_card(board: u64, hand: u64) -> u64 {
@@ -224,6 +212,7 @@ pub mod rules {
 
         false
     }
+
     pub fn has_flush(hand: u64) -> u8 {
         let mut mask: u64 = 0x1111_1111_1111_1000;
         let mut flushs: u8 = 0;
@@ -352,19 +341,37 @@ pub mod rules {
         0
     }
 }
+#[derive(Debug, PartialEq)]
+pub struct Name(Vec<u8>);
 
-pub struct GameState {
-    pub sm: network::StateMessage,
-    pub srn: std::io::Stdout,
-    pub board: u64,
-    pub board_score: u64,
-    pub cards_selected: u64,
-    pub auto_pass: bool,
-    pub i_am_ready: bool,
-    pub is_valid_hand: bool,
-    pub hand_score: u64,
+impl Name {
+    pub fn new() -> Self {
+        Name {
+            0: Vec::<u8>::with_capacity(16),
+        }
+    }
+
+    pub fn to_string(&self) -> String {
+        String::from_utf8(self.0.clone()).unwrap()
+    }
+
+    pub fn from_str(name: &str) -> Self {
+        assert!(name.len() <= 16);
+        Name {
+            0: name.as_bytes().to_vec(),
+        }
+    }
+
+    pub fn from_vec(name: Vec<u8>) -> Self {
+        assert!(name.len() <= 16);
+        Name { 0: name }
+    }
+    pub fn to_vec(&self) -> Vec<u8> {
+        self.0.clone()
+    }
 }
 
+#[derive(Debug)]
 pub struct SrvGameState {
     pub prev_action: u64,
     pub last_action: u64,
@@ -388,6 +395,15 @@ pub enum SrvGameError {
 }
 
 impl SrvGameState {
+    pub const END_OF_CYCLE: u64 = 0x80;
+
+    pub const ACTION_UPDATE: u64 = 0x00;
+    pub const ACTION_DEAL: u64 = 0x10;
+    pub const ACTION_PLAY: u64 = 0x20;
+    pub const ACTION_PASS: u64 = 0x40;
+
+    pub const ACTION_MASK: u64 = Self::ACTION_DEAL | Self::ACTION_PLAY | Self::ACTION_PASS;
+
     pub fn new(rounds: u8) -> Self {
         SrvGameState {
             prev_action: 0,
@@ -436,6 +452,9 @@ impl SrvGameState {
             println!("Last action {:16x} P{}", self.last_action, p);
             self.turn = p;
         }
+
+        self.prev_action = self.last_action;
+        self.last_action = Self::ACTION_DEAL | (self.turn as u64);
     }
     pub fn play(&mut self, player: i32, hand: u64) -> Result<(), SrvGameError> {
         if player != self.turn {
@@ -460,7 +479,8 @@ impl SrvGameState {
         }
 
         self.prev_action = self.last_action;
-        self.last_action = hand | (p as u64) | ((self.last_action & 0x3) << 2);
+        self.last_action =
+            hand | SrvGameState::ACTION_PLAY | (p as u64) | ((self.last_action & 0x3) << 2);
 
         self.board_score = score;
         self.cards[p] ^= hand;
@@ -486,6 +506,7 @@ impl SrvGameState {
 
         Ok(())
     }
+
     pub fn pass(&mut self, player: i32) -> Result<(), SrvGameError> {
         if player != self.turn {
             return Err(SrvGameError::NotPlayersTurn);
@@ -497,21 +518,50 @@ impl SrvGameState {
 
         self.has_passed |= b;
 
+        self.prev_action = self.last_action;
+
+        // Don't clear board cards
+        self.last_action &= 0xFFFF_FFFF_FFFF_F000;
+        self.last_action |= SrvGameState::ACTION_PASS | (self.turn as u64);
+
         self.next_player();
 
         Ok(())
     }
 
+    pub fn ready(&mut self, player: i32) -> Result<(), SrvGameError> {
+        if player != self.turn {
+            return Err(SrvGameError::NotPlayersTurn);
+        }
+        let b = 1 << player;
+        if b & self.has_passed != 0 {
+            return Err(SrvGameError::AllreadyPassed);
+        }
+
+        self.has_passed |= b;
+
+        if self.has_passed == 0xF {
+            self.deal(None);
+        }
+
+        Ok(())
+    }
+
+    fn end_of_cycle(&mut self) {
+        self.board_score = 0;
+        self.has_passed = 0;
+        self.last_action |= SrvGameState::END_OF_CYCLE;
+    }
+
     fn next_player(&mut self) {
         let mut next = self.turn;
 
-        if self.board_score == 0x23f || self.board_score == 0x13f || self.board_score == 0x33f {
+        if self.board_score == 0x23f || self.board_score == 0x13f || self.board_score == 0x30f {
             println!(
                 "Play 2s which is the highest card bs {:3x}",
                 self.board_score
             );
-            self.board_score = 0;
-            self.has_passed = 0;
+            self.end_of_cycle();
             return;
         }
 
@@ -534,13 +584,13 @@ impl SrvGameState {
         }
         if self.has_passed.count_ones() == 3 {
             // everyone has passed.
-            self.board_score = 0;
-            self.has_passed = 0;
-            println!("\tEveryone has passed bs {:3x}", self.board_score);
+            println!("Everyone has passed: End Of Cycle!");
+            self.end_of_cycle();
         }
 
         self.turn = next;
     }
+
     fn calc_score(&mut self) {
         let mut t: i16 = 0;
 
@@ -874,5 +924,59 @@ mod tests {
         let my_hand: u64 = 0xFFF8_0000_0000_0000;
         let play = rules::higher_single_card(board, my_hand);
         assert_eq!(play, 0x8_0000_0000_0000);
+    }
+}
+#[cfg(test)]
+mod tests_name_type {
+    use super::*;
+
+    #[test]
+    fn name_from_str_valid() {
+        let name = Name::from_str("");
+        let vec = name.to_vec();
+        assert_eq!(vec.len(), 0);
+        assert_eq!(vec, vec![0; 0]);
+
+        let name = Name::from_str("PlayerName");
+        let vec = name.to_vec();
+        assert_eq!(vec.len(), 10);
+        assert_eq!(vec, vec![80, 108, 97, 121, 101, 114, 78, 97, 109, 101]);
+    }
+
+    #[test]
+    fn name_from_vec_valid() {
+        let name = Name::from_vec(Vec::new());
+        let vec = name.to_vec();
+        assert_eq!(vec.len(), 0);
+        assert_eq!(vec, vec![]);
+
+        let name = Name::from_vec(vec![80, 108, 97, 121, 101, 114, 78, 97, 109, 101]);
+        let vec = name.to_vec();
+        assert_eq!(vec.len(), 10);
+        assert_eq!(vec, vec![80, 108, 97, 121, 101, 114, 78, 97, 109, 101]);
+
+        let name = Name::from_vec(vec![
+            80, 108, 97, 121, 101, 114, 78, 97, 109, 101, 0, 0, 0, 0, 0, 0,
+        ]);
+        let vec = name.to_vec();
+        assert_eq!(vec.len(), 16);
+        assert_eq!(
+            vec,
+            vec![80, 108, 97, 121, 101, 114, 78, 97, 109, 101, 0, 0, 0, 0, 0, 0]
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn name_from_str_invalid() {
+        let name = Name::from_str("I have a to long name!");
+    }
+
+    #[test]
+    #[should_panic]
+    fn name_from_vec_invalid() {
+        let name = Name::from_vec(vec![
+            80, 108, 97, 121, 101, 114, 78, 97, 109, 101, 0, 0, 0, 0, 0, 0, 0,
+        ]);
     }
 }
