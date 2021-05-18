@@ -126,6 +126,13 @@ pub mod cards {
 pub mod rules {
     use super::*;
 
+    pub fn have_to_pass(board: u64, hand: u64) -> bool {
+        let board_cnt = board.count_ones();
+        let hand_cnt = hand.count_ones();
+
+        board_cnt > hand_cnt
+    }
+
     #[allow(dead_code)]
     pub fn get_numbers(hand: u64) {
         let mut ranks: [u32; 16] = [0; 16];
@@ -874,5 +881,18 @@ mod tests {
         let my_hand: u64 = 0xFFF8_0000_0000_0000;
         let play = rules::higher_single_card(board, my_hand);
         assert_eq!(play, 0x8_0000_0000_0000);
+    }
+
+    #[test]
+    fn have_to_pass() {
+        // Have to pass because the player has less card then the board.
+        assert!(rules::have_to_pass(0x1F, 0x01));
+        assert!(rules::have_to_pass(0x1F, 0x0F));
+
+        // Don't have to pass because the player has equel or more cards then the board.
+        assert!(!rules::have_to_pass(0x0, 0x01));
+        assert!(!rules::have_to_pass(0x0F, 0x0F));
+        assert!(!rules::have_to_pass(0x01, 0x0F));
+        assert!(!rules::have_to_pass(0x01, 0x03));
     }
 }
