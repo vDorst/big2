@@ -14,6 +14,7 @@ use std::{
 };
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum StateMessageActionType {
     UPDATE = 0,
     DEAL = 1,
