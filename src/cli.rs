@@ -22,6 +22,7 @@ pub mod display {
     };
 
     #[derive(PartialEq, Debug)]
+    #[allow(clippy::upper_case_acronyms)]
     pub enum UserEvent {
         NOTHING,
         PLAY,
