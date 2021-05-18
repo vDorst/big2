@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
+use crate::network;
+
 pub mod deck {
     use super::*;
     use rand::seq::SliceRandom;
@@ -28,7 +30,7 @@ pub mod deck {
         deal_cards(deck)
     }
     fn deal_cards(cards: Vec<u8>) -> [u64; 4] {
-        let mut players_hand: [u64; 4] = [0, 0, 0, 0];
+        let mut players_hand: [u64; 4] = [0; 4];
         let mut p: usize = 0;
         let mut c: usize = 0;
 
@@ -123,8 +125,8 @@ pub mod cards {
         1 << (card_selected(card) & 0x3)
     }
 
-    fn cards_to_utf8(card: u64, card_str: &mut String) {
-        //             0123456789ABCDEF
+    pub fn cards_to_utf8(card: u64, card_str: &mut String) {
+        //                       0123456789ABCDEF
         let rank_str: Vec<u8> = ".+-3456789TJQKA2".into();
         let rank: usize;
         let suit: u64;
@@ -166,6 +168,13 @@ pub mod cards {
 
 pub mod rules {
     use super::*;
+
+    pub fn have_to_pass(board: u64, hand: u64) -> bool {
+        let board_cnt = board.count_ones();
+        let hand_cnt = hand.count_ones();
+
+        board_cnt > hand_cnt
+    }
 
     #[allow(dead_code)]
     pub fn beter_hand(board: u64, hand: u64) -> bool {
@@ -369,6 +378,19 @@ impl Name {
     pub fn to_vec(&self) -> Vec<u8> {
         self.0.clone()
     }
+}
+
+/* Old struct? */
+pub struct GameState {
+    pub sm: network::StateMessage,
+    pub srn: std::io::Stdout,
+    pub board: u64,
+    pub board_score: u64,
+    pub cards_selected: u64,
+    pub auto_pass: bool,
+    pub i_am_ready: bool,
+    pub is_valid_hand: bool,
+    pub hand_score: u64,
 }
 
 #[derive(Debug)]
@@ -924,6 +946,19 @@ mod tests {
         let my_hand: u64 = 0xFFF8_0000_0000_0000;
         let play = rules::higher_single_card(board, my_hand);
         assert_eq!(play, 0x8_0000_0000_0000);
+    }
+
+    #[test]
+    fn have_to_pass() {
+        // Have to pass because the player has less card then the board.
+        assert!(rules::have_to_pass(0x1F, 0x01));
+        assert!(rules::have_to_pass(0x1F, 0x0F));
+
+        // Don't have to pass because the player has equel or more cards then the board.
+        assert!(!rules::have_to_pass(0x0, 0x01));
+        assert!(!rules::have_to_pass(0x0F, 0x0F));
+        assert!(!rules::have_to_pass(0x01, 0x0F));
+        assert!(!rules::have_to_pass(0x01, 0x03));
     }
 }
 #[cfg(test)]

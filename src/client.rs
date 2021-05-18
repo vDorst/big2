@@ -1,6 +1,6 @@
-use tokio::net::{ToSocketAddrs, TcpStream};
-use std::io::{Result};
-use tokio::io::{AsyncWriteExt};
+use std::io::Result;
+use tokio::io::AsyncWriteExt;
+use tokio::net::{TcpStream, ToSocketAddrs};
 
 use crate::muon;
 
@@ -11,7 +11,7 @@ pub async fn connect<T: ToSocketAddrs>(addr: T, name: &str) -> Result<MuonClient
 
     client.join(name).await?;
 
-    Ok ( client )
+    Ok(client)
 }
 
 pub struct MuonClient {
@@ -20,9 +20,7 @@ pub struct MuonClient {
 
 impl MuonClient {
     pub fn new(socket: TcpStream) -> Self {
-        MuonClient {
-            stream: socket,
-        }
+        MuonClient { stream: socket }
     }
 
     pub async fn join(&mut self, name: &str) -> Result<()> {
@@ -32,6 +30,4 @@ impl MuonClient {
 
         Ok(())
     }
-
-
 }

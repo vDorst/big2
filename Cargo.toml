@@ -7,7 +7,7 @@ exclude = ["target", "Cargo.lock"]
 license = "MIT"
 
 [dependencies]
-tokio = { version = "1", features = ["rt", "net"] }
+tokio = { version = "1", features = ["full"] }
 rand = "0.8"
 crossterm = { version = "0.19", features = ["event-stream"] }
 serde = { version = "1.0", features = ["derive"] }

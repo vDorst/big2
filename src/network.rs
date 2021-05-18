@@ -97,13 +97,11 @@ pub struct StateMessage {
 
 impl StateMessage {
     pub fn new(init_buffer: Option<&[u8]>) -> Self {
-        let buf: &[u8];
-        if let Some(b) = init_buffer {
-            // assert!(b.len() < std::mem::size_of::<Self>());
-            buf = b;
+        let buf = if let Some(b) = init_buffer {
+            b
         } else {
-            buf = &[0; std::mem::size_of::<Self>()];
-        }
+            &[0; std::mem::size_of::<Self>()]
+        };
         let mut sm: StateMessage = bincode::deserialize(&buf).unwrap();
         sm.size = mem::size_of::<StateMessage>() as u32;
         sm

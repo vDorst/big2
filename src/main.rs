@@ -1,8 +1,8 @@
 mod big2rules;
 mod cli;
-mod network;
 mod client;
 mod muon;
+mod network;
 mod server;
 
 use tokio::net::TcpListener;
@@ -50,23 +50,41 @@ fn parse_args(mut args: Arguments) -> Result<CliArgs, paError> {
         auto_play: args.contains("--auto-play"),
     };
 
-    let join: Option<String> = args.opt_value_from_str("--join")?;
+    let join: Option<String> = args.opt_value_from_str(["-j", "--join"])?;
+    let name: Option<String> = args.opt_value_from_str(["-n", "--name"])?;
+    let be_host = args.contains(["-h", "--host"]);
+    let be_hostonly = args.contains(["-d", "--hostonly"]);
 
-    let name: Option<String> = args.opt_value_from_str("--name")?;
+    if join.is_none() && !be_host && !be_hostonly {
+        eprintln!("Error: missing --join, --host");
+        return Err(paError::MissingArgument);
+    }
 
-    let be_host = args.contains("--host");
+    if be_host || be_hostonly {
+        let rounds: Option<u8> = args.opt_value_from_str(["-r", "--rounds"])?;
 
-    let be_hostonly = args.contains("--host-only");
+        if let Some(rounds) = rounds {
+            if rounds == 0 {
+                return Err(paError::ArgumentParsingFailed {
+                    cause: "--rounds missing a valid number between 1 and 255.".to_string(),
+                });
+            }
+            cli_args.rounds = rounds;
+        }
+
+        let value: Option<u16> = args.opt_value_from_str("--port")?;
+        cli_args.host_port = value.unwrap_or(network::common::PORT);
+    }
 
     if join.is_some() && (be_host || be_hostonly) {
         return Err(paError::ArgumentParsingFailed {
-            cause: "--join combined with --host or --host-only is now allowed.".to_string(),
+            cause: "--join combined with --host or --hostonly is now allowed.".to_string(),
         });
     }
 
     if (join.is_some() || be_host) && name.is_none() {
         return Err(paError::ArgumentParsingFailed {
-            cause: "--join or --host is missing -name".to_string(),
+            cause: "--join or --host is missing --name".to_string(),
         });
     }
 
@@ -105,14 +123,6 @@ fn parse_args(mut args: Arguments) -> Result<CliArgs, paError> {
         }
     }
 
-    if be_host {
-        let value: Option<u8> = args.opt_value_from_str("--rounds")?;
-        cli_args.rounds = value.unwrap_or(8);
-
-        let value: Option<u16> = args.opt_value_from_str("--port")?;
-        cli_args.host_port = value.unwrap_or(network::common::PORT);
-    }
-
     let remaining = args.finish();
     if !remaining.is_empty() {
         eprintln!("Warning: unused arguments left: {:?}.", remaining);
@@ -143,11 +153,11 @@ fn main() {
     );
 
     if cli_args.app_mode == AppMode::HostOnly {
-    let mut rt = tokio::runtime::Runtime::new().unwrap();
-    let listener = rt.block_on(TcpListener::bind("0.0.0.0:27191")).unwrap();
-    let addr = listener.local_addr().unwrap();
-    println!("Starting server at {:?}", addr);
-    rt.block_on(async move { server::start_server(listener).await });
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let listener = rt.block_on(TcpListener::bind("0.0.0.0:27191")).unwrap();
+        let addr = listener.local_addr().unwrap();
+        println!("Starting server at {:?}", addr);
+        rt.block_on(async move { server::start_server(listener).await });
         std::process::exit(1);
     }
 
@@ -347,14 +357,17 @@ fn main() {
 
                 // Pass / Auto Pass
                 let p = gs.sm.your_index as usize;
-                if gs.sm.turn == gs.sm.your_index
-                    && gs.auto_pass
-                    && !gs.sm.players[p].has_passed_this_cycle
-                {
-                    if ts.action_pass().is_err() {
+                if gs.sm.turn == gs.sm.your_index && !gs.sm.players[p].has_passed_this_cycle {
+                    if gs.auto_pass {
+                        info!("Auto Pass");
+                        let _ = ts.action_pass();
                         continue;
                     }
-                    continue;
+                    if big2rules::rules::have_to_pass(gs.board, gs.sm.your_hand.to_card()) {
+                        info!("Have to Pass because of fewer cards");
+                        let _ = ts.action_pass();
+                        continue;
+                    }
                 }
 
                 // println!("\n\n\r\n## B 0x{:16x} T {:2} ##", gs.board, gs.sm.turn);
@@ -747,6 +760,31 @@ mod tests {
             }
         };
     }
+    #[test]
+    fn argument_test_no_value_given() {
+        let args = Arguments::from_vec(to_vec(&[""]));
+        let ar = parse_args(args);
+        match ar {
+            Err(paError::MissingArgument) => assert!(true),
+            _ => {
+                println!("{:?}", ar);
+                assert!(false)
+            }
+        };
+    }
+
+    #[test]
+    fn argument_test_rounds() {
+        let args = Arguments::from_vec(to_vec(&["--host --hostonly --rounds 1"]));
+        let ar = parse_args(args);
+        match ar {
+            Err(paError::MissingArgument) => assert!(true),
+            _ => {
+                println!("{:?}", ar);
+                assert!(false)
+            }
+        };
+    }
 }
 
 #[tokio::test]
@@ -771,10 +809,10 @@ async fn test_connect_play_test() {
     let (addr, _) = start_server().await;
 
     let game_client_task = tokio::spawn(async move {
-        let c1 = client::connect(addr, "Client1").await.unwrap();
-        let c2 = client::connect(addr, "Client2").await.unwrap();
-        let c3 = client::connect(addr, "Client3").await.unwrap();
-        let c4 = client::connect(addr, "Client4").await.unwrap();
+        let _c1 = client::connect(addr, "Client1").await.unwrap();
+        let _c2 = client::connect(addr, "Client2").await.unwrap();
+        let _c3 = client::connect(addr, "Client3").await.unwrap();
+        let _c4 = client::connect(addr, "Client4").await.unwrap();
 
         // loop {
         //     let bla = c1.status().await;

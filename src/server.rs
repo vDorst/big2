@@ -2,9 +2,8 @@
 #![allow(unused_variables)]
 
 use std::sync::Arc;
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::prelude::*;
 use tokio::sync::Mutex;
 use tokio::time::{self, Duration};
 
@@ -93,7 +92,7 @@ impl GameServerState {
             }
         }
 
-        if free.len() == 0 {
+        if free.is_empty() {
             return Err(Error::NoSeatsLeft);
         }
 
@@ -126,7 +125,7 @@ impl GameServerState {
                 let message = self.to_statemessage(p);
                 // if p == 0 { println!("Send StateMessage {:?}", message); }
 
-                let mut tx = peer.tx.to_owned().unwrap();
+                let tx = peer.tx.to_owned().unwrap();
 
                 if let Err(e) = tx.send(message.clone()).await {
                     return Err(Error::SendError(e));
@@ -139,7 +138,7 @@ impl GameServerState {
     async fn broadcast(&mut self, sender: SocketAddr, message: Vec<u8>) -> Result<(), Error> {
         for peer in self.clients.iter() {
             if peer.addr.is_some() && peer.tx.is_some() {
-                let mut tx = peer.tx.to_owned().unwrap();
+                let tx = peer.tx.to_owned().unwrap();
                 if let Err(e) = tx.send(message.clone()).await {
                     println!("broadcast error {:?}", e);
                 }
@@ -157,49 +156,53 @@ async fn big2_handler(gs: Arc<Mutex<GameServerState>>, mut socket: TcpStream) ->
     // Add an entry for this `Peer` in the shared state map.
     let (tx, mut rx) = tokio::sync::mpsc::channel(8);
 
-    let mut timeout_timer = time::delay_for(Duration::from_secs(5));
+    let timeout_timer = time::sleep(Duration::from_secs(5));
+    tokio::pin!(timeout_timer);
 
     let mut joined = false;
     let mut idx: usize = 0;
     // Read the first line from the `LineCodec` stream to get the username.
     let mut buf = [0u8; 512];
-    tokio::select! {
-        nbytes = socket.read(&mut buf) => {
-            match nbytes {
-                Err(e) => {
-                    println!("TCP Error ! {:?}", e);
-                }
-                Ok(0) => {
-                    println!("Socket closed!");
-                }
-                Ok(nbytes) => {
-                    let muon_ret = muon::parse_packet(nbytes, &buf);
-                    match muon_ret {
-                        Ok(muon::StateMessageActions::Join(name)) => {
-                            let mut b = gs.lock().await;
-                            println!("Add client {} name {}", remote_ip, name.to_string());
-                            idx = b.new_client(remote_ip, tx, name)?;
-                            if b.gs.turn == -1 {
-                                b.gs.has_passed |= 1 << idx;
-                            }
-                            // b.gs.last_action = 0;
-                            b.send_state_update().await?;
-                            joined = true;
-
-                            if b.gs.turn == -1 && b.gs.has_passed == 0xF {
-                                b.gs.deal(None);
+    loop {
+        tokio::select! {
+            nbytes = socket.read(&mut buf) => {
+                match nbytes {
+                    Err(e) => {
+                        println!("TCP Error ! {:?}", e);
+                    }
+                    Ok(0) => {
+                        println!("Socket closed!");
+                    }
+                    Ok(nbytes) => {
+                        let muon_ret = muon::parse_packet(nbytes, &buf);
+                        match muon_ret {
+                            Ok(muon::StateMessageActions::Join(name)) => {
+                                let mut b = gs.lock().await;
+                                println!("Add client {} name {}", remote_ip, name.to_string());
+                                idx = b.new_client(remote_ip, tx.clone(), name)?;
+                                if b.gs.turn == -1 {
+                                    b.gs.has_passed |= 1 << idx;
+                                }
+                                // b.gs.last_action = 0;
                                 b.send_state_update().await?;
-                            }
-                        },
-                        _ => { println!("Invalid packet! {:?}", buf);
-                            let _ = socket.write(&"Invalid UTF8\n".as_bytes()).await?;
-                        },
+                                joined = true;
+
+                                if b.gs.turn == -1 && b.gs.has_passed == 0xF {
+                                    b.gs.deal(None);
+                                    b.send_state_update().await?;
+                                }
+                            },
+                            _ => { println!("Invalid packet! {:?}", buf);
+                                let _ = socket.write_all(&"Invalid UTF8\n".as_bytes()).await?;
+                            },
+                        }
                     }
                 }
             }
-        }
-        _ = &mut timeout_timer => {
-            socket.write(&"\nTimeout! Bye!\n".as_bytes()).await?;
+            _ = &mut timeout_timer => {
+                socket.write(&"\nTimeout! Bye!\n".as_bytes()).await?;
+                break;
+            }
         }
     }
 
@@ -214,76 +217,79 @@ async fn big2_handler(gs: Arc<Mutex<GameServerState>>, mut socket: TcpStream) ->
     loop {
         let mut buf = [0u8; 512];
 
-        let mut hartbeat_timer = time::delay_for(Duration::from_secs(5));
+        let hartbeat_timer = time::sleep(Duration::from_secs(5));
+        tokio::pin!(hartbeat_timer);
 
-        tokio::select! {
-            to_clt = rx.recv() => {
-                match to_clt {
-                    Some(to_clt) =>
-                    {
-                        // println!("Write to client {:?}", to_clt);
-                        socket.write(&to_clt).await?;
-                    }
-                    None => {
-                        println!("Channel RX: None");
-                        break;
+        loop {
+            tokio::select! {
+                to_clt = rx.recv() => {
+                    match to_clt {
+                        Some(to_clt) =>
+                        {
+                            // println!("Write to client {:?}", to_clt);
+                            socket.write(&to_clt).await?;
+                        }
+                        None => {
+                            println!("Channel RX: None");
+                            break;
+                        }
                     }
                 }
-            }
-            nbytes = socket.read(&mut buf) => {
-                match nbytes {
-                    Err(e) => {
-                        println!("TCP Error ! {:?}", e);
-                        break;
-                    }
-                    Ok(0) => {
-                        println!("Socket closed!");
-                        break;
-                    }
-                    Ok(nbytes) => {
-                        let rec = muon::parse_packet(nbytes, &buf);
+                nbytes = socket.read(&mut buf) => {
+                    match nbytes {
+                        Err(e) => {
+                            println!("TCP Error ! {:?}", e);
+                            break;
+                        }
+                        Ok(0) => {
+                            println!("Socket closed!");
+                            break;
+                        }
+                        Ok(nbytes) => {
+                            let rec = muon::parse_packet(nbytes, &buf);
 
-                        match rec {
-                            Ok(s) => {
-                                {
-                                    let mut g = gs.lock().await;
-                                    match s {
-                                        muon::StateMessageActions::Pass => {
-                                            if g.gs.pass(idx as i32).is_ok() {
-                                                println!("{}. {} PASSED", idx, g.clients[idx].name.to_string());
-                                                g.send_state_update().await?;
-                                            }
-                                        },
-                                        muon::StateMessageActions::Play(cards) => {
-                                            if g.gs.play(idx as i32, cards).is_ok() {
-                                                println!("{}. {} PLAYS {}", idx, g.clients[idx].name.to_string(), big2rules::cards::cards_to_string(cards) );
-                                                g.send_state_update().await?;
-                                            }
-                                        },
-                                        muon::StateMessageActions::Ready => {
-                                            if g.gs.ready(idx as i32).is_ok() {
-                                                println!("{}. {} READY", idx, g.clients[idx].name.to_string());
-                                                g.send_state_update().await?;
-                                            }
-                                        },
-                                        _ => (),
+                            match rec {
+                                Ok(s) => {
+                                    {
+                                        let mut g = gs.lock().await;
+                                        match s {
+                                            muon::StateMessageActions::Pass => {
+                                                if g.gs.pass(idx as i32).is_ok() {
+                                                    println!("{}. {} PASSED", idx, g.clients[idx].name.to_string());
+                                                    g.send_state_update().await?;
+                                                }
+                                            },
+                                            muon::StateMessageActions::Play(cards) => {
+                                                if g.gs.play(idx as i32, cards).is_ok() {
+                                                    println!("{}. {} PLAYS {}", idx, g.clients[idx].name.to_string(), big2rules::cards::cards_to_string(cards) );
+                                                    g.send_state_update().await?;
+                                                }
+                                            },
+                                            muon::StateMessageActions::Ready => {
+                                                if g.gs.ready(idx as i32).is_ok() {
+                                                    println!("{}. {} READY", idx, g.clients[idx].name.to_string());
+                                                    g.send_state_update().await?;
+                                                }
+                                            },
+                                            _ => (),
+                                        }
                                     }
                                 }
-                            }
-                            Err(_) => {
-                                println!("Error");
+                                Err(_) => {
+                                    println!("Error");
+                                }
                             }
                         }
                     }
                 }
-            }
-            _ = &mut hartbeat_timer => {
-                let hb_msg = muon::create_heartbeat_msg();
-                socket.write(&hb_msg).await?;
-            }
-            else => {
-                println!("iets");
-                break;
+                _ = &mut hartbeat_timer => {
+                    let hb_msg = muon::create_heartbeat_msg();
+                    socket.write(&hb_msg).await?;
+                }
+                else => {
+                    println!("iets");
+                    break;
+                }
             }
         }
     }
@@ -300,7 +306,7 @@ async fn big2_handler(gs: Arc<Mutex<GameServerState>>, mut socket: TcpStream) ->
 pub async fn start_server(listener: TcpListener) {
     let peers = Arc::new(Mutex::new(GameServerState::new(8)));
 
-    let mut listener = listener;
+    let listener = listener;
     loop {
         let (socket, _) = listener.accept().await.unwrap();
 
