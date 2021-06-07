@@ -97,13 +97,12 @@ pub struct StateMessage {
 
 impl StateMessage {
     pub fn new(init_buffer: Option<&[u8]>) -> Self {
-        let buf: &[u8];
-        if let Some(b) = init_buffer {
+        let buf: &[u8] = if let Some(b) = init_buffer {
             // assert!(b.len() < std::mem::size_of::<Self>());
-            buf = b;
+            b
         } else {
-            buf = &[0; std::mem::size_of::<Self>()];
-        }
+            &[0; std::mem::size_of::<Self>()]
+        };
         let mut sm: StateMessage = bincode::deserialize(buf).unwrap();
         sm.size = mem::size_of::<StateMessage>() as u32;
         sm
@@ -152,7 +151,7 @@ impl StateMessage {
             }
             StateMessageActionType::UPDATE => {
                 let mut ready: u64 = 0;
-                for i in 0..4 {
+                for i in 0..=3 {
                     if self.players[i].is_ready {
                         ready |= 0x1000 << (i * 4);
                     }
@@ -224,13 +223,40 @@ pub mod muon {
     impl InlineList16 {
         pub fn to_card(&self) -> u64 {
             let mut cards: u64 = 0;
-            if self.count > 0 && self.count < 14 {
-                for c in 0..self.count as usize {
-                    let card = self.data[c];
-                    cards |= card_from_byte(card);
+            if !(1..=13).contains(&self.count) {
+                return cards;
+            };
+
+            for i in 0..self.count as usize {
+                let card = self.data[i];
+                cards |= card_from_byte(card);
+            }
+
+            cards
+        }
+
+        #[allow(dead_code)]
+        pub fn valid(&self) -> bool {
+            if !(0..=13).contains(&self.count) {
+                return false;
+            };
+
+            for i in 0..self.count as usize {
+                let card = self.data[i];
+                if card & 0x80 == 0x80 {
+                    return false;
+                }
+                let rank = card & 0x0f;
+                if !(2..14).contains(&rank) {
+                    return false;
                 }
             }
-            cards
+
+            if self.to_card().count_ones() as i32 != self.count {
+                return false;
+            }
+
+            true
         }
     }
 
@@ -265,9 +291,6 @@ pub mod muon {
     }
 
     impl InlineList8 {
-        // pub fn to_card(&self) -> u64 {
-        //     self.into_card().unwrap()
-        // }
         pub fn into_card(self) -> Result<u64, &'static str> {
             if self.count < 0 || self.count > 8 {
                 return Err("Count out-of-range!");
@@ -911,6 +934,63 @@ mod tests {
     #[test]
     fn statemessage_struct_size() {
         assert_eq!(std::mem::size_of::<StateMessage>(), 224);
+    }
+
+    #[test]
+    fn inlinelist16_test() {
+        let b = muon::InlineList16 {
+            data: [0; 16],
+            count: 0,
+        };
+        assert!(b.valid());
+        assert!(b.to_card() == 0);
+
+        let b = muon::InlineList16 {
+            data: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 0, 0, 0],
+            count: 14,
+        };
+        assert!(b.valid() == false);
+        assert!(b.to_card() == 0);
+
+        let b = muon::InlineList16 {
+            data: [0xFF, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            count: 1,
+        };
+        assert!(b.valid() == false);
+
+        let b = muon::InlineList16 {
+            data: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 0, 0, 0],
+            count: 13,
+        };
+        assert!(b.valid() == false);
+        assert!(b.to_card() == 0x1011111111111010);
+
+        let b = muon::InlineList16 {
+            data: [0x3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            count: 1,
+        };
+        assert!(b.valid());
+        assert!(b.to_card() == 0x1000);
+
+        let b = muon::InlineList16 {
+            data: [0x3, 0x2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            count: 2,
+        };
+        assert!(b.valid());
+        assert!(b.to_card() == 0x1000_0000_0000_1000);
+
+        let b = muon::InlineList16 {
+            data: [0x3, 0x2, 0x32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            count: 3,
+        };
+        assert!(b.valid());
+        assert!(b.to_card() == 0x9000_0000_0000_1000);
+
+        let b = muon::InlineList16 {
+            data: [0xFF, 0x2, 0x32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            count: 3,
+        };
+        assert!(b.valid() == false);
     }
 
     #[test]
