@@ -13,39 +13,30 @@ pub mod deck {
     pub fn deal() -> [u64; 4] {
         // Create and shulle deck of cards
         let deck = {
-            let mut deck = Vec::<u8>::with_capacity(self::NUMBER_OF_CARDS as usize);
-
-            for s in 0..deck::NUMBER_OF_CARDS {
-                let card_bit: u8 = s + deck::START_BIT;
-                deck.push(card_bit);
-            }
+            let mut deck: Vec<u8> = (0..deck::NUMBER_OF_CARDS)
+                .into_iter()
+                .map(|c| deck::START_BIT + c)
+                .collect();
 
             // Randomize/shuffle the cards
             for _ in 0..256 {
                 deck.shuffle(&mut thread_rng());
             }
+
             deck
         };
-        deal_cards(deck)
-    }
-    fn deal_cards(cards: Vec<u8>) -> [u64; 4] {
+
+        // deck must be 52 cards in size.
+        assert!(deck.len() == 52);
+
         let mut players_hand: [u64; 4] = [0, 0, 0, 0];
-        let mut p: usize = 0;
-        let mut c: usize = 0;
 
-        assert!(cards.len() == 52);
-
-        for card in cards {
-            let card_bit = 1 << card;
-            players_hand[p] |= card_bit;
-            c += 1;
-            if c == 13 {
-                // println!("p{:x} {:#08x?}", p, player_cards[p]);
-                assert!(players_hand[p].count_ones() == 13);
-                c = 0;
-                p += 1;
-            }
+        // deal the cards to the players.
+        for (card_nr, value) in deck.into_iter().enumerate() {
+            let player = card_nr & 0x3;
+            players_hand[player] |= 1 << value;
         }
+
         assert!(
             (players_hand[0] | players_hand[1] | players_hand[2] | players_hand[3])
                 == 0xFFFF_FFFF_FFFF_F000u64

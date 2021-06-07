@@ -67,7 +67,7 @@ pub mod display {
     }
 
     pub fn titlebar(srn: &mut std::io::Stdout, title: &str) -> Result<()> {
-        execute!(srn, SetTitle(&title))
+        execute!(srn, SetTitle(title))
     }
 
     pub fn init(title: &str) -> Result<std::io::Stdout> {

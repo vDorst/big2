@@ -104,7 +104,7 @@ impl StateMessage {
         } else {
             buf = &[0; std::mem::size_of::<Self>()];
         }
-        let mut sm: StateMessage = bincode::deserialize(&buf).unwrap();
+        let mut sm: StateMessage = bincode::deserialize(buf).unwrap();
         sm.size = mem::size_of::<StateMessage>() as u32;
         sm
     }
