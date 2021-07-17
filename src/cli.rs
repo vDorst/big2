@@ -12,7 +12,7 @@ pub mod display {
         },
         execute,
         //queue,
-        style::{Colorize, Print, ResetColor},
+        style::{Print, ResetColor, Stylize},
         //QueueableCommand,
         terminal::{
             disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen,
