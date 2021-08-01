@@ -243,7 +243,7 @@ pub mod muon {
 
             for i in 0..self.count as usize {
                 let card = self.data[i];
-                if card & 0x80 == 0x80 {
+                if card & 0x80 != 0 {
                     return false;
                 }
                 let rank = card & 0x0f;

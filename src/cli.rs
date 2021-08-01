@@ -2,7 +2,10 @@ pub mod display {
     use crate::{big2rules, network};
     use log::{debug, trace};
 
-    use std::{io::stdout, time::Duration};
+    use std::{
+        io::{stdout, Write},
+        time::Duration,
+    };
 
     use crossterm::{
         cursor::{MoveTo, RestorePosition, SavePosition},
@@ -11,7 +14,7 @@ pub mod display {
             MouseButton, MouseEvent, MouseEventKind,
         },
         execute,
-        //queue,
+        queue,
         style::{Print, ResetColor, Stylize},
         //QueueableCommand,
         terminal::{
@@ -217,7 +220,7 @@ pub mod display {
     }
 
     fn cards_to_utf8(card: u64, card_str: &mut String) {
-        //             0123456789ABCDEF
+        //                       0123456789ABCDEF
         let rank_str: Vec<u8> = ".+-3456789TJQKA2".into();
         let rank: usize;
         let suit: u64;
@@ -294,7 +297,7 @@ pub mod display {
     }
 
     fn score_str(score: i32) -> String {
-        let mut buf = String::with_capacity(32);
+        let mut buf = String::with_capacity(16);
         if score < 0 {
             buf.push_str(COL_SCORE_NEG);
         }
@@ -327,43 +330,56 @@ pub mod display {
     // 2.         pietje3: #13 ## ## ## ## ## ## ## ## ## ## ## ## ##  €   0
 
     pub fn draw_btn_play(gs: &mut big2rules::GameState) -> Result<()> {
-        execute!(gs.srn, SavePosition, MoveTo(43, 1))?;
-
+        let mut play_btn = "[ PLAY ]".white();
         if gs.sm.your_index == gs.sm.turn && gs.is_valid_hand {
-            execute!(gs.srn, Print("[ PLAY ]".white().on_green()))?;
+            play_btn = play_btn.on_green();
         } else {
-            execute!(gs.srn, Print("[ PLAY ]".white().on_dark_grey()))?;
+            play_btn = play_btn.on_dark_grey();
         }
-        execute!(gs.srn, RestorePosition)?;
-        Ok(())
+
+        queue!(
+            gs.srn,
+            SavePosition,
+            MoveTo(43, 1),
+            Print(play_btn),
+            RestorePosition
+        )
     }
 
     pub fn draw_btn_ready(gs: &mut big2rules::GameState) -> Result<()> {
-        execute!(gs.srn, SavePosition, MoveTo(66, 1))?;
-
-        if gs.i_am_ready {
-            execute!(gs.srn, Print("[x] READY".white().on_dark_grey()))?;
+        let btn_ready = if gs.i_am_ready {
+            "[x] READY".white().on_dark_grey()
         } else {
-            execute!(gs.srn, Print("[ ] READY".white().on_dark_blue()))?;
-        }
-        execute!(gs.srn, RestorePosition)?;
-        Ok(())
+            "[ ] READY".white().on_dark_blue()
+        };
+
+        queue!(
+            gs.srn,
+            SavePosition,
+            MoveTo(66, 1),
+            Print(btn_ready),
+            RestorePosition
+        )
     }
 
     pub fn draw_btn_pass(gs: &mut big2rules::GameState) -> Result<()> {
-        execute!(gs.srn, SavePosition, MoveTo(55, 1))?;
-
         let has_passed_this_cycle = gs.sm.players[gs.sm.your_index as usize].has_passed_this_cycle;
 
-        if has_passed_this_cycle {
-            execute!(gs.srn, Print("[X] PASS".white().on_dark_grey()))?;
+        let btn_pass = if has_passed_this_cycle {
+            "[X] PASS".white().on_dark_grey()
         } else if gs.auto_pass {
-            execute!(gs.srn, Print("[v] PASS".white().on_blue()))?;
+            "[v] PASS".white().on_blue()
         } else {
-            execute!(gs.srn, Print("[ ] PASS".white().on_red()))?;
-        }
-        execute!(gs.srn, RestorePosition)?;
-        Ok(())
+            "[ ] PASS".white().on_red()
+        };
+
+        queue!(
+            gs.srn,
+            SavePosition,
+            MoveTo(55, 1),
+            Print(btn_pass),
+            RestorePosition
+        )
     }
 
     pub fn cards_str(cards: u64) -> String {
@@ -377,11 +393,12 @@ pub mod display {
             bit = 1 << 38;
         };
         let mut card_str = String::with_capacity(64);
-        for _ in 12..64 {
+        for _ in 12..=63 {
             if bit == 1 << 63 {
-                bit = 1 << 11;
-            };
-            bit <<= 1;
+                bit = 1 << 12;
+            } else {
+                bit <<= 1;
+            }
             let card = cards & bit;
             if card == 0 {
                 continue;
@@ -392,40 +409,44 @@ pub mod display {
         card_str
     }
 
-    pub fn board(gs: &mut big2rules::GameState) -> Result<()> {
+    pub fn previous_action(gs: &mut big2rules::GameState) -> Result<()> {
         let name = gs.sm.players[gs.sm.action.player as usize].name.to_string();
-        let s = format!("{:>16}: ", name);
+        let name = format!("{:>16}: ", name);
+        queue!(gs.srn, MoveTo(9, 0))?;
         if gs.sm.action.action_type == network::StateMessageActionType::PASS {
-            execute!(
-                gs.srn,
-                MoveTo(9, 0),
-                Print(&s),
-                Print("PASSED".white().on_dark_grey())
-            )?;
+            queue!(gs.srn, Print(&name), Print("PASSED".white().on_dark_grey()))
         } else if gs.sm.action.action_type == network::StateMessageActionType::PLAY {
             let cards = gs.sm.action.cards.into_card().unwrap();
             let card_str = cards_str(cards);
-            execute!(gs.srn, MoveTo(9, 0), Print(&s), Print(card_str))?;
+            queue!(gs.srn, Print(&name), Print(card_str))
         } else {
-            execute!(gs.srn, MoveTo(9, 0), Clear(ClearType::CurrentLine))?;
+            queue!(gs.srn, Clear(ClearType::CurrentLine))
         }
+    }
+
+    pub fn board(gs: &mut big2rules::GameState) -> Result<()> {
+        previous_action(gs)?;
 
         let s = format!("Rounds: {}/{}", gs.sm.round, gs.sm.num_rounds);
-        execute!(gs.srn, MoveTo(0, 1), Print(s))?;
+        queue!(gs.srn, MoveTo(0, 1), Print(s))?;
 
         let cards = gs.sm.board.into_card().unwrap();
         let out_str = cards_str(cards);
-        execute!(gs.srn, MoveTo(20, 1), Print("Board: "), Print(out_str))?;
+        queue!(gs.srn, MoveTo(20, 1), Print("Board: "), Print(out_str))?;
 
-        let mut p = gs.sm.your_index;
-        if !(0..=3).contains(&p) {
-            p = 0;
-        }
+        let mut p: usize = {
+            let p = gs.sm.your_index;
+            if !(0..=3).contains(&p) {
+                0;
+            }
+            p as usize
+        };
 
+        // In between turns
         if gs.sm.turn == -1 {
-            execute!(gs.srn, MoveTo(0, 3))?;
-            for _ in 0..=3 {
-                let player = &gs.sm.players[p as usize];
+            for _ in 0..gs.sm.players.len() {
+                let player = &gs.sm.players[p];
+                queue!(gs.srn, MoveTo(0, 3 + p as u16))?;
                 let name = player.name.to_string();
                 let name = if name.is_empty() {
                     String::from("-- Empty Seat --")
@@ -433,43 +454,36 @@ pub mod display {
                     name
                 };
                 let n_cards: usize = player.num_cards as usize;
-                print!("\r{}.{:>16}{}:", p + 1, name, COL_NORMAL);
-                print!(" #{:2}", n_cards);
-                print!("{:>34}: ", "Delta Score");
-                print!(
-                    " {}  {}",
+                let s = format!("\r{}.{:>16}{}:", p + 1, name, COL_NORMAL);
+                queue!(gs.srn, Print(s))?;
+                let s = format!(
+                    " #{:2}{:>34}: {}  {}",
+                    n_cards,
+                    "Delta Score",
                     score_str(player.delta_score),
                     score_str(player.score)
                 );
+                queue!(gs.srn, Print(s))?;
+
                 if player.is_ready {
-                    print!(" {}READY{}", COL_BTN_PASS_AUTO, COL_NORMAL);
+                    let s = format!(" {}READY{}", COL_BTN_PASS_AUTO, COL_NORMAL);
+                    queue!(gs.srn, Print(s))?;
                 }
-                print!("\r\n");
+
                 p += 1;
-                if p == 4 {
+                if p as usize == gs.sm.players.len() {
                     p = 0;
                 };
             }
             draw_btn_ready(gs)?;
 
-            return Ok(());
+            return gs.srn.flush();
         }
 
-        if p >= 0 {
-            draw_btn_play(gs)?;
-            draw_btn_pass(gs)?;
-        }
-
+        draw_btn_play(gs)?;
+        draw_btn_pass(gs)?;
         for row in 0..4 {
             let player = &gs.sm.players[p as usize];
-            let name = player.name.to_string();
-            let name = if !name.is_empty() {
-                name
-            } else {
-                String::from("-- Empty Seat --")
-            };
-            let s = format!("{:>16}: ", name);
-
             let mut out_str = String::from("");
             let mut out_sel_str = String::from("");
             let n_cards: usize = player.num_cards as usize;
@@ -477,7 +491,7 @@ pub mod display {
             let has_passed = player.has_passed_this_cycle;
             let player_score = player.score;
 
-            if p == gs.sm.your_index {
+            if p as i32 == gs.sm.your_index {
                 let cards = gs.sm.your_hand.to_card();
                 for bit in 12..64 {
                     let card = cards & (1 << bit);
@@ -494,8 +508,8 @@ pub mod display {
                     out_str.push(' ');
                     out_sel_str.push(' ');
                 }
-                execute!(
-                    gs.srn,
+                queue!(
+                    &gs.srn,
                     MoveTo(24, 2),
                     Clear(ClearType::CurrentLine),
                     Print(out_sel_str),
@@ -506,18 +520,26 @@ pub mod display {
             let no_cards = ".. ".to_string().repeat(13 - n_cards);
 
             // Number and Names.
-            execute!(gs.srn, MoveTo(0, 3 + row), Print(format!("{}.", p + 1)),)?;
-            if p == gs.sm.turn {
-                execute!(gs.srn, Print(s.on_dark_green()))?;
-            } else if has_passed {
-                execute!(gs.srn, Print(s.on_dark_grey()))?;
+            let name = player.name.to_string();
+            let name = if !name.is_empty() {
+                name
             } else {
-                execute!(gs.srn, Print(s))?;
-            }
+                String::from("-- Empty Seat --")
+            };
+            let name = format!("{:>16}: ", name);
+            let name = if p as i32 == gs.sm.turn {
+                name.on_dark_green()
+            } else if has_passed {
+                name.on_dark_grey()
+            } else {
+                name.reset()
+            };
 
-            // Cards
-            execute!(
-                gs.srn,
+            queue!(
+                &gs.srn,
+                MoveTo(0, 3 + row as u16),
+                Print(format!("{}.", p + 1)),
+                Print(name),
                 Print(format!("#{:2}", n_cards)),
                 Print(format!(" {}{}", out_str, no_cards)),
                 Print(score_str(player_score)),
@@ -525,14 +547,15 @@ pub mod display {
 
             // Passed Text
             if has_passed {
-                execute!(
-                    gs.srn,
-                    MoveTo(70, 3 + row),
+                queue!(
+                    &gs.srn,
+                    MoveTo(70, 3 + row as u16),
                     Print("PASS".white().on_dark_grey()),
                 )?;
             }
+
             p += 1;
-            if p == 4 {
+            if p as usize == gs.sm.players.len() {
                 p = 0;
             };
         }
@@ -548,6 +571,6 @@ pub mod display {
         //     ))
         // )?;
 
-        Ok(())
+        gs.srn.flush()
     }
 }
