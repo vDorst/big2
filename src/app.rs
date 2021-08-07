@@ -1,11 +1,13 @@
-use crate::{cards, widgets};
+use crate::widgets;
 use eframe::{egui, epi};
 
-/// We derive Deserialize/Serialize so we can persist app state on shutdown.
-#[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
-#[cfg_attr(feature = "persistence", serde(default))] // if we add new fields, give them default values when deserializing old state
+// /// We derive Deserialize/Serialize so we can persist app state on shutdown.
+// #[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
+// #[cfg_attr(feature = "persistence", serde(default))] // if we add new fields, give them default values when deserializing old state
 pub struct TemplateApp {
     cards_selected: u64,
+    cards_hand: u64,
+    cards_board: u64,
     want_pass: bool,
 }
 
@@ -13,14 +15,20 @@ impl Default for TemplateApp {
     fn default() -> Self {
         Self {
             cards_selected: 0,
+            cards_board: 0x28421000,
             want_pass: false,
+            cards_hand: 0x8208_0342_3122_1000,
         }
     }
 }
 
 impl epi::App for TemplateApp {
     fn name(&self) -> &str {
-        "Big2 (Alpha)"
+        concat!(
+            env!("CARGO_PKG_NAME"),
+            " (Alpha) ",
+            env!("CARGO_PKG_VERSION")
+        )
     }
 
     /// Called by the framework to load old app state (if any).
@@ -44,27 +52,13 @@ impl epi::App for TemplateApp {
 
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
-    fn update(&mut self, ctx: &egui::CtxRef, frame: &mut epi::Frame<'_>) {
+    fn update(&mut self, ctx: &egui::CtxRef, _frame: &mut epi::Frame<'_>) {
         let Self {
-            cards_selected: selected,
+            cards_board,
+            cards_hand,
+            cards_selected,
             want_pass,
         } = self;
-
-        // Examples of how to create different panels and windows.
-        // Pick whichever suits you.
-        // Tip: a good default choice is to just keep the `CentralPanel`.
-        // For inspiration and more examples, go to https://emilk.github.io/egui
-
-        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            // The top panel is often a good place for a menu bar:
-            egui::menu::bar(ui, |ui| {
-                egui::menu::menu(ui, "File", |ui| {
-                    if ui.button("Quit").clicked() {
-                        frame.quit();
-                    }
-                });
-            });
-        });
 
         // egui::SidePanel::left("side_panel").show(ctx, |ui| {
         //     ui.heading("Side Panel");
@@ -88,10 +82,24 @@ impl epi::App for TemplateApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             // The central panel the region left after adding TopPanel's and SidePanel's
+            ui.add(widgets::board::board(cards_board));
+            ui.add(widgets::hand::cards(cards_selected, *cards_hand));
 
-            ui.add(cards::cards(selected, 0x8208_0342_3122_1000));
-            ui.add(widgets::buttons::button_pass(want_pass, false));
-            ui.add(widgets::buttons::button_pass(want_pass, true));
+            let can_play =
+                *cards_board == 0 || (*cards_board).count_ones() == (*cards_selected).count_ones();
+            let mut want_play = false;
+            let want_play = &mut want_play;
+
+            ui.horizontal(|ui| {
+                ui.add(widgets::buttons::button_pass(want_pass, false));
+                ui.add(widgets::buttons::button_play(want_play, can_play));
+            });
+
+            if can_play && *want_play {
+                *cards_board = *cards_selected;
+                *cards_hand ^= *cards_selected;
+                *cards_selected = 0;
+            }
 
             egui::warn_if_debug_build(ui);
         });

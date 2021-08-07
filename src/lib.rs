@@ -3,11 +3,11 @@
 #![warn(clippy::all, rust_2018_idioms)]
 
 mod app;
+pub mod card;
 pub mod widgets;
 
 pub use app::TemplateApp;
-pub use eframe::{egui};
-pub use widgets::cards;
+pub use eframe::egui;
 
 // ----------------------------------------------------------------------------
 // When compiling for web:
