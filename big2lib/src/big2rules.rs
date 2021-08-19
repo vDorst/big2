@@ -5,7 +5,6 @@ use self::{
 
 //use crate::network;
 
-pub const RANKS: [u8; 13] = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 pub const NUMBER_OF_PLAYERS: usize = 4;
 
 pub mod deck {
@@ -53,13 +52,14 @@ pub mod deck {
 }
 
 pub mod cards {
+    use core::panic;
     use std::cmp::Ordering;
 
     use super::rules::{is_valid_hand, score_hand, CardScore};
 
     #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
     pub enum CardRank {
-        THREE,
+        THREE = 3,
         FOUR,
         FIVE,
         SIX,
@@ -76,7 +76,7 @@ pub mod cards {
 
     impl From<u8> for CardRank {
         fn from(item: u8) -> CardRank {
-            match item >> 2 {
+            match item {
                 3 => CardRank::THREE,
                 4 => CardRank::FOUR,
                 5 => CardRank::FIVE,
@@ -115,10 +115,10 @@ pub mod cards {
 
     #[derive(PartialEq, Eq, Clone, Copy)]
     pub enum CardSuit {
-        DIAMONDS,
-        CLUBS,
-        HEARTS,
-        SPADES,
+        DIAMONDS = 0,
+        CLUBS = 1,
+        HEARTS = 2,
+        SPADES = 3,
     }
 
     impl From<u8> for CardSuit {
@@ -132,16 +132,16 @@ pub mod cards {
         }
     }
 
-    impl Into<u8> for CardSuit {
-        fn into(self) -> u8 {
-            match self {
-                CardSuit::DIAMONDS => 0,
-                CardSuit::CLUBS => 1,
-                CardSuit::HEARTS => 2,
-                CardSuit::SPADES => 3,
-            }
-        }
-    }
+    // impl Into<u8> for CardSuit {
+    //     fn into(self) -> u8 {
+    //         match self {
+    //             CardSuit::DIAMONDS => 0,
+    //             CardSuit::CLUBS => 1,
+    //             CardSuit::HEARTS => 2,
+    //             CardSuit::SPADES => 3,
+    //         }
+    //     }
+    // }
 
     #[derive(Clone, Copy)]
     pub struct Card {
@@ -158,7 +158,7 @@ pub mod cards {
             }
             let bit = card_bit as u8;
             let suit = CardSuit::from(bit);
-            let rank = CardRank::from(bit);
+            let rank = CardRank::from(bit >> 2);
 
             Ok(Self { bit, rank, suit })
         }
@@ -166,8 +166,8 @@ pub mod cards {
             self.bit
         }
         pub fn card(rank: CardRank, suit: CardSuit) -> Self {
-            let rank_bit: u8 = rank.into();
-            let suit_bit: u8 = suit.into();
+            let rank_bit: u8 = rank as u8;
+            let suit_bit: u8 = suit as u8;
             let bit = (rank_bit << 2) + suit_bit;
             Card::new(bit as usize).unwrap()
         }
@@ -339,7 +339,7 @@ pub mod cards {
         }
 
         pub fn is_better(&self, b: &ScoreCards) -> bool {
-            println!("S: {} -- O: {}", self.to_string(), b.to_string());
+            // println!("S: {} -- O: {}", self.to_string(), b.to_string());
             match (&self.score, &b.score) {
                 (CardScore::None, _) => false,
                 (_, CardScore::None) => true,
@@ -362,6 +362,11 @@ pub mod cards {
                         *ac > *bc
                     }
                     (_, super::rules::FiveCard::FLUSH(_)) => true,
+                    (
+                        super::rules::FiveCard::FULLHOUSE(ac),
+                        super::rules::FiveCard::FULLHOUSE(bc),
+                    ) => *ac > *bc,
+                    (_, super::rules::FiveCard::FULLHOUSE(_)) => true,
                     (super::rules::FiveCard::QUADS(ac), super::rules::FiveCard::QUADS(bc)) => {
                         *ac > *bc
                     }
@@ -430,57 +435,17 @@ pub mod cards {
         }
     }
 
-    #[non_exhaustive]
-    pub struct Kind;
-    #[non_exhaustive]
-    pub struct Rank;
+    pub const SUITMASK: u64 = 0b1111;
 
-    #[allow(dead_code)]
-    impl Kind {
-        pub const ONE: u64 = 0x100;
-        pub const PAIR: u64 = 0x200;
-        pub const SET: u64 = 0x300;
-        pub const FIVECARD: u64 = 0x800;
-        pub const STRAIGHT: u64 = Kind::FIVECARD | 0x100;
-        pub const FLUSH: u64 = Kind::FIVECARD | 0x200;
-        pub const FULLHOUSE: u64 = Kind::FIVECARD | 0x300;
-        pub const QUADS: u64 = Kind::FIVECARD | 0x400;
-        pub const STRAIGHTFLUSH: u64 = Kind::FIVECARD | 0x500;
-        pub const TYPE: u64 = 0xF00;
+    pub const HIGHEST: u8 = 0x3f;
+    pub const LOWEST: u8 = 12;
 
-        pub const SPADES: u64 = 0b1000;
-        pub const HEARTS: u64 = 0b0100;
-        pub const CLUBS: u64 = 0b0010;
-        pub const DIAMONDS: u64 = 0b0001;
-        pub const SUITMASK: u64 = 0b1111;
-
-        pub const HIGHEST: u8 = 0x3f;
-        pub const LOWEST: u8 = 12;
-    }
-
-    #[allow(dead_code)]
-    impl Rank {
-        pub const THREE: u8 = 3;
-        pub const FOUR: u8 = 4;
-        pub const FIVE: u8 = 5;
-        pub const SIX: u8 = 6;
-        pub const SEVEN: u8 = 7;
-        pub const EIGTH: u8 = 8;
-        pub const NINE: u8 = 9;
-        pub const TEN: u8 = 10;
-        pub const JACK: u8 = 11;
-        pub const QUEEN: u8 = 12;
-        pub const KING: u8 = 13;
-        pub const ACE: u8 = 14;
-        pub const TWO: u8 = 15;
-    }
-
-    pub fn has_rank(hand: u64, rank: u64) -> u64 {
-        let mask = Kind::SUITMASK << (rank << 2);
+    pub fn has_rank(hand: u64, rank: CardRank) -> u64 {
+        let mask: u64 = SUITMASK << ((rank as u64) << 2);
         hand & mask
     }
 
-    pub fn cnt_rank(hand: u64, rank: u64) -> u64 {
+    pub fn cnt_rank(hand: u64, rank: CardRank) -> u64 {
         has_rank(hand, rank).count_ones() as u64
     }
 
@@ -498,10 +463,7 @@ pub mod cards {
 }
 
 pub mod rules {
-    use super::{
-        cards::{self, cnt_rank, Card, CardRank},
-        RANKS,
-    };
+    use super::cards::{self, cnt_rank, Card, CardRank};
 
     pub fn have_to_pass(board: u64, hand: u64) -> bool {
         let board_cnt = board.count_ones();
@@ -519,22 +481,22 @@ pub mod rules {
         let mut straigths: u32 = 0;
         let mut doubles: u32 = 0;
 
-        for r in RANKS.iter() {
-            let idx: usize = (*r).into();
-            ranks[idx] = cnt_rank(hand, idx as u64) as u32;
-            if ranks[idx] != 0 {
-                straigth |= 1 << r;
-            }
-            if ranks[idx] == 2 {
-                doubles += 1;
-            }
-            if ranks[idx] == 3 {
-                tripps += 1;
-            }
-            if ranks[idx] == 4 {
-                quads += 1;
-            }
-        }
+        // for r in CardRank.Iter() {
+        //     let idx: usize = (*r).into();
+        //     ranks[idx] = cnt_rank(hand, idx as u64) as u32;
+        //     if ranks[idx] != 0 {
+        //         straigth |= 1 << r;
+        //     }
+        //     if ranks[idx] == 2 {
+        //         doubles += 1;
+        //     }
+        //     if ranks[idx] == 3 {
+        //         tripps += 1;
+        //     }
+        //     if ranks[idx] == 4 {
+        //         quads += 1;
+        //     }
+        // }
         let mut mask = 0b11111;
         for _ in 4..16 {
             if straigth & mask == mask {
@@ -698,7 +660,7 @@ pub mod rules {
 
         let low_rank: u64 = lowest_card >> 2;
         // Get the played suit of that rank.
-        let low_suitmask = hand >> (low_rank << 2) & crate::big2rules::cards::Kind::SUITMASK;
+        let low_suitmask = hand >> (low_rank << 2) & crate::big2rules::cards::SUITMASK;
         // Count number of cards based on the suit
         let low_cnt: u64 = low_suitmask.count_ones() as u64;
 
@@ -728,26 +690,26 @@ pub mod rules {
             let mut straigth_score: u64 = 0;
             let mut straigth_type: FiveCardStraight = FiveCardStraight::Normal;
             if rank - low_rank == 12 {
-                is_straight = cards::has_rank(hand, cards::Rank::THREE as u64) != 0
-                    && cards::has_rank(hand, cards::Rank::FOUR as u64) != 0
-                    && cards::has_rank(hand, cards::Rank::FIVE as u64) != 0
-                    && cards::has_rank(hand, cards::Rank::TWO as u64) != 0;
+                is_straight = cards::has_rank(hand, CardRank::THREE) != 0
+                    && cards::has_rank(hand, CardRank::FOUR) != 0
+                    && cards::has_rank(hand, CardRank::FIVE) != 0
+                    && cards::has_rank(hand, CardRank::TWO) != 0;
                 // Straight 23456
-                if is_straight && cards::has_rank(hand, cards::Rank::SIX as u64) != 0 {
+                if is_straight && cards::has_rank(hand, CardRank::SIX) != 0 {
                     straigth_score = highest_card;
                     straigth_type = FiveCardStraight::S23456;
                 }
                 // Straight A2345
-                if is_straight && cards::has_rank(hand, cards::Rank::ACE as u64) != 0 {
+                if is_straight && cards::has_rank(hand, CardRank::ACE) != 0 {
                     straigth_score = highest_card;
                     straigth_type = FiveCardStraight::SA2345;
                 }
             } else {
-                is_straight = cards::has_rank(hand, low_rank) != 0
-                    && cards::has_rank(hand, low_rank + 1) != 0
-                    && cards::has_rank(hand, low_rank + 2) != 0
-                    && cards::has_rank(hand, low_rank + 3) != 0
-                    && cards::has_rank(hand, low_rank + 4) != 0;
+                is_straight = cards::has_rank(hand, CardRank::from(low_rank as u8)) != 0
+                    && cards::has_rank(hand, CardRank::from((low_rank + 1) as u8)) != 0
+                    && cards::has_rank(hand, CardRank::from((low_rank + 2) as u8)) != 0
+                    && cards::has_rank(hand, CardRank::from((low_rank + 3) as u8)) != 0
+                    && cards::has_rank(hand, CardRank::from((low_rank + 4) as u8)) != 0;
                 if is_straight {
                     straigth_score = highest_card;
                 }
@@ -1350,6 +1312,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn assist_test() {
         let mut gs = SrvGameState::new(1);
         gs.deal(Some(&[
