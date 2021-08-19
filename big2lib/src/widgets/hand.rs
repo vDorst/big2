@@ -1,4 +1,4 @@
-use crate::big2rules::cards::Cards;
+use crate::big2rules::cards::{Card, CardSuit, Cards};
 use eframe::egui::{self, Align2, Color32, Stroke, TextStyle};
 
 pub fn cards_ui(ui: &mut egui::Ui, selected: &mut u64, value: u64) -> egui::Response {
@@ -7,7 +7,7 @@ pub fn cards_ui(ui: &mut egui::Ui, selected: &mut u64, value: u64) -> egui::Resp
     ui.horizontal_wrapped(|ui| {
         let cards = Cards::hand_from(value);
         if let Ok(cards) = cards {
-            for (_bit, mask) in cards {
+            for (bit, mask) in cards {
                 let (rect, mut response) = ui.allocate_exact_size(card_size, egui::Sense::click());
 
                 if response.clicked() {
@@ -55,14 +55,13 @@ pub fn cards_ui(ui: &mut egui::Ui, selected: &mut u64, value: u64) -> egui::Resp
                 ui.painter()
                     .rect(rect_card, 10.0, visuals.bg_fill, visuals.fg_stroke);
 
-                let c = Cards::hand_from(mask).unwrap();
+                let c = Card::new(bit as usize).unwrap();
                 let s = c.to_string();
-                let col = match c.suit() {
-                    0 => Color32::BLUE,
-                    1 => Color32::from_rgb(0, 0xA0, 0x0),
-                    2 => Color32::RED,
-                    3 => Color32::BLACK,
-                    _ => Color32::YELLOW,
+                let col = match c.suit {
+                    CardSuit::DIAMONDS => Color32::BLUE,
+                    CardSuit::CLUBS => Color32::from_rgb(0, 0xA0, 0x0),
+                    CardSuit::HEARTS => Color32::RED,
+                    CardSuit::SPADES => Color32::BLACK,
                 };
                 ui.painter().text(
                     rect_card.center(),

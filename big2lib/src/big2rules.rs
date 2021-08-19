@@ -50,7 +50,192 @@ pub mod deck {
 }
 
 pub mod cards {
+    use std::cmp::Ordering;
+
     use super::rules::{is_valid_hand, score_hand, CardScore};
+
+    #[derive(PartialEq, Eq)]
+    pub enum CardRank {
+        THREE,
+        FOUR,
+        FIVE,
+        SIX,
+        SEVEN,
+        EIGTH,
+        NINE,
+        TEN,
+        JACK,
+        QUEEN,
+        KING,
+        ACE,
+        TWO,
+    }
+
+    impl From<u8> for CardRank {
+        fn from(item: u8) -> CardRank {
+            match item >> 2 {
+                3 => CardRank::THREE,
+                4 => CardRank::FOUR,
+                5 => CardRank::FIVE,
+                6 => CardRank::SIX,
+                7 => CardRank::SEVEN,
+                8 => CardRank::EIGTH,
+                9 => CardRank::NINE,
+                10 => CardRank::TEN,
+                11 => CardRank::JACK,
+                12 => CardRank::QUEEN,
+                13 => CardRank::KING,
+                14 => CardRank::ACE,
+                _ => CardRank::TWO,
+            }
+        }
+    }
+    impl Into<u8> for CardRank {
+        fn into(self) -> u8 {
+            match self {
+                CardRank::THREE => 3,
+                CardRank::FOUR => 4,
+                CardRank::FIVE => 5,
+                CardRank::SIX => 6,
+                CardRank::SEVEN => 7,
+                CardRank::EIGTH => 8,
+                CardRank::NINE => 9,
+                CardRank::TEN => 10,
+                CardRank::JACK => 11,
+                CardRank::QUEEN => 12,
+                CardRank::KING => 13,
+                CardRank::ACE => 14,
+                CardRank::TWO => 15,
+            }
+        }
+    }
+
+    #[derive(PartialEq, Eq)]
+    pub enum CardSuit {
+        DIAMONDS,
+        CLUBS,
+        HEARTS,
+        SPADES,
+    }
+
+    impl From<u8> for CardSuit {
+        fn from(item: u8) -> Self {
+            match item & 0x3 {
+                1 => CardSuit::CLUBS,
+                2 => CardSuit::HEARTS,
+                3 => CardSuit::SPADES,
+                _ => CardSuit::DIAMONDS,
+            }
+        }
+    }
+
+    impl Into<u8> for CardSuit {
+        fn into(self) -> u8 {
+            match self {
+                CardSuit::DIAMONDS => 0,
+                CardSuit::CLUBS => 1,
+                CardSuit::HEARTS => 2,
+                CardSuit::SPADES => 3,
+            }
+        }
+    }
+
+    pub struct Card {
+        bit: u8,
+        pub rank: CardRank,
+        pub suit: CardSuit,
+    }
+
+    impl Card {
+        //! card is bit number in the deck. 12 to 63.
+        pub fn new(card_bit: usize) -> Result<Self, ()> {
+            if !(12..64).contains(&card_bit) {
+                return Err(());
+            }
+            let bit = card_bit as u8;
+            let suit = CardSuit::from(bit);
+            let rank = CardRank::from(bit);
+
+            Ok(Self { bit, rank, suit })
+        }
+        pub fn bit(&self) -> u8 {
+            self.bit
+        }
+        pub fn card(rank: CardRank, suit: CardSuit) -> Self {
+            let rank_bit: u8 = rank.into();
+            let suit_bit: u8 = suit.into();
+            let bit = (rank_bit << 2) + suit_bit;
+            Card::new(bit as usize).unwrap()
+        }
+    }
+
+    impl PartialEq for Card {
+        fn eq(&self, other: &Self) -> bool {
+            self.bit == other.bit
+        }
+    }
+
+    impl Eq for Card {}
+
+    impl Ord for Card {
+        fn cmp(&self, other: &Self) -> Ordering {
+            if self.bit > other.bit {
+                return Ordering::Greater;
+            };
+            if self.bit < other.bit {
+                return Ordering::Less;
+            };
+            Ordering::Equal
+        }
+    }
+
+    impl PartialOrd for Card {
+        fn partial_cmp(&self, other: &Card) -> Option<Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+
+    impl PartialEq<CardSuit> for Card {
+        fn eq(&self, other: &CardSuit) -> bool {
+            self.suit == *other
+        }
+    }
+
+    impl PartialEq<CardRank> for Card {
+        fn eq(&self, other: &CardRank) -> bool {
+            self.rank == *other
+        }
+    }
+
+    impl ToString for Card {
+        fn to_string(&self) -> String {
+            let mut card_str = String::with_capacity(2);
+            match self.rank {
+                CardRank::THREE => card_str.push('3'),
+                CardRank::FOUR => card_str.push('4'),
+                CardRank::FIVE => card_str.push('5'),
+                CardRank::SIX => card_str.push('6'),
+                CardRank::SEVEN => card_str.push('7'),
+                CardRank::EIGTH => card_str.push('8'),
+                CardRank::NINE => card_str.push('9'),
+                CardRank::TEN => card_str.push('T'),
+                CardRank::JACK => card_str.push('J'),
+                CardRank::QUEEN => card_str.push('Q'),
+                CardRank::KING => card_str.push('K'),
+                CardRank::ACE => card_str.push('A'),
+                CardRank::TWO => card_str.push('2'),
+            }
+
+            match self.suit {
+                CardSuit::DIAMONDS => card_str.push('\u{2666}'),
+                CardSuit::CLUBS => card_str.push('\u{2663}'),
+                CardSuit::HEARTS => card_str.push('\u{2665}'),
+                CardSuit::SPADES => card_str.push('\u{2660}'),
+            }
+
+            card_str
+        }
+    }
 
     pub struct Cards {
         cards: u64,
@@ -80,6 +265,12 @@ pub mod cards {
             Err(())
         }
         pub fn board_from(cards: u64) -> Result<Self, ()> {
+            if cards == 0 {
+                return Ok(Self {
+                    cards: Cards::hand_from(cards).unwrap(),
+                    score: CardScore::None,
+                });
+            }
             if !is_valid_hand(cards) {
                 return Err(());
             }
@@ -150,44 +341,6 @@ pub mod cards {
 
         pub fn to_bit(&self) -> u32 {
             self.cards.trailing_zeros()
-        }
-        pub fn rank(&self) -> u32 {
-            self.to_bit() >> 2
-        }
-        pub fn suit(&self) -> u32 {
-            self.to_bit() & 0x3
-        }
-    }
-
-    impl ToString for Cards {
-        fn to_string(&self) -> String {
-            let mut card_str = String::with_capacity(2);
-            match self.rank() {
-                3 => card_str.push('3'),
-                4 => card_str.push('4'),
-                5 => card_str.push('5'),
-                6 => card_str.push('6'),
-                7 => card_str.push('7'),
-                8 => card_str.push('8'),
-                9 => card_str.push('9'),
-                10 => card_str.push('T'),
-                11 => card_str.push('J'),
-                12 => card_str.push('Q'),
-                13 => card_str.push('K'),
-                14 => card_str.push('A'),
-                15 => card_str.push('2'),
-                _ => card_str.push('?'),
-            }
-
-            match self.suit() {
-                0 => card_str.push('\u{2666}'),
-                1 => card_str.push('\u{2663}'),
-                2 => card_str.push('\u{2665}'),
-                3 => card_str.push('\u{2660}'),
-                _ => (),
-            }
-
-            card_str
         }
     }
 
@@ -422,6 +575,7 @@ pub mod rules {
         Set(u8),
         Five(FiveCard, u8),
     }
+
     pub fn score_hand(hand: u64) -> CardScore {
         // Score:
         //  0xKNN = One, Pair and Straigth, Flush
@@ -818,7 +972,10 @@ impl SrvGameState {
 
 #[cfg(test)]
 mod tests {
-    use crate::big2rules::rules::FiveCard;
+    use crate::big2rules::{
+        cards::{CardRank, CardSuit},
+        rules::FiveCard,
+    };
 
     use super::*;
 
@@ -1007,19 +1164,81 @@ mod tests {
     }
     #[test]
     fn d_cards_test() {
+        use super::cards::{Card, CardRank, CardSuit};
+
         // No cards generated
-        let card: u64 = 0x1000;
-        assert!(cards::has_rank_idx(card) == cards::Rank::THREE as u64);
-        assert!(cards::has_suit(card) == cards::Kind::DIAMONDS);
-        let card: u64 = 0x20000;
-        assert!(cards::has_rank_idx(card) == cards::Rank::FOUR as u64);
-        assert!(cards::has_suit(card) == cards::Kind::CLUBS);
-        let card: u64 = 0x0400_0000_0000_0000;
-        assert!(cards::has_rank_idx(card) == cards::Rank::ACE as u64);
-        assert!(cards::has_suit(card) == cards::Kind::HEARTS);
-        let card: u64 = 0x8000_0000_0000_0000;
-        assert!(cards::has_rank_idx(card) == cards::Rank::TWO as u64);
-        assert!(cards::has_suit(card) == cards::Kind::SPADES);
+        let card = Card::new(12).unwrap();
+        assert!(card.rank == CardRank::THREE);
+        assert!(card.suit == CardSuit::DIAMONDS);
+        assert!(card.bit() == 12);
+
+        let card = Card::new(15).unwrap();
+        assert!(card.rank == CardRank::THREE);
+        assert!(card.suit == CardSuit::SPADES);
+        assert!(card.bit() == 15);
+
+        let card = Card::new(63).unwrap();
+        assert!(card.rank == CardRank::TWO);
+        assert!(card.suit == CardSuit::SPADES);
+        assert!(card.bit() == 63);
+
+        assert!(card == Card::new(63).unwrap());
+        assert!(card == CardRank::TWO);
+        assert!(card == CardSuit::SPADES);
+
+        assert!(Card::new(0).is_err());
+        assert!(Card::new(11).is_err());
+        assert!(Card::new(64).is_err());
+        assert!(Card::new(255).is_err());
+
+        let low_card = Card::new(12).unwrap();
+        let high_card = Card::new(63).unwrap();
+
+        assert!(Card::new(13).unwrap() != low_card);
+        assert!(Card::new(13).unwrap() > low_card);
+        assert!(low_card < Card::new(13).unwrap());
+
+        assert!(high_card > low_card);
+        assert!(low_card < high_card);
+        assert!(high_card != low_card);
+
+        assert!(low_card == Card::card(CardRank::THREE, CardSuit::DIAMONDS));
+        assert!(high_card == Card::card(CardRank::TWO, CardSuit::SPADES));
+    }
+
+    #[test]
+    fn card_to_string_test() {
+        use super::cards::{Card, CardRank, CardSuit};
+
+        let card_3d = Card::new(12).unwrap();
+        let card_3c = Card::new(13).unwrap();
+        let card_3h = Card::new(14).unwrap();
+        let card_3s = Card::new(15).unwrap();
+
+        assert!(card_3d.to_string() == "3♦".to_string());
+        assert!(card_3c.to_string() == "3♣".to_string());
+        assert!(card_3h.to_string() == "3♥".to_string());
+        assert!(card_3s.to_string() == "3♠".to_string());
+
+        let card_7h = Card::card(CardRank::SEVEN, CardSuit::HEARTS);
+        let card_7s = Card::new(card_7h.bit() as usize + 1).unwrap();
+        let card_8d = Card::new(card_7h.bit() as usize + 2).unwrap();
+        let card_8c = Card::new(card_7h.bit() as usize + 3).unwrap();
+
+        assert!(card_7h.to_string() == "7♥".to_string());
+        assert!(card_7s.to_string() == "7♠".to_string());
+        assert!(card_8d.to_string() == "8♦".to_string());
+        assert!(card_8c.to_string() == "8♣".to_string());
+
+        let card_2d = Card::new(60).unwrap();
+        let card_2c = Card::new(61).unwrap();
+        let card_2h = Card::new(62).unwrap();
+        let card_2s = Card::new(63).unwrap();
+
+        assert!(card_2d.to_string() == "2♦".to_string());
+        assert!(card_2c.to_string() == "2♣".to_string());
+        assert!(card_2h.to_string() == "2♥".to_string());
+        assert!(card_2s.to_string() == "2♠".to_string());
     }
 
     #[test]
