@@ -1,4 +1,7 @@
-use self::{cards::ScoreCards, rules::CardScore};
+use self::{
+    cards::{Card, CardRank, ScoreCards},
+    rules::CardScore,
+};
 
 //use crate::network;
 
@@ -54,7 +57,7 @@ pub mod cards {
 
     use super::rules::{is_valid_hand, score_hand, CardScore};
 
-    #[derive(PartialEq, Eq)]
+    #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
     pub enum CardRank {
         THREE,
         FOUR,
@@ -110,7 +113,7 @@ pub mod cards {
         }
     }
 
-    #[derive(PartialEq, Eq)]
+    #[derive(PartialEq, Eq, Clone, Copy)]
     pub enum CardSuit {
         DIAMONDS,
         CLUBS,
@@ -140,6 +143,7 @@ pub mod cards {
         }
     }
 
+    #[derive(Clone, Copy)]
     pub struct Card {
         bit: u8,
         pub rank: CardRank,
@@ -207,10 +211,10 @@ pub mod cards {
         }
     }
 
-    impl ToString for Card {
+    impl ToString for CardRank {
         fn to_string(&self) -> String {
-            let mut card_str = String::with_capacity(2);
-            match self.rank {
+            let mut card_str = String::with_capacity(1);
+            match self {
                 CardRank::THREE => card_str.push('3'),
                 CardRank::FOUR => card_str.push('4'),
                 CardRank::FIVE => card_str.push('5'),
@@ -225,8 +229,15 @@ pub mod cards {
                 CardRank::ACE => card_str.push('A'),
                 CardRank::TWO => card_str.push('2'),
             }
+            card_str
+        }
+    }
 
-            match self.suit {
+    impl ToString for CardSuit {
+        fn to_string(&self) -> String {
+            let mut card_str = String::with_capacity(1);
+
+            match self {
                 CardSuit::DIAMONDS => card_str.push('\u{2666}'),
                 CardSuit::CLUBS => card_str.push('\u{2663}'),
                 CardSuit::HEARTS => card_str.push('\u{2665}'),
@@ -237,6 +248,12 @@ pub mod cards {
         }
     }
 
+    impl ToString for Card {
+        fn to_string(&self) -> String {
+            format!("{}{}", self.rank.to_string(), self.suit.to_string())
+        }
+    }
+
     pub struct Cards {
         cards: u64,
     }
@@ -244,6 +261,37 @@ pub mod cards {
     pub struct ScoreCards {
         cards: Cards,
         score: CardScore,
+    }
+
+    impl ToString for ScoreCards {
+        fn to_string(&self) -> String {
+            match &self.score {
+                CardScore::None => "None".to_string(),
+                CardScore::Invalid => "Invalid".to_string(),
+                CardScore::Single(hc) => {
+                    format!("Single({})", hc.to_string())
+                }
+                CardScore::Pair(hc) => {
+                    format!("Pair({})", hc.to_string())
+                }
+                CardScore::Set(cr) => {
+                    format!("Set({})", cr.to_string())
+                }
+                CardScore::Five(fcs) => match fcs {
+                    super::rules::FiveCard::STRAIGHT(_a, hc) => {
+                        format!("Straight({})", hc.to_string())
+                    }
+                    super::rules::FiveCard::FLUSH(hc) => format!("Flush({})", hc.to_string()),
+                    super::rules::FiveCard::FULLHOUSE(cr) => {
+                        format!("FullHouse({})", cr.to_string())
+                    }
+                    super::rules::FiveCard::QUADS(cr) => format!("Quads({})", cr.to_string()),
+                    super::rules::FiveCard::STRAIGHTFLUSH(_a, hc) => {
+                        format!("StraightFlush({})", hc.to_string())
+                    }
+                },
+            }
+        }
     }
 
     impl ScoreCards {
@@ -290,22 +338,46 @@ pub mod cards {
             &self.score
         }
 
-        pub fn is_better(&self, b: &CardScore) -> bool {
-            match (&self.score, b) {
+        pub fn is_better(&self, b: &ScoreCards) -> bool {
+            println!("S: {} -- O: {}", self.to_string(), b.to_string());
+            match (&self.score, &b.score) {
+                (CardScore::None, _) => false,
                 (_, CardScore::None) => true,
                 (CardScore::Single(a), CardScore::Single(b)) => *a > *b,
                 (CardScore::Pair(a), CardScore::Pair(b)) => *a > *b,
                 (CardScore::Set(a), CardScore::Set(b)) => *a > *b,
-                (CardScore::Five(a, ac), CardScore::Five(b, bc)) => {
-                    if *a == *b && *ac > *bc {
-                        true
-                    } else if *a > *b {
-                        true
-                    } else {
-                        false
+                (CardScore::Five(fca), CardScore::Five(fcb)) => match (fca, fcb) {
+                    (
+                        super::rules::FiveCard::STRAIGHT(astr, ac),
+                        super::rules::FiveCard::STRAIGHT(bstr, bc),
+                    ) => {
+                        if *astr == *bstr {
+                            *ac > *bc
+                        } else {
+                            *astr > *bstr
+                        }
                     }
-                }
-
+                    (_, super::rules::FiveCard::STRAIGHT(_, _)) => true,
+                    (super::rules::FiveCard::FLUSH(ac), super::rules::FiveCard::FLUSH(bc)) => {
+                        *ac > *bc
+                    }
+                    (_, super::rules::FiveCard::FLUSH(_)) => true,
+                    (super::rules::FiveCard::QUADS(ac), super::rules::FiveCard::QUADS(bc)) => {
+                        *ac > *bc
+                    }
+                    (_, super::rules::FiveCard::QUADS(_)) => true,
+                    (
+                        super::rules::FiveCard::STRAIGHTFLUSH(astr, ac),
+                        super::rules::FiveCard::STRAIGHTFLUSH(bstr, bc),
+                    ) => {
+                        if *astr == *bstr {
+                            *ac > *bc
+                        } else {
+                            *astr > *bstr
+                        }
+                    }
+                    (_, _) => false,
+                },
                 (_, _) => false,
             }
         }
@@ -337,10 +409,6 @@ pub mod cards {
         }
         pub fn cards(&self) -> u64 {
             self.cards
-        }
-
-        pub fn to_bit(&self) -> u32 {
-            self.cards.trailing_zeros()
         }
     }
 
@@ -430,7 +498,10 @@ pub mod cards {
 }
 
 pub mod rules {
-    use super::*;
+    use super::{
+        cards::{self, cnt_rank, Card, CardRank},
+        RANKS,
+    };
 
     pub fn have_to_pass(board: u64, hand: u64) -> bool {
         let board_cnt = board.count_ones();
@@ -450,7 +521,7 @@ pub mod rules {
 
         for r in RANKS.iter() {
             let idx: usize = (*r).into();
-            ranks[idx] = cards::cnt_rank(hand, idx as u64) as u32;
+            ranks[idx] = cnt_rank(hand, idx as u64) as u32;
             if ranks[idx] != 0 {
                 straigth |= 1 << r;
             }
@@ -559,21 +630,21 @@ pub mod rules {
 
     #[derive(PartialEq, Eq, PartialOrd, Ord)]
     pub enum FiveCard {
-        STRAIGHT(FiveCardStraight),
-        FLUSH,
-        FULLHOUSE,
-        QUADS,
-        STRAIGHTFLUSH(FiveCardStraight),
+        STRAIGHT(FiveCardStraight, Card),
+        FLUSH(Card),
+        FULLHOUSE(CardRank),
+        QUADS(CardRank),
+        STRAIGHTFLUSH(FiveCardStraight, Card),
     }
 
     #[derive(PartialEq, Eq)]
     pub enum CardScore {
         None,
         Invalid,
-        Single(u8),
-        Pair(u8),
-        Set(u8),
-        Five(FiveCard, u8),
+        Single(Card),
+        Pair(Card),
+        Set(CardRank),
+        Five(FiveCard),
     }
 
     pub fn score_hand(hand: u64) -> CardScore {
@@ -601,6 +672,8 @@ pub mod rules {
         // Count number of cards based on the suit
         let cnt: u64 = suitmask.count_ones() as u64;
 
+        let high_card = Card::new(highest_card as usize).unwrap();
+
         if card_cnt_hand <= 3 {
             // If cnt doesn't match the card_cnt then it is invalid hand.
             if cnt != card_cnt_hand {
@@ -608,39 +681,41 @@ pub mod rules {
             }
 
             if card_cnt_hand == 1 {
-                return CardScore::Single(highest_card as u8);
+                return CardScore::Single(high_card);
             }
             if card_cnt_hand == 2 {
-                return CardScore::Pair(highest_card as u8);
+                return CardScore::Pair(high_card);
             }
             if card_cnt_hand == 3 {
-                return CardScore::Set(rank as u8);
+                return CardScore::Set(high_card.rank);
             }
 
             return CardScore::Invalid;
         }
 
         let lowest_card: u64 = hand.trailing_zeros() as u64;
+        let low_card = Card::new(lowest_card as usize).unwrap();
+
         let low_rank: u64 = lowest_card >> 2;
         // Get the played suit of that rank.
-        let low_suitmask = hand >> (low_rank << 2) & cards::Kind::SUITMASK;
+        let low_suitmask = hand >> (low_rank << 2) & crate::big2rules::cards::Kind::SUITMASK;
         // Count number of cards based on the suit
         let low_cnt: u64 = low_suitmask.count_ones() as u64;
 
         // Quad
         if cnt == 4 {
-            return CardScore::Five(FiveCard::QUADS, rank as u8);
+            return CardScore::Five(FiveCard::QUADS(high_card.rank));
         }
         if low_cnt == 4 {
-            return CardScore::Five(FiveCard::QUADS, low_rank as u8);
+            return CardScore::Five(FiveCard::QUADS(low_card.rank));
         }
 
         // Full House
         if cnt == 3 && low_cnt == 2 {
-            return CardScore::Five(FiveCard::FULLHOUSE, rank as u8);
+            return CardScore::Five(FiveCard::FULLHOUSE(high_card.rank));
         }
         if cnt == 2 && low_cnt == 3 {
-            return CardScore::Five(FiveCard::FULLHOUSE, low_rank as u8);
+            return CardScore::Five(FiveCard::FULLHOUSE(low_card.rank));
         }
 
         // Flush
@@ -682,17 +757,14 @@ pub mod rules {
 
             if is_straight {
                 if is_flush {
-                    return CardScore::Five(
-                        FiveCard::STRAIGHTFLUSH(straigth_type),
-                        highest_card as u8,
-                    );
+                    return CardScore::Five(FiveCard::STRAIGHTFLUSH(straigth_type, high_card));
                 }
-                return CardScore::Five(FiveCard::STRAIGHT(straigth_type), highest_card as u8);
+                return CardScore::Five(FiveCard::STRAIGHT(straigth_type, high_card));
             }
         }
 
         if !is_straight && is_flush {
-            return CardScore::Five(FiveCard::FLUSH, highest_card as u8);
+            return CardScore::Five(FiveCard::FLUSH(high_card));
         }
 
         CardScore::Invalid
@@ -841,7 +913,7 @@ impl SrvGameState {
         }
 
         let hand_score = hand_score.unwrap();
-        if !hand_score.is_better(self.board_score.score()) {
+        if !hand_score.is_better(&self.board_score) {
             return Err(SrvGameError::InvalidHand);
         }
 
@@ -892,9 +964,10 @@ impl SrvGameState {
         let mut next = self.turn;
 
         let bs = self.board_score.score();
-        if *bs == CardScore::Single(0x3f)
-            || *bs == CardScore::Pair(0x3f)
-            || *bs == CardScore::Set(0x3f)
+        let c2s = Card::card(CardRank::TWO, cards::CardSuit::SPADES);
+        if *bs == CardScore::Single(c2s)
+            || *bs == CardScore::Pair(c2s)
+            || *bs == CardScore::Set(c2s.rank)
         {
             println!("Play 2s which is the highest card");
             self.board_score = ScoreCards::board_from(0).unwrap();
@@ -972,10 +1045,7 @@ impl SrvGameState {
 
 #[cfg(test)]
 mod tests {
-    use crate::big2rules::{
-        cards::{CardRank, CardSuit},
-        rules::FiveCard,
-    };
+    use crate::big2rules::rules::FiveCard;
 
     use super::*;
 
@@ -1022,6 +1092,42 @@ mod tests {
     }
     #[test]
     fn rules_board_hand_fivecards() {
+        let h = ScoreCards::hand_from(0b11111 << 12).unwrap();
+        let b = ScoreCards::board_from(0).unwrap();
+
+        assert!(h.is_better(&b));
+
+        let b = ScoreCards::board_from(0b11111 << 12).unwrap();
+        assert!(!h.is_better(&b));
+
+        let b = ScoreCards::board_from(0b11110001 << 12).unwrap();
+        assert!(!h.is_better(&b));
+
+        let h = ScoreCards::hand_from(0b11110001 << 12).unwrap();
+        let b = ScoreCards::board_from(0b11111 << 12).unwrap();
+
+        assert!(h.is_better(&b));
+
+        let h = ScoreCards::hand_from(0x21111 << 12).unwrap();
+        let b = ScoreCards::board_from(0).unwrap();
+        assert!(h.is_better(&b));
+
+        let h = ScoreCards::hand_from(0x21111 << 12).unwrap();
+        let b = ScoreCards::board_from(0x11111 << 12).unwrap();
+        assert!(!h.is_better(&b));
+
+        let h = ScoreCards::hand_from(0x21111 << 12).unwrap();
+        let b = ScoreCards::board_from(0x11112 << 12).unwrap();
+        assert!(h.is_better(&b));
+
+        let h = ScoreCards::hand_from(0x37 << 12).unwrap();
+        let b = ScoreCards::board_from(0x11112 << 12).unwrap();
+        assert!(h.is_better(&b));
+
+        let h = ScoreCards::hand_from(0x37 << 12).unwrap();
+        let b = ScoreCards::board_from(0b11111 << 12).unwrap();
+        assert!(h.is_better(&b));
+
         assert!(rules::beter_hand(0b11111 << 12, 0b1 << 12) == false);
         assert!(rules::beter_hand(0b11111 << 12, 0b11 << 12) == false);
         assert!(rules::beter_hand(0b11111 << 12, 0b111 << 12) == false);
@@ -1030,13 +1136,15 @@ mod tests {
     #[test]
     fn b_rules_score_hand() {
         // ONE
-        assert!(rules::score_hand(0x0000_0000_0000_1000) == CardScore::Single(cards::Kind::LOWEST));
         assert!(
-            rules::score_hand(0x8000_0000_0000_0000) == CardScore::Single(cards::Kind::HIGHEST)
+            rules::score_hand(0x0000_0000_0000_1000) == CardScore::Single(Card::new(12).unwrap())
+        );
+        assert!(
+            rules::score_hand(0x8000_0000_0000_0000) == CardScore::Single(Card::new(63).unwrap())
         );
 
         // PAIR
-        assert!(rules::score_hand(0b11 << 12) == CardScore::Pair(13));
+        assert!(rules::score_hand(0b11 << 12) == CardScore::Pair(Card::new(13).unwrap()));
         // Select one 3 and one 4
         assert!(rules::score_hand(0b11000 << 12) == CardScore::Invalid);
         // assert!(!rules::score_hand(0b11 << 12).is_better(rules::score_hand(0b11 << 62)));
@@ -1052,23 +1160,23 @@ mod tests {
         // // QUAD
         assert!(
             rules::score_hand(0b0001_1111_0000 << 12)
-                == CardScore::Five(FiveCard::QUADS, cards::Rank::FOUR)
+                == CardScore::Five(FiveCard::QUADS(CardRank::FOUR))
         );
         assert!(
             rules::score_hand(0b0000_1111_1000 << 12)
-                == CardScore::Five(FiveCard::QUADS, cards::Rank::FOUR)
+                == CardScore::Five(FiveCard::QUADS(CardRank::FOUR))
         );
         assert!(
             rules::score_hand(0b0001_1111_0000 << 52)
-                == CardScore::Five(FiveCard::QUADS, cards::Rank::ACE)
+                == CardScore::Five(FiveCard::QUADS(CardRank::ACE))
         );
         assert!(
             rules::score_hand(0b0000_1111_1000 << 52)
-                == CardScore::Five(FiveCard::QUADS, cards::Rank::ACE)
+                == CardScore::Five(FiveCard::QUADS(CardRank::ACE))
         );
         assert!(
             rules::score_hand(0b1111_0000_1000 << 52)
-                == CardScore::Five(FiveCard::QUADS, cards::Rank::TWO)
+                == CardScore::Five(FiveCard::QUADS(CardRank::TWO))
         );
         assert!(rules::score_hand(0b1111_0001_1000 << 52) == CardScore::Invalid);
         assert!(rules::score_hand(0b1111_0000_1001 << 52) == CardScore::Invalid);
@@ -1076,27 +1184,27 @@ mod tests {
         // // FULL HOUSE
         assert!(
             rules::score_hand(0b0011_1011_0000 << 12)
-                == CardScore::Five(FiveCard::FULLHOUSE, cards::Rank::FOUR)
+                == CardScore::Five(FiveCard::FULLHOUSE(CardRank::FOUR))
         );
         assert!(
             rules::score_hand(0b0000_1101_1001 << 12)
-                == CardScore::Five(FiveCard::FULLHOUSE, cards::Rank::FOUR)
+                == CardScore::Five(FiveCard::FULLHOUSE(CardRank::FOUR))
         );
         assert!(
             rules::score_hand(0b0000_1011_0110 << 12)
-                == CardScore::Five(FiveCard::FULLHOUSE, cards::Rank::FOUR)
+                == CardScore::Five(FiveCard::FULLHOUSE(CardRank::FOUR))
         );
         assert!(
             rules::score_hand(0b1110_1001_0000 << 52)
-                == CardScore::Five(FiveCard::FULLHOUSE, cards::Rank::TWO)
+                == CardScore::Five(FiveCard::FULLHOUSE(CardRank::TWO))
         );
         assert!(
             rules::score_hand(0b0000_0111_1001 << 52)
-                == CardScore::Five(FiveCard::FULLHOUSE, cards::Rank::ACE)
+                == CardScore::Five(FiveCard::FULLHOUSE(CardRank::ACE))
         );
         assert!(
             rules::score_hand(0b0000_1101_0110 << 52)
-                == CardScore::Five(FiveCard::FULLHOUSE, cards::Rank::ACE)
+                == CardScore::Five(FiveCard::FULLHOUSE(CardRank::ACE))
         );
 
         // // STRAIGHT
