@@ -1,25 +1,20 @@
-use crate::widgets;
-use eframe::{egui, epi};
+use crate::{
+    messages::{GameState, RoomInfo, MAX_PLAYERS},
+    players::{Player, PlayerStatus},
+    widgets,
+};
+use eframe::{
+    egui::{self, TextBuffer},
+    epi,
+};
 
 // /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 // #[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]
 // #[cfg_attr(feature = "persistence", serde(default))] // if we add new fields, give them default values when deserializing old state
 pub struct TemplateApp {
-    cards_selected: u64,
-    cards_hand: u64,
-    cards_board: u64,
-    want_pass: bool,
-}
-
-impl Default for TemplateApp {
-    fn default() -> Self {
-        Self {
-            cards_selected: 0,
-            cards_board: 0x28421000,
-            want_pass: false,
-            cards_hand: 0x8208_0342_3122_1000,
-        }
-    }
+    pub ri: RoomInfo,
+    pub cards_selected: u64,
+    pub want_pass: bool,
 }
 
 impl epi::App for TemplateApp {
@@ -32,33 +27,37 @@ impl epi::App for TemplateApp {
     }
 
     /// Called by the framework to load old app state (if any).
-    #[cfg(feature = "persistence")]
-    fn setup(
-        &mut self,
-        _ctx: &egui::CtxRef,
-        _frame: &mut epi::Frame<'_>,
-        storage: Option<&dyn epi::Storage>,
-    ) {
-        if let Some(storage) = storage {
-            *self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default()
-        }
-    }
+    // #[cfg(feature = "persistence")]
+    // fn setup(
+    //     &mut self,
+    //     _ctx: &egui::CtxRef,
+    //     _frame: &mut epi::Frame<'_>,
+    //     storage: Option<&dyn epi::Storage>,
+    // ) {
+    //     if let Some(storage) = storage {
+    //         *self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default()
+    //     }
+    // }
 
     /// Called by the frame work to save state before shutdown.
-    #[cfg(feature = "persistence")]
-    fn save(&mut self, storage: &mut dyn epi::Storage) {
-        epi::set_value(storage, epi::APP_KEY, self);
-    }
+    // #[cfg(feature = "persistence")]
+    // fn save(&mut self, storage: &mut dyn epi::Storage) {
+    //     epi::set_value(storage, epi::APP_KEY, self);
+    // }
 
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &egui::CtxRef, _frame: &mut epi::Frame<'_>) {
         let Self {
-            cards_board,
-            cards_hand,
+            ri,
             cards_selected,
             want_pass,
         } = self;
+
+        let cards_board = &ri.update.board;
+
+        let fake_hand = 0_u64;
+        let cards_hand = &ri.update.hand.unwrap_or(fake_hand);
 
         // egui::SidePanel::left("side_panel").show(ctx, |ui| {
         //     ui.heading("Side Panel");
@@ -82,6 +81,29 @@ impl epi::App for TemplateApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             // The central panel the region left after adding TopPanel's and SidePanel's
+            ui.horizontal(|ui| {
+                for p in 0..MAX_PLAYERS {
+                    let name = ri.player[p].clone().unwrap_or("--".to_string());
+                    let name = name.as_str();
+                    let player = &ri.update.players[p];
+                    let num_cards = player.num_cards;
+                    let score = player.score;
+                    let player = Player::from_idx(p as u8);
+                    let to_act: PlayerStatus =
+                        if ri.update.state == GameState::ToAct(player.unwrap()) {
+                            PlayerStatus::ToAct
+                        } else {
+                            PlayerStatus::Normal
+                        };
+                    ui.add(widgets::players::player(
+                        name,
+                        num_cards,
+                        i16::from(score),
+                        to_act,
+                    ));
+                }
+            });
+
             ui.add(widgets::board::board(cards_board));
             ui.add(widgets::hand::cards(cards_selected, *cards_hand));
 
@@ -95,11 +117,11 @@ impl epi::App for TemplateApp {
                 ui.add(widgets::buttons::button_play(want_play, can_play));
             });
 
-            if can_play && *want_play {
-                *cards_board = *cards_selected;
-                *cards_hand ^= *cards_selected;
-                *cards_selected = 0;
-            }
+            // if can_play && *want_play {
+            //     *cards_board = *cards_selected;
+            //     *cards_hand ^= *cards_selected;
+            //     *cards_selected = 0;
+            // }
 
             egui::warn_if_debug_build(ui);
         });

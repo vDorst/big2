@@ -3,7 +3,9 @@
 #![warn(clippy::all, rust_2018_idioms)]
 
 mod app;
-pub mod card;
+pub mod big2rules;
+pub mod messages;
+pub mod players;
 pub mod widgets;
 
 pub use app::TemplateApp;

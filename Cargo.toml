@@ -1,27 +1,11 @@
-[package]
-name = "big2"
-version = "0.2.0"
-edition = "2018"
-description = "Big2 with egui"
-
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[lib]
-crate-type = ["cdylib", "rlib"]
-
-[dependencies]
-eframe = "0.13" # Gives us egui, epi and web+native backends
-
-serde = { version = "1", features = ["derive"], optional = true }
-
-[features]
-default = []
-http = ["eframe/http"] # Enable if you want to do http requests
-persistence = ["eframe/persistence", "serde"] # Enable if you want to persist app state on shutdown
-
-[dev-dependencies]
-wasm-bindgen-test = "0.2"
+[workspace]
+members = [
+  "big2lib",
+  "big2server",
+  # "big2py",
+]
 
 [profile.release]
-opt-level = 2 # fast and small wasm
+opt-level = 3
+lto = "fat"
+debug = 1
