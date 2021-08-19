@@ -3,10 +3,7 @@ use crate::{
     players::{Player, PlayerStatus},
     widgets,
 };
-use eframe::{
-    egui::{self, TextBuffer},
-    epi,
-};
+use eframe::{egui, epi};
 
 // /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 // #[cfg_attr(feature = "persistence", derive(serde::Deserialize, serde::Serialize))]

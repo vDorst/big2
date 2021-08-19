@@ -17,12 +17,12 @@ fn main() {
 
     let mut gs = RoomInfo::new("dsafasdfhasidfh".to_string(), Some(8));
 
-    gs.user_add("Super Bot 1".to_string());
-    gs.user_add("Real User 12345678".to_string());
+    let _ = gs.user_add("Super Bot 1".to_string());
+    let _ = gs.user_add("Real User 12345678".to_string());
     let rene_p1 = gs.user_add("René".to_string()).unwrap();
-    gs.user_add("1235627888".to_string());
+    let _ = gs.user_add("1235627888".to_string());
 
-    gs.update.hand = Some(big2game.cards[3]);
+    gs.update.hand = Some(big2game.cards[rene_p1.to_idx() as usize]);
     gs.update.board = 0x1_1000;
     gs.update.state = GameState::ToAct(Player::from_idx(big2game.turn as u8).unwrap());
 
