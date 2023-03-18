@@ -103,8 +103,11 @@ fn parse_args(mut args: Arguments) -> Result<CliArgs, paError> {
         cli_args.host_port = value.unwrap_or(network::common::PORT);
     }
 
-    args.finish()?;
-
+    let remaining = args.finish();
+    
+    if !remaining.is_empty() {
+        eprintln!("Warning: unused arguments left: {:?}.", remaining);
+    }
     Ok(cli_args)
 }
 
@@ -701,7 +704,7 @@ mod tests {
         ]));
         let ar = parse_args(args);
         match ar {
-            Err(paError::UnusedArgsLeft { 0: _ }) => assert!(true),
+            Err(paError::MissingArgument) => assert!(true),
             _ => {
                 println!("{:?}", ar);
                 assert!(false)

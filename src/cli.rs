@@ -3,7 +3,7 @@ pub mod display {
     use log::trace;
 
     use std::{
-        io::{stdout, Write},
+        io::stdout,
         time::Duration,
     };
 
@@ -15,7 +15,7 @@ pub mod display {
         },
         execute,
         //queue,
-        style::{Colorize, Print, ResetColor},
+        style::{Stylize, Print, ResetColor},
         //QueueableCommand,
         terminal::{
             disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen,
@@ -118,6 +118,9 @@ pub mod display {
             Event::Key(key_event) => return handle_key_events(key_event),
             Event::Mouse(mouse_event) => return handle_mouse_events(mouse_event),
             Event::Resize(_, _) => return UserEvent::RESIZE,
+            Event::FocusGained => todo!(),
+            Event::FocusLost => todo!(),
+            Event::Paste(_) => todo!(),
         }
     }
 
