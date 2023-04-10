@@ -3,20 +3,21 @@ use crate::network;
 pub const RANKS: [u8; 13] = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
 pub mod deck {
-    use super::*;
+    use super::deck;
     use rand::seq::SliceRandom;
     use rand::thread_rng;
 
     pub const NUMBER_OF_CARDS: u8 = 52;
     pub const START_BIT: u8 = 12;
 
+    #[must_use]
     pub fn deal() -> [u64; 4] {
         // Create and shulle deck of cards
         let deck = {
             let mut deck = Vec::<u8>::with_capacity(52);
 
             for s in 0..deck::NUMBER_OF_CARDS {
-                let card_bit: u8 = s as u8 + deck::START_BIT;
+                let card_bit: u8 = s + deck::START_BIT;
                 deck.push(card_bit);
             }
 
@@ -26,7 +27,7 @@ pub mod deck {
             }
             deck
         };
-        return deal_cards(deck);
+        deal_cards(deck)
     }
     fn deal_cards(cards: Vec<u8>) -> [u64; 4] {
         let mut players_hand: [u64; 4] = [0, 0, 0, 0];
@@ -48,7 +49,7 @@ pub mod deck {
             (players_hand[0] | players_hand[1] | players_hand[2] | players_hand[3])
                 == 0xFFFF_FFFF_FFFF_F000u64
         );
-        return players_hand;
+        players_hand
     }
 }
 
@@ -98,30 +99,35 @@ pub mod cards {
         pub const TWO: u64 = 15;
     }
 
+    #[must_use]
     pub fn has_rank(hand: u64, rank: u64) -> u64 {
         let mask = Kind::SUITMASK << (rank << 2);
-        return hand & mask;
+        hand & mask
     }
 
+    #[must_use]
     pub fn cnt_rank(hand: u64, rank: u64) -> u64 {
-        return has_rank(hand, rank).count_ones() as u64;
+        u64::from(has_rank(hand, rank).count_ones())
     }
 
+    #[must_use]
     pub fn card_selected(card: u64) -> u64 {
-        return card.trailing_zeros() as u64;
+        u64::from(card.trailing_zeros())
     }
 
+    #[must_use]
     pub fn has_rank_idx(card: u64) -> u64 {
-        return card_selected(card) >> 2;
+        card_selected(card) >> 2
     }
 
+    #[must_use]
     pub fn has_suit(card: u64) -> u64 {
-        return 1 << (card_selected(card) & 0x3);
+        1 << (card_selected(card) & 0x3)
     }
 }
 
 pub mod rules {
-    use super::*;
+    use super::{cards, RANKS};
 
     #[allow(dead_code)]
     pub fn get_numbers(hand: u64) {
@@ -132,7 +138,7 @@ pub mod rules {
         let mut straigths: u32 = 0;
         let mut doubles: u32 = 0;
 
-        for r in RANKS.iter() {
+        for r in &RANKS {
             let idx: usize = (*r).into();
             ranks[idx] = cards::cnt_rank(hand, idx as u64) as u32;
             if ranks[idx] != 0 {
@@ -172,21 +178,22 @@ pub mod rules {
             + std::cmp::min(doubles, quads)
             + std::cmp::min(tripps, quads);
         println!(
-            "R{:x?} S{:16b} {:x} D{:x} T{:x} Q{:x} FH{:x} FL{:x}",
-            ranks, straigth, straigths, doubles, tripps, quads, fullhouse, flushs
+            "R{ranks:x?} S{straigth:16b} {straigths:x} D{doubles:x} T{tripps:x} Q{quads:x} FH{fullhouse:x} FL{flushs:x}"
         );
     }
+    #[must_use]
     pub fn is_valid_hand(hand: u64) -> bool {
         // Check cards range. Only the upper 52 bits are used.
-        let ret: bool = (hand & 0xFFF) == 0;
+        let ret: bool = hand.trailing_zeros() >= 12;
 
         // Check number of cards played. count = 1, 2, 3 or 5 is valid.
         let cardcount = hand.count_ones();
         ret && cardcount != 4 && cardcount < 6 && cardcount != 0
     }
     #[allow(dead_code)]
+    #[must_use]
     pub fn beter_hand(board: u64, hand: u64) -> bool {
-        if is_valid_hand(hand) == false {
+        if !is_valid_hand(hand) {
             return false;
         }
 
@@ -198,18 +205,19 @@ pub mod rules {
         if card_cnt_board != 0 && card_cnt_board != card_cnt_hand {
             return false;
         }
-        return true;
+        true
     }
 
+    #[must_use]
     pub fn higher_single_card(board: u64, hand: u64) -> u64 {
         let mask: u64 = u64::MAX.wrapping_shl(board.trailing_zeros());
         let higher_cards = hand & mask;
         let mask: u64 = 1u64.wrapping_shl(higher_cards.trailing_zeros());
-        let better_card = hand & mask;
 
-        better_card
+        hand & mask
     }
 
+    #[must_use]
     pub fn is_flush(hand: u64) -> bool {
         let mut mask: u64 = 0x1111_1111_1111_1000;
         for _ in 0..4 {
@@ -218,8 +226,9 @@ pub mod rules {
             }
             mask <<= 1;
         }
-        return false;
+        false
     }
+    #[must_use]
     pub fn has_flush(hand: u64) -> u8 {
         let mut mask: u64 = 0x1111_1111_1111_1000;
         let mut flushs: u8 = 0;
@@ -229,8 +238,9 @@ pub mod rules {
             }
             mask <<= 1;
         }
-        return flushs;
+        flushs
     }
+    #[must_use]
     pub fn score_hand(hand: u64) -> u64 {
         // Score:
         //  0xKNN = One, Pair and Straigth, Flush
@@ -242,19 +252,19 @@ pub mod rules {
         //    |+-- Zero
         //        +--- Kind: Kind::QUADS or Kind::SET or Kind::FULLHOUSE
 
-        if is_valid_hand(hand) == false {
+        if !is_valid_hand(hand) {
             return 0;
         }
         let card_cnt_hand: u64 = hand.count_ones().into();
 
         // find the highest card and calc the rank.
-        let highest_card: u64 = 63 - hand.leading_zeros() as u64;
+        let highest_card: u64 = 63 - u64::from(hand.leading_zeros());
         let rank: u64 = highest_card >> 2;
 
         // Get the played suit of that rank.
         let suitmask = hand >> (rank << 2);
         // Count number of cards based on the suit
-        let cnt: u64 = suitmask.count_ones() as u64;
+        let cnt: u64 = u64::from(suitmask.count_ones());
 
         if card_cnt_hand <= 3 {
             // If cnt doesn't match the card_cnt then it is invalid hand.
@@ -275,12 +285,12 @@ pub mod rules {
             return 0;
         }
 
-        let lowest_card: u64 = hand.trailing_zeros() as u64;
+        let lowest_card: u64 = u64::from(hand.trailing_zeros());
         let low_rank: u64 = lowest_card >> 2;
         // Get the played suit of that rank.
         let low_suitmask = hand >> (low_rank << 2) & cards::Kind::SUITMASK;
         // Count number of cards based on the suit
-        let low_cnt: u64 = low_suitmask.count_ones() as u64;
+        let low_cnt: u64 = u64::from(low_suitmask.count_ones());
 
         // Quad
         if cnt == 4 {
@@ -344,7 +354,7 @@ pub mod rules {
             return cards::Kind::FLUSH | highest_card;
         }
 
-        return 0;
+        0
     }
 }
 
@@ -383,6 +393,7 @@ pub enum SrvGameError {
 }
 
 impl SrvGameState {
+    #[must_use]
     pub fn new(rounds: u8) -> Self {
         SrvGameState {
             prev_action: 0,
@@ -391,7 +402,7 @@ impl SrvGameState {
             has_passed: 0,
             turn: -1,
             round: 0,
-            rounds: rounds,
+            rounds,
             cards: [0; 4],
             played_cards: 0,
             score: [0; 4],
@@ -415,7 +426,7 @@ impl SrvGameState {
         self.card_cnt = [13; 4];
 
         let mut m: u64 = 0;
-        for c in self.cards.iter() {
+        for c in &self.cards {
             m |= c;
             println!("C 0x{:16x} count {}", c, c.count_ones());
         }
@@ -425,7 +436,7 @@ impl SrvGameState {
 
         // Which player to start
         if self.round == 1 {
-            self.turn = self.cards.iter().position(|&x| x & 0x1000 != 0).unwrap() as i32;
+            self.turn = self.cards.iter().position(|&x| x & 0x1000 != 0).expect("Weard a use should start with 0x1000 card!") as i32;
         } else {
             let p = (self.last_action & 0x3) as i32;
             println!("Last action {:16x} P{}", self.last_action, p);
@@ -535,7 +546,6 @@ impl SrvGameState {
         }
 
         self.turn = next;
-        return;
     }
     fn calc_score(&mut self) {
         let mut t: i16 = 0;
@@ -553,26 +563,27 @@ impl SrvGameState {
             println!(
                 "Assist! PP{} {:16x} CP{} {:16x}",
                 prev_player, self.cards[prev_player], self.turn, hand,
-            )
+            );
         }
 
         let mut delta_score: [i16; 4] = [0; 4];
-        for i in 0..4 {
-            let mut s = self.card_cnt[i] as i16;
+        for (i, delta_score) in delta_score.iter_mut().enumerate() {
+            let mut s = i16::from(self.card_cnt[i]);
             if s == 13 {
-                s *= 3
+                s *= 3;
             } else if s > 9 {
-                s *= 2
+                s *= 2;
             };
             t += s;
-            delta_score[i] = s;
+            *delta_score = s;
         }
         if assisted {
-            self.score[prev_player] -= t
+            self.score[prev_player] -= t;
         } else {
-            for i in 0..4 {
-                self.score[i] -= delta_score[i];
-            }
+            self.score
+                .iter_mut()
+                .enumerate()
+                .for_each(|(i, score)| *score -= delta_score[i]);
         }
         self.score[self.turn as usize] += t;
     }
@@ -584,50 +595,50 @@ mod tests {
 
     #[test]
     fn a_rules_sizes() {
-        assert!(rules::is_valid_hand(0) == false);
-        assert!(rules::is_valid_hand(0x1001) == false);
-        assert!(rules::is_valid_hand(0b1) == false, "1 invalid card");
-        assert!(rules::is_valid_hand(0b1 << 12) == true);
-        assert!(rules::is_valid_hand(0b11 << 12) == true);
-        assert!(rules::is_valid_hand(0b111 << 12) == true);
-        assert!(rules::is_valid_hand(0b1111 << 12) == false, "4 cards");
-        assert!(rules::is_valid_hand(0b11111 << 12) == true);
-        assert!(rules::is_valid_hand(0b111111 << 12) == false, "6 cards");
+        assert!(!rules::is_valid_hand(0));
+        assert!(!rules::is_valid_hand(0x1001));
+        assert!(!rules::is_valid_hand(0b1), "1 invalid card");
+        assert!(rules::is_valid_hand(0b1 << 12));
+        assert!(rules::is_valid_hand(0b11 << 12));
+        assert!(rules::is_valid_hand(0b111 << 12));
+        assert!(!rules::is_valid_hand(0b1111 << 12), "4 cards");
+        assert!(rules::is_valid_hand(0b11111 << 12));
+        assert!(!rules::is_valid_hand(0b11_1111 << 12), "6 cards");
     }
     #[test]
     fn rules_board_hand_new_turn() {
         assert!(rules::beter_hand(0, 0b1 << 12));
         assert!(rules::beter_hand(0, 0b11 << 12));
         assert!(rules::beter_hand(0, 0b111 << 12));
-        assert!(rules::beter_hand(0, 0b1111 << 12) == false);
+        assert!(!rules::beter_hand(0, 0b1111 << 12));
         assert!(rules::beter_hand(0, 0b11111 << 12));
     }
     #[test]
     fn rules_board_hand_one_pair() {
         assert!(rules::beter_hand(0b1 << 12, 0b1 << 12));
-        assert!(rules::beter_hand(0b1 << 12, 0b11 << 12) == false);
-        assert!(rules::beter_hand(0b1 << 12, 0b111 << 12) == false);
-        assert!(rules::beter_hand(0b1 << 12, 0b11111 << 12) == false);
+        assert!(!rules::beter_hand(0b1 << 12, 0b11 << 12));
+        assert!(!rules::beter_hand(0b1 << 12, 0b111 << 12));
+        assert!(!rules::beter_hand(0b1 << 12, 0b11111 << 12));
     }
     #[test]
     fn rules_board_hand_two_pair() {
-        assert!(rules::beter_hand(0b11 << 12, 0b1 << 12) == false);
+        assert!(!rules::beter_hand(0b11 << 12, 0b1 << 12));
         assert!(rules::beter_hand(0b11 << 12, 0b11 << 12));
-        assert!(rules::beter_hand(0b11 << 12, 0b111 << 12) == false);
-        assert!(rules::beter_hand(0b11 << 12, 0b11111 << 12) == false);
+        assert!(!rules::beter_hand(0b11 << 12, 0b111 << 12));
+        assert!(!rules::beter_hand(0b11 << 12, 0b11111 << 12));
     }
     #[test]
     fn rules_board_hand_three_of_kind() {
-        assert!(rules::beter_hand(0b111 << 12, 0b1 << 12) == false);
-        assert!(rules::beter_hand(0b111 << 12, 0b11 << 12) == false);
-        assert!(rules::beter_hand(0b111 << 12, 0b111 << 12) == true);
-        assert!(rules::beter_hand(0b111 << 12, 0b11111 << 12) == false);
+        assert!(!rules::beter_hand(0b111 << 12, 0b1 << 12));
+        assert!(!rules::beter_hand(0b111 << 12, 0b11 << 12));
+        assert!(rules::beter_hand(0b111 << 12, 0b111 << 12));
+        assert!(!rules::beter_hand(0b111 << 12, 0b11111 << 12));
     }
     #[test]
     fn rules_board_hand_fivecards() {
-        assert!(rules::beter_hand(0b11111 << 12, 0b1 << 12) == false);
-        assert!(rules::beter_hand(0b11111 << 12, 0b11 << 12) == false);
-        assert!(rules::beter_hand(0b11111 << 12, 0b111 << 12) == false);
+        assert!(!rules::beter_hand(0b11111 << 12, 0b1 << 12));
+        assert!(!rules::beter_hand(0b11111 << 12, 0b11 << 12));
+        assert!(!rules::beter_hand(0b11111 << 12, 0b111 << 12));
         assert!(rules::beter_hand(0b11111 << 12, 0b11111 << 12));
     }
     #[test]

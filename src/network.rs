@@ -14,10 +14,10 @@ use std::{
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub enum StateMessageActionType {
-    UPDATE = 0,
-    DEAL = 1,
-    PLAY = 2,
-    PASS = 3,
+    Update = 0,
+    Deal = 1,
+    Play = 2,
+    Pass = 3,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -28,9 +28,10 @@ pub struct Message {
 }
 
 impl Message {
+    #[must_use]
     pub fn new(kind: u32) -> Self {
         Self {
-            kind: kind,
+            kind,
             size: std::mem::size_of::<Message>() as u32,
             pad: [0; 32],
         }
@@ -50,7 +51,7 @@ pub struct JoinMessage {
 pub struct StateMessagePlayer {
     pub name: muon::String16,
     pub score: i32,
-    pub num_cards: i32,
+    pub num_cards: u32,
     pub delta_score: i32,
     pub is_ready: bool,
     pub has_passed_this_cycle: bool,
@@ -93,7 +94,33 @@ pub struct StateMessage {
     pub action: StateMessageAction,
 }
 
+#[non_exhaustive]
+struct PlayerID(pub u8);
+
+impl PlayerID {
+    pub fn try_from<T>(val: T) -> Option<Self>
+    where
+        u8: TryFrom<T>,
+    {
+        u8::try_from(val).ok().and_then(|v| {
+            if (0..=3).contains(&v) {
+                Some(Self(v))
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn in_to<T>(&self) -> T
+    where
+        T: From<u8>,
+    {
+        self.0.into()
+    }
+}
+
 impl StateMessage {
+    #[must_use]
     pub fn new(init_buffer: Option<&[u8]>) -> Self {
         let buf: &[u8];
         if let Some(b) = init_buffer {
@@ -102,57 +129,49 @@ impl StateMessage {
         } else {
             buf = &[0; std::mem::size_of::<Self>()];
         }
-        let mut sm: StateMessage = bincode::deserialize(&buf).unwrap();
+        let mut sm: StateMessage =
+            bincode::deserialize(buf).expect("Can't deserialize StateMessage");
         sm.size = mem::size_of::<StateMessage>() as u32;
         sm
     }
+    #[must_use]
     pub fn current_player(&self) -> Option<usize> {
-        if self.turn == -1 || self.turn < 0 || self.turn > 3 {
-            return None;
-        }
-        Some(self.turn as usize)
+        PlayerID::try_from(self.turn).map(|p| p.in_to())
     }
+    #[must_use]
     pub fn current_player_name(&self) -> Option<String> {
-        match self.current_player() {
-            None => return None,
-            Some(p) => {
-                return Some(self.players[p].name.to_string());
-            }
-        }
+        self.current_player()
+            .map(|p| self.players[p].name.as_string())
     }
+    #[must_use]
     pub fn player_name(&self, p: i32) -> Option<String> {
-        if p < 0 || p > 3 {
-            return None;
-        }
-        return Some(self.players[p as usize].name.to_string());
+        PlayerID::try_from(p).map(|p| self.players[p.in_to::<usize>()].name.as_string())
     }
+    #[must_use]
     pub fn action_msg(&self) -> u64 {
-        let player = self.action.player;
-        let name = self.player_name(player);
-        if name.is_none() {
-            trace!(
-                "Strang: Some action but no results p{}: {:?}",
-                player,
+        let Some(player) = PlayerID::try_from(self.action.player) else {
+            trace!(                "Strang: Some action but no results p{}: {:?}",
+                self.turn,
                 self.action.action_type
             );
             return 0xFFFF_FFFF_FFFF_FFFF;
-        }
-        let mut p = (player as u64) & 0x7;
+        };
+        let mut p: u64 = player.in_to();
         p |= ((self.turn as u64) & 0x7) << 4;
 
         match self.action.action_type {
-            StateMessageActionType::PLAY => {
-                let mut cards = self.action.cards.into_card().unwrap();
+            StateMessageActionType::Play => {
+                let mut cards = self.action.cards.into_card().expect("invalid cards");
                 cards |= p;
-                return cards;
+                cards
             }
-            StateMessageActionType::PASS => {
-                let mut cards = self.board.into_card().unwrap();
+            StateMessageActionType::Pass => {
+                let mut cards = self.board.into_card().expect("invalid cards");
                 cards |= 0x100;
                 cards |= p;
-                return cards;
+                cards
             }
-            StateMessageActionType::UPDATE => {
+            StateMessageActionType::Update => {
                 let mut ready: u64 = 0;
                 for i in 0..4 {
                     if self.players[i].is_ready {
@@ -160,21 +179,21 @@ impl StateMessage {
                     }
                 }
                 ready |= 0x800;
-                return ready;
+                ready
             }
-            StateMessageActionType::DEAL => {
+            StateMessageActionType::Deal => {
                 let mut cards = self.your_hand.to_card();
                 cards |= 0x400;
-                cards |= self.your_index as u64 & 0x7;
+                cards |= PlayerID::try_from(self.your_index).expect("Shoud fit").in_to::<u64>() & 0x7;
                 cards |= ((self.turn as u64) & 0x7) << 4;
-                return cards;
+                cards
             }
-        };
+        }
     }
 }
 
 pub mod muon {
-    use super::*;
+    use super::{big2rules, Deserialize, Serialize, TryFrom};
 
     #[derive(Serialize, Deserialize, Debug)]
     pub struct String16 {
@@ -183,29 +202,27 @@ pub mod muon {
     }
 
     impl String16 {
-        pub fn to_string(&self) -> String {
-            let mut s = String::with_capacity(16);
-            if self.count < 0 || self.count > 16 {
-                s.push_str("Invalid string");
-                return s;
-            }
+        #[must_use]
+        pub fn as_string(&self) -> String {
+            let Some(cnt) = usize::try_from(self.count).ok().and_then(|v| if (0..=16).contains(&v) { Some(v) } else { None } ) else {
+                return "Invalid string".to_string();
+            };
 
-            let cnt: usize = self.count as usize;
             let s_ret = String::from_utf8(self.data[..cnt].to_vec());
             match s_ret {
-                Err(_) => s.push_str("Can't convert"),
-                Ok(st) => s = st,
+                Err(_) => "Can't convert".to_string(),
+                Ok(st) => st,
             }
-            return s;
         }
 
+        #[must_use]
         pub fn from_string(name: &String) -> Self {
             let str_size = std::cmp::min(name.len(), 16);
             let mut name_bytes: [u8; 16] = [0; 16];
             let nb = &name.as_bytes()[..str_size];
             name_bytes[..str_size].clone_from_slice(nb);
             String16 {
-                count: str_size as i32,
+                count: i32::try_from(str_size).expect("str_size should fit i32"),
                 data: name_bytes,
             }
         }
@@ -224,15 +241,18 @@ pub mod muon {
     }
 
     impl InlineList16 {
+        #[must_use]
         pub fn to_card(&self) -> u64 {
             let mut cards: u64 = 0;
             if self.count > 0 && self.count < 14 {
-                for c in 0..self.count as usize {
-                    let card = self.data[c];
-                    cards |= card_from_byte(card);
+                if let Ok(count) = usize::try_from(self.count) {
+                    for c in 0..count {
+                        let card = self.data[c];
+                        cards |= card_from_byte(card);
+                    }
                 }
             }
-            return cards;
+            cards
         }
     }
 
@@ -246,16 +266,17 @@ pub mod muon {
             };
 
             let num_cards = hand.count_ones();
+
             if num_cards > 6 || num_cards == 4 || hand & 0xFFF != 0 {
                 return Err("Invalid Hand!");
             }
 
-            cards.count = num_cards as i32;
+            cards.count = i32::try_from(num_cards).expect("Shoud fit");
 
             let mut hand = hand;
             let mut p: usize = 0;
             while hand != 0 {
-                let zeros = hand.trailing_zeros() as u64;
+                let zeros = u64::from(hand.trailing_zeros());
 
                 let mask = 1 << zeros;
                 hand ^= mask;
@@ -271,14 +292,14 @@ pub mod muon {
         //     self.into_card().unwrap()
         // }
         pub fn into_card(&self) -> Result<u64, &'static str> {
-            if self.count < 0 || self.count > 8 {
+            let Some(count) = usize::try_from(self.count).ok().and_then(|v| if (0..=8).contains(&v) { Some(v)} else { None }) else {
                 return Err("Count out-of-range!");
-            }
+            };
             let mut cards: u64 = 0;
-            for c in 0..self.count as usize {
+            for c in 0..count {
                 let card = self.data[c];
                 let c = card & 0b1100_1111;
-                if c < 2 || c > 14 {
+                if !(2..=14).contains(&c) {
                     return Err("Card value out-of-range!");
                 }
                 cards |= card_from_byte(card);
@@ -287,23 +308,25 @@ pub mod muon {
         }
     }
 
+    #[must_use]
     pub fn card_from_byte(byte: u8) -> u64 {
-        let card = byte as u64;
+        let card = u64::from(byte);
         let suit = 1 << ((card & 0x30) >> 4);
         let mut rank = card & 0xF;
         if rank == 2 {
-            rank = 15
+            rank = 15;
         }
-        return suit << (rank << 2);
+        suit << (rank << 2)
     }
 
+    #[must_use]
     pub fn cards_to_byte(card: u64) -> u8 {
         let mut rank = big2rules::cards::has_rank_idx(card);
         if rank == big2rules::cards::Rank::TWO {
             rank = 2;
         }
         let suit = (big2rules::cards::card_selected(card) & 0x3) << 4;
-        return (rank | suit) as u8;
+        u8::try_from(rank | suit).expect("Should fit u8!")
     }
 }
 
@@ -315,7 +338,15 @@ pub mod common {
 }
 
 pub mod client {
-    use super::*;
+    use super::{
+        client, common, debug, error, info, io, mem, muon, thread, trace, DetectMessage, Duration,
+        JoinMessage, Message, PlayMessage, Read, Receiver, Sender, StateMessage, TcpStream,
+        ToSocketAddrs, TryFrom, Write,
+    };
+
+    const DM_SIZE: usize = mem::size_of::<client::DetectMessage>();
+    const M_SIZE: usize = mem::size_of::<Message>();
+    const SM_SIZE: usize = mem::size_of::<StateMessage>();
 
     pub struct TcpClient {
         id: Option<thread::JoinHandle<()>>,
@@ -323,7 +354,7 @@ pub mod client {
         tx: Sender<Vec<u8>>,
     }
 
-    fn thread_tcp(mut ts: TcpStream, tx: Sender<Vec<u8>>, rx: Receiver<Vec<u8>>) {
+    fn thread_tcp(mut ts: TcpStream, tx: &Sender<Vec<u8>>, rx: &Receiver<Vec<u8>>) {
         let mut buffer = [0; common::BUFSIZE];
 
         'tcp_loop: loop {
@@ -347,9 +378,9 @@ pub mod client {
 
             if let Err(e) = ret {
                 // if readtimeout then continue.
-                if e.kind() == io::ErrorKind::TimedOut {
-                    ();
-                }
+                // if e.kind() == io::ErrorKind::TimedOut {
+                //     ();
+                // }
                 if e.kind() == io::ErrorKind::WouldBlock {
                     continue;
                 }
@@ -372,13 +403,11 @@ pub mod client {
                 trace!("SM {:?}", &buffer[0..n_bytes]);
             }
 
-            const DM_SIZE: usize = mem::size_of::<client::DetectMessage>();
             while n_bytes >= DM_SIZE {
-                let dm: client::DetectMessage =
-                    bincode::deserialize(&buffer[pos..].to_vec()).unwrap();
+                let dm: client::DetectMessage = bincode::deserialize(&buffer[pos..]).unwrap();
 
                 // Update
-                const SM_SIZE: usize = mem::size_of::<StateMessage>();
+
                 if dm.kind == 5 && dm.size as usize == SM_SIZE {
                     if n_bytes < SM_SIZE {
                         continue 'tcp_loop;
@@ -398,7 +427,7 @@ pub mod client {
                 }
 
                 // HeartbeatMessage
-                const M_SIZE: usize = mem::size_of::<Message>();
+
                 if dm.kind == 6 && dm.size as usize == M_SIZE {
                     info!("TCP: <T>HB");
                     pos += M_SIZE;
@@ -426,12 +455,14 @@ pub mod client {
         debug!("Shutdown tcp thread!");
         drop(tc.tx);
         if let Some(thread) = tc.id.take() {
-            thread.join().unwrap();
+            if let Err(e) = thread.join() {
+                eprintln!("Thread shutdown issue: {e:?}");
+            };
         }
     }
 
     impl TcpClient {
-        pub fn connect(remote_addr: String) -> Result<TcpClient, io::Error> {
+        pub fn connect(remote_addr: &str) -> Result<TcpClient, io::Error> {
             let server_list = remote_addr.to_socket_addrs();
             if let Err(_e) = server_list {
                 return Err(io::Error::new(
@@ -439,14 +470,11 @@ pub mod client {
                     "DNS Name not found!",
                 ));
             }
-            let mut servers = server_list.unwrap();
+            let mut servers = server_list.map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
             loop {
                 let server = servers.next();
-                if server.is_none() {
-                    break;
-                }
-                let l = server.unwrap();
+                let Some(l) = server else { break };
                 info!("Connecting to {:?}", l);
                 let ret = TcpStream::connect_timeout(&l, Duration::from_secs(1));
                 match ret {
@@ -460,7 +488,7 @@ pub mod client {
 
                         let tcp_thread = thread::Builder::new().name("big2_tcp".into());
                         let id = tcp_thread.spawn(move || {
-                            thread_tcp(s, tx, rx1);
+                            thread_tcp(s, &tx, &rx1);
                         })?;
 
                         // if let Err(e) = id {
@@ -469,7 +497,7 @@ pub mod client {
                         // }
 
                         return Ok(TcpClient {
-                            rx: rx,
+                            rx,
                             tx: tx1,
                             id: Some(id),
                         });
@@ -485,7 +513,8 @@ pub mod client {
 
         pub fn action_pass(&mut self) -> Result<usize, io::Error> {
             let sm = Message::new(3);
-            let byte_buf = bincode::serialize(&sm).unwrap();
+            let byte_buf =
+                bincode::serialize(&sm).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             // println!("{:?}", byte_buf);
             let ret = self.tx.send(byte_buf);
             if ret.is_err() {
@@ -496,7 +525,8 @@ pub mod client {
 
         pub fn action_ready(&mut self) -> Result<usize, io::Error> {
             let sm = Message::new(4);
-            let byte_buf = bincode::serialize(&sm).unwrap();
+            let byte_buf =
+                bincode::serialize(&sm).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             let ret = self.tx.send(byte_buf);
             if ret.is_err() {
                 return Err(io::Error::new(io::ErrorKind::BrokenPipe, "Thread died!"));
@@ -507,10 +537,12 @@ pub mod client {
         pub fn action_play(&mut self, cards: u64) -> Result<usize, io::Error> {
             let sm = PlayMessage {
                 kind: 2,
-                size: mem::size_of::<PlayMessage>() as u32,
-                cards: muon::InlineList8::try_from(cards).unwrap(),
+                size: u32::try_from(mem::size_of::<PlayMessage>()).expect("Should fit u32!"),
+                cards: muon::InlineList8::try_from(cards)
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?,
             };
-            let byte_buf = bincode::serialize(&sm).unwrap();
+            let byte_buf =
+                bincode::serialize(&sm).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             // println!("action_play: {:x?}", byte_buf);
             let ret = self.tx.send(byte_buf);
             if ret.is_err() {
@@ -522,14 +554,15 @@ pub mod client {
         pub fn send_join_msg(&mut self, name: &String) -> Result<usize, io::Error> {
             let jm = JoinMessage {
                 kind: 1,
-                size: mem::size_of::<JoinMessage>() as u32,
+                size: u32::try_from(mem::size_of::<JoinMessage>()).expect("Should fit u32!"),
                 magicnumber: common::MAGICNUMBER,
                 version: common::VERSION,
-                name: muon::String16::from_string(&name),
+                name: muon::String16::from_string(name),
             };
 
             // Send Join Message.
-            let jmb = bincode::serialize(&jm).unwrap();
+            let jmb =
+                bincode::serialize(&jm).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             let ret = self.tx.send(jmb);
             if ret.is_err() {
                 return Err(io::Error::new(io::ErrorKind::BrokenPipe, "Thread died!"));
@@ -541,13 +574,11 @@ pub mod client {
             let buffer = self.rx.try_recv();
 
             match buffer {
-                Err(std::sync::mpsc::TryRecvError::Empty) => return Ok(None),
-                Err(e) => {
-                    return Err(io::Error::new(
-                        io::ErrorKind::TimedOut,
-                        format!("check_buffer: Channel Disconnected {:?}", e),
-                    ));
-                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => Ok(None),
+                Err(e) => Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    format!("check_buffer: Channel Disconnected {e:?}"),
+                )),
                 Ok(buffer) => {
                     let bytes = buffer.len();
 
@@ -556,7 +587,8 @@ pub mod client {
                         return Ok(None);
                     }
 
-                    let dm: client::DetectMessage = bincode::deserialize(&buffer).unwrap();
+                    let dm: client::DetectMessage = bincode::deserialize(&buffer)
+                        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
                     if dm.kind == 5 && dm.size as usize == mem::size_of::<StateMessage>() {
                         return Ok(Some(StateMessage::new(Some(&buffer))));
@@ -566,7 +598,7 @@ pub mod client {
                         error!("Unknown packet drop {}", bytes);
                     }
 
-                    return Ok(None);
+                    Ok(None)
                 }
             }
         }
@@ -619,7 +651,7 @@ mod tests {
 
         let mut mycards: u64 = 0;
         for c in 0..sm.your_hand.count as usize {
-            let card = sm.your_hand.data[c] as u64;
+            let card = u64::from(sm.your_hand.data[c]);
             let suit = 1 << ((card & 0x30) >> 4);
             let mut rank = card & 0xF;
             if rank == 2 {
@@ -628,13 +660,13 @@ mod tests {
             mycards |= suit << (rank << 2);
         }
 
-        assert_eq!(mycards, 0x10a4c18c90200000);
+        assert_eq!(mycards, 0x10a4_c18c_9020_0000);
 
         let mut mycards: u64 = 0;
         for c in 0..sm.your_hand.count as usize {
             mycards |= muon::card_from_byte(sm.your_hand.data[c]);
         }
-        assert_eq!(mycards, 0x10a4c18c90200000);
+        assert_eq!(mycards, 0x10a4_c18c_9020_0000);
     }
     #[test]
     fn d_statemessage_respone() {
@@ -798,7 +830,7 @@ mod tests {
         ];
         let mut sm = StateMessage::new(Some(buffer));
 
-        assert_eq!(sm.action_msg(), 0x1111800);
+        assert_eq!(sm.action_msg(), 0x0111_1800);
 
         assert_eq!(sm.current_player().unwrap(), 0);
         assert_eq!(sm.current_player_name().unwrap(), "Tikkie");
@@ -831,7 +863,7 @@ mod tests {
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
         let sm = StateMessage::new(Some(buffer));
-        assert_eq!(sm.action_msg(), 0x1101800);
+        assert_eq!(sm.action_msg(), 0x0110_1800);
     }
 
     #[test]
@@ -856,7 +888,7 @@ mod tests {
         let sm = StateMessage::new(Some(buffer));
         let cards = sm.action.cards.into_card().unwrap();
         let trail = sm.action_msg();
-        assert_eq!(trail, 0x21211032);
+        assert_eq!(trail, 0x2121_1032);
         assert_eq!(trail & 0xFFFF_FFFF_FFFF_F000, cards);
 
         // PLAY:             NG: FULLHOUSE
@@ -879,7 +911,7 @@ mod tests {
         let sm = StateMessage::new(Some(buffer));
         let cards = sm.action.cards.into_card().unwrap();
         let trail = sm.action_msg();
-        assert_eq!(trail, 0x5E0073);
+        assert_eq!(trail, 0x005E_0073);
         assert_eq!(trail & 0xFFFF_FFFF_FFFF_F000, cards);
     }
 
@@ -905,7 +937,7 @@ mod tests {
         let sm = StateMessage::new(Some(buffer));
         let cards = sm.board.into_card().unwrap();
         let trail = sm.action_msg();
-        assert_eq!(trail, 0x2000000000000103);
+        assert_eq!(trail, 0x2000_0000_0000_0103);
         assert_eq!(trail & 0xFFFF_FFFF_FFFF_F000, cards);
     }
 
@@ -963,10 +995,10 @@ mod tests {
 
         const DM_SIZE: usize = mem::size_of::<self::DetectMessage>();
         while n_bytes >= DM_SIZE {
-            println!("Bytes {} Pos {}", n_bytes, pos);
+            println!("Bytes {n_bytes} Pos {pos}");
 
             let dm: self::DetectMessage =
-                bincode::deserialize(&buffer[pos..pos + DM_SIZE].to_vec()).unwrap();
+                bincode::deserialize(&buffer[pos..pos + DM_SIZE]).unwrap();
 
             // Update
             const SM_SIZE: usize = mem::size_of::<StateMessage>();

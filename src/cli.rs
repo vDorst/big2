@@ -2,10 +2,7 @@ pub mod display {
     use crate::{big2rules, network};
     use log::trace;
 
-    use std::{
-        io::stdout,
-        time::Duration,
-    };
+    use std::{io::stdout, time::Duration};
 
     use crossterm::{
         cursor::{MoveTo, RestorePosition, SavePosition},
@@ -15,7 +12,7 @@ pub mod display {
         },
         execute,
         //queue,
-        style::{Stylize, Print, ResetColor},
+        style::{Print, ResetColor, Stylize},
         //QueueableCommand,
         terminal::{
             disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen,
@@ -26,26 +23,26 @@ pub mod display {
 
     #[derive(PartialEq)]
     pub enum UserEvent {
-        NOTHING,
-        PLAY,
-        PASS,
-        READY,
-        QUIT,
-        CLEAR,
-        RESIZE,
-        TOGGLECARD1,
-        TOGGLECARD2,
-        TOGGLECARD3,
-        TOGGLECARD4,
-        TOGGLECARD5,
-        TOGGLECARD6,
-        TOGGLECARD7,
-        TOGGLECARD8,
-        TOGGLECARD9,
-        TOGGLECARD10,
-        TOGGLECARD11,
-        TOGGLECARD12,
-        TOGGLECARD13,
+        Nothing,
+        Play,
+        Pass,
+        Ready,
+        Quit,
+        Clear,
+        Resize,
+        ToggleCard1,
+        ToggleCard2,
+        ToggleCard3,
+        ToggleCard4,
+        ToggleCard5,
+        ToggleCard6,
+        ToggleCard7,
+        ToggleCard8,
+        ToggleCard9,
+        ToggleCard10,
+        ToggleCard11,
+        ToggleCard12,
+        ToggleCard13,
     }
 
     // https://en.wikipedia.org/wiki/ANSI_escape_code
@@ -88,7 +85,7 @@ pub mod display {
 
         enable_raw_mode()?;
 
-        return Ok(srn);
+        Ok(srn)
     }
 
     pub fn close(mut srn: std::io::Stdout) -> Result<()> {
@@ -103,128 +100,126 @@ pub mod display {
         )
     }
 
+    #[must_use]
     pub fn poll_user_events() -> UserEvent {
         // Poll user events
         let polled_event = poll(Duration::from_millis(100));
 
-        if polled_event.is_err() || !polled_event.unwrap() {
-            return UserEvent::NOTHING;
+        let cli_user_event = match polled_event {
+            Err(_) | Ok(false) => return UserEvent::Nothing,
+            // It's guaranteed that read() wont block if `poll` returns `Ok(true)`
+            Ok(true) => read().expect("Read should not"),
         };
 
-        // It's guaranteed that read() wont block if `poll` returns `Ok(true)`
-        let cli_user_event = read().unwrap();
-
         match cli_user_event {
-            Event::Key(key_event) => return handle_key_events(key_event),
-            Event::Mouse(mouse_event) => return handle_mouse_events(mouse_event),
-            Event::Resize(_, _) => return UserEvent::RESIZE,
-            Event::FocusGained => todo!(),
-            Event::FocusLost => todo!(),
-            Event::Paste(_) => todo!(),
+            Event::Key(key_event) => handle_key_events(key_event),
+            Event::Mouse(mouse_event) => handle_mouse_events(mouse_event),
+            Event::Resize(_, _) => UserEvent::Resize,
+            Event::FocusGained |
+            Event::FocusLost |
+            Event::Paste(_) => UserEvent::Nothing
         }
     }
 
     fn handle_mouse_events(event: MouseEvent) -> UserEvent {
         if let MouseEventKind::Down(MouseButton::Right) = event.kind {
-            return UserEvent::CLEAR;
+            return UserEvent::Clear;
         }
         if let MouseEventKind::Down(MouseButton::Left) = event.kind {
             let x = event.column;
             let y = event.row;
             if y == 3 || y == 2 {
                 if x == 24 || x == 25 {
-                    return UserEvent::TOGGLECARD1;
+                    return UserEvent::ToggleCard1;
                 }
                 if x == 27 || x == 28 {
-                    return UserEvent::TOGGLECARD2;
+                    return UserEvent::ToggleCard2;
                 }
                 if x == 30 || x == 31 {
-                    return UserEvent::TOGGLECARD3;
+                    return UserEvent::ToggleCard3;
                 }
                 if x == 33 || x == 34 {
-                    return UserEvent::TOGGLECARD4;
+                    return UserEvent::ToggleCard4;
                 }
                 if x == 36 || x == 37 {
-                    return UserEvent::TOGGLECARD5;
+                    return UserEvent::ToggleCard5;
                 }
                 if x == 39 || x == 40 {
-                    return UserEvent::TOGGLECARD6;
+                    return UserEvent::ToggleCard6;
                 }
                 if x == 42 || x == 43 {
-                    return UserEvent::TOGGLECARD7;
+                    return UserEvent::ToggleCard7;
                 }
                 if x == 45 || x == 46 {
-                    return UserEvent::TOGGLECARD8;
+                    return UserEvent::ToggleCard8;
                 }
                 if x == 48 || x == 49 {
-                    return UserEvent::TOGGLECARD9;
+                    return UserEvent::ToggleCard9;
                 }
                 if x == 51 || x == 52 {
-                    return UserEvent::TOGGLECARD10;
+                    return UserEvent::ToggleCard10;
                 }
                 if x == 54 || x == 55 {
-                    return UserEvent::TOGGLECARD11;
+                    return UserEvent::ToggleCard11;
                 }
                 if x == 57 || x == 58 {
-                    return UserEvent::TOGGLECARD12;
+                    return UserEvent::ToggleCard12;
                 }
                 if x == 60 || x == 61 {
-                    return UserEvent::TOGGLECARD13;
+                    return UserEvent::ToggleCard13;
                 }
             }
             if y == 1 {
-                if x >= 43 && x <= 49 {
-                    return UserEvent::PLAY;
+                if (43..=49).contains(&x) {
+                    return UserEvent::Play;
                 }
-                if x >= 55 && x <= 62 {
-                    return UserEvent::PASS;
+                if (55..=62).contains(&x) {
+                    return UserEvent::Pass;
                 }
-                if x >= 66 && x <= 74 {
-                    return UserEvent::READY;
+                if (66..=74).contains(&x) {
+                    return UserEvent::Ready;
                 }
             }
             trace!("{:?}", event);
         }
-        return UserEvent::NOTHING;
+        UserEvent::Nothing
     }
 
     fn handle_key_events(event: crossterm::event::KeyEvent) -> UserEvent {
         if event.modifiers != KeyModifiers::NONE {
-            return UserEvent::NOTHING;
+            return UserEvent::Nothing;
         }
 
         match event.code {
-            KeyCode::Char('r') => return UserEvent::READY,
-            KeyCode::Char('`') => return UserEvent::CLEAR,
-            KeyCode::Esc => return UserEvent::QUIT,
-            KeyCode::Enter => return UserEvent::PLAY,
-            KeyCode::Char('/') => return UserEvent::PASS,
-            KeyCode::Char('1') => return UserEvent::TOGGLECARD1,
-            KeyCode::Char('2') => return UserEvent::TOGGLECARD2,
-            KeyCode::Char('3') => return UserEvent::TOGGLECARD3,
-            KeyCode::Char('4') => return UserEvent::TOGGLECARD4,
-            KeyCode::Char('5') => return UserEvent::TOGGLECARD5,
-            KeyCode::Char('6') => return UserEvent::TOGGLECARD6,
-            KeyCode::Char('7') => return UserEvent::TOGGLECARD7,
-            KeyCode::Char('8') => return UserEvent::TOGGLECARD8,
-            KeyCode::Char('9') => return UserEvent::TOGGLECARD9,
-            KeyCode::Char('0') => return UserEvent::TOGGLECARD10,
-            KeyCode::Char('-') => return UserEvent::TOGGLECARD11,
-            KeyCode::Char('=') => return UserEvent::TOGGLECARD12,
-            KeyCode::Backspace => return UserEvent::TOGGLECARD13,
-            KeyCode::Char('d') => return UserEvent::RESIZE,
-            _ => return UserEvent::NOTHING,
+            KeyCode::Char('r') => UserEvent::Ready,
+            KeyCode::Char('`') => UserEvent::Clear,
+            KeyCode::Esc => UserEvent::Quit,
+            KeyCode::Enter => UserEvent::Play,
+            KeyCode::Char('/') => UserEvent::Pass,
+            KeyCode::Char('1') => UserEvent::ToggleCard1,
+            KeyCode::Char('2') => UserEvent::ToggleCard2,
+            KeyCode::Char('3') => UserEvent::ToggleCard3,
+            KeyCode::Char('4') => UserEvent::ToggleCard4,
+            KeyCode::Char('5') => UserEvent::ToggleCard5,
+            KeyCode::Char('6') => UserEvent::ToggleCard6,
+            KeyCode::Char('7') => UserEvent::ToggleCard7,
+            KeyCode::Char('8') => UserEvent::ToggleCard8,
+            KeyCode::Char('9') => UserEvent::ToggleCard9,
+            KeyCode::Char('0') => UserEvent::ToggleCard10,
+            KeyCode::Char('-') => UserEvent::ToggleCard11,
+            KeyCode::Char('=') => UserEvent::ToggleCard12,
+            KeyCode::Backspace => UserEvent::ToggleCard13,
+            KeyCode::Char('d') => UserEvent::Resize,
+            _ => UserEvent::Nothing,
         }
     }
 
     fn cards_to_utf8(card: u64, card_str: &mut String) {
         //             0123456789ABCDEF
         let rank_str: Vec<u8> = ".+-3456789TJQKA2".into();
-        let rank: usize;
-        let suit: u64;
 
-        rank = big2rules::cards::has_rank_idx(card) as usize;
-        suit = big2rules::cards::has_suit(card);
+        let rank: usize = big2rules::cards::has_rank_idx(card) as usize;
+        let suit: u64 = big2rules::cards::has_suit(card);
 
         card_str.push_str(COL_CARD_BACK);
 
@@ -244,16 +239,16 @@ pub mod display {
         }
 
         if suit == big2rules::cards::Kind::DIAMONDS {
-            card_str.push_str("\u{2666}");
+            card_str.push('\u{2666}');
         }
         if suit == big2rules::cards::Kind::CLUBS {
-            card_str.push_str("\u{2663}");
+            card_str.push('\u{2663}');
         }
         if suit == big2rules::cards::Kind::HEARTS {
-            card_str.push_str("\u{2665}");
+            card_str.push('\u{2665}');
         }
         if suit == big2rules::cards::Kind::SPADES {
-            card_str.push_str("\u{2660}");
+            card_str.push('\u{2660}');
         }
 
         card_str.push_str(COL_NORMAL);
@@ -262,36 +257,36 @@ pub mod display {
     #[allow(dead_code)]
     pub fn cards(cards: [u64; 4], way: usize) {
         for (p, card) in cards.iter().enumerate() {
-            let mut out_str = String::from("");
+            let mut out_str = String::new();
             for c in 0..big2rules::deck::NUMBER_OF_CARDS {
-                let bit: u64 = (big2rules::deck::START_BIT + c) as u64;
+                let bit: u64 = u64::from(big2rules::deck::START_BIT + c);
                 let dsp_card = card & (1 << bit);
                 if dsp_card == 0 {
                     continue;
                 }
                 if way == 2 {
-                    cards_to_utf8(dsp_card as u64, &mut out_str)
+                    cards_to_utf8(dsp_card, &mut out_str);
                 };
 
                 out_str.push(' ');
             }
-            println!("p{:x}: {}", p, out_str);
+            println!("p{p:x}: {out_str}");
         }
     }
 
     #[allow(dead_code)]
     pub fn my_cards(cards: u64) {
-        let mut out_str = String::from("");
+        let mut out_str = String::new();
         for c in 0..big2rules::deck::NUMBER_OF_CARDS {
-            let bit: u64 = (big2rules::deck::START_BIT + c) as u64;
+            let bit: u64 = u64::from(big2rules::deck::START_BIT + c);
             let dsp_card = cards & (1 << bit);
             if dsp_card == 0 {
                 continue;
             }
-            cards_to_utf8(dsp_card as u64, &mut out_str);
+            cards_to_utf8(dsp_card, &mut out_str);
             out_str.push(' ');
         }
-        println!("mycards: {}", out_str);
+        println!("mycards: {out_str}");
     }
 
     fn score_str(score: i32) -> String {
@@ -305,9 +300,9 @@ pub mod display {
         if score > 0 {
             buf.push_str(COL_SCORE_POS);
         }
-        buf.push_str(&format!("€{:4}", score));
+        buf.push_str(&format!("€{score:4}"));
         buf.push_str(COL_NORMAL);
-        return buf;
+        buf
     }
 
     // 0         1         2         3         4         5         6         7
@@ -358,17 +353,16 @@ pub mod display {
 
         if has_passed_this_cycle {
             execute!(gs.srn, Print("[X] PASS".white().on_dark_grey()))?;
+        } else if gs.auto_pass {
+            execute!(gs.srn, Print("[v] PASS".white().on_blue()))?;
         } else {
-            if gs.auto_pass {
-                execute!(gs.srn, Print("[v] PASS".white().on_blue()))?;
-            } else {
-                execute!(gs.srn, Print("[ ] PASS".white().on_red()))?;
-            }
+            execute!(gs.srn, Print("[ ] PASS".white().on_red()))?;
         }
         execute!(gs.srn, RestorePosition)?;
         Ok(())
     }
 
+    #[must_use]
     pub fn cards_str(cards: u64) -> String {
         let mut bit: u64 = 1 << 11;
         let score = big2rules::rules::score_hand(cards);
@@ -392,21 +386,21 @@ pub mod display {
             cards_to_utf8(card, &mut card_str);
             card_str.push(' ');
         }
-        return card_str;
+        card_str
     }
 
     pub fn board(gs: &mut big2rules::GameState) -> Result<()> {
-        let name = gs.sm.players[gs.sm.action.player as usize].name.to_string();
-        let s = format!("{:>16}: ", name);
-        if gs.sm.action.action_type == network::StateMessageActionType::PASS {
+        let name = gs.sm.players[gs.sm.action.player as usize].name.as_string();
+        let s = format!("{name:>16}: ");
+        if gs.sm.action.action_type == network::StateMessageActionType::Pass {
             execute!(
                 gs.srn,
                 MoveTo(9, 0),
                 Print(&s),
                 Print("PASSED".white().on_dark_grey())
             )?;
-        } else if gs.sm.action.action_type == network::StateMessageActionType::PLAY {
-            let cards = gs.sm.action.cards.into_card().unwrap();
+        } else if gs.sm.action.action_type == network::StateMessageActionType::Play {
+            let cards = gs.sm.action.cards.into_card().expect("Should not crash!");
             let card_str = cards_str(cards);
             execute!(gs.srn, MoveTo(9, 0), Print(&s), Print(card_str))?;
         } else {
@@ -416,12 +410,12 @@ pub mod display {
         let s = format!("Rounds: {}/{}", gs.sm.round, gs.sm.num_rounds);
         execute!(gs.srn, MoveTo(0, 1), Print(s))?;
 
-        let cards = gs.sm.board.into_card().unwrap();
+        let cards = gs.sm.board.into_card().expect("Should not crash!");
         let out_str = cards_str(cards);
         execute!(gs.srn, MoveTo(20, 1), Print("Board: "), Print(out_str))?;
 
         let mut p = gs.sm.your_index;
-        if p < 0 || p > 3 {
+        if !(0..=3).contains(&p) {
             p = 0;
         }
 
@@ -429,15 +423,15 @@ pub mod display {
             execute!(gs.srn, MoveTo(0, 3))?;
             for _ in 0..4 {
                 let player = &gs.sm.players[p as usize];
-                let name = player.name.to_string();
-                let name = if name == "" {
+                let name = player.name.as_string();
+                let name = if name.is_empty() {
                     String::from("-- Empty Seat --")
                 } else {
                     name
                 };
                 let n_cards: usize = player.num_cards as usize;
                 print!("\r{}.{:>16}{}:", p + 1, name, COL_NORMAL);
-                print!(" #{:2}", n_cards);
+                print!(" #{n_cards:2}");
                 print!("{:>34}: ", "Delta Score");
                 print!(
                     " {}  {}",
@@ -445,7 +439,7 @@ pub mod display {
                     score_str(player.score)
                 );
                 if player.is_ready {
-                    print!(" {}READY{}", COL_BTN_PASS_AUTO, COL_NORMAL);
+                    print!(" {COL_BTN_PASS_AUTO}READY{COL_NORMAL}");
                 }
                 print!("\r\n");
                 p += 1;
@@ -465,17 +459,17 @@ pub mod display {
 
         for row in 0..4 {
             let player = &gs.sm.players[p as usize];
-            let name = player.name.to_string();
-            let name: String = if name != "" {
-                name
+            let name = player.name.as_string();
+            let name = if name.is_empty() {
+                String::from("-- Empty Seat --")                
             } else {
-                String::from("-- Empty Seat --")
+                name
             };
-            let s = format!("{:>16}: ", name);
+            let s = format!("{name:>16}: ");
 
-            let mut out_str = String::from("");
-            let mut out_sel_str = String::from("");
-            let n_cards: usize = player.num_cards as usize;
+            let mut out_str = String::new();
+            let mut out_sel_str = String::new();
+            let n_cards = player.num_cards as usize;
 
             let has_passed = player.has_passed_this_cycle;
             let player_score = player.score;
@@ -487,12 +481,12 @@ pub mod display {
                     if card == 0 {
                         continue;
                     }
-                    if gs.cards_selected & card != 0 {
-                        cards_to_utf8(card, &mut out_sel_str);
-                        out_str.push_str("^^");
-                    } else {
+                    if gs.cards_selected & card == 0 {
                         out_sel_str.push_str("  ");
                         cards_to_utf8(card, &mut out_str);
+                    } else {
+                        cards_to_utf8(card, &mut out_sel_str);
+                        out_str.push_str("^^");
                     }
                     out_str.push(' ');
                     out_sel_str.push(' ');
@@ -504,9 +498,9 @@ pub mod display {
                     Print(out_sel_str),
                 )?;
             } else {
-                out_str = format!("{}##{} ", COL_CARD_BACK, COL_NORMAL).repeat(n_cards);
+                out_str = format!("{COL_CARD_BACK}##{COL_NORMAL} ").repeat(n_cards);
             }
-            let no_cards = ".. ".to_string().repeat(13 - n_cards);
+            let number_of_cards = ".. ".to_string().repeat(13 - n_cards);
 
             // Number and Names.
             execute!(gs.srn, MoveTo(0, 3 + row), Print(format!("{}.", p + 1)),)?;
@@ -521,9 +515,9 @@ pub mod display {
             // Cards
             execute!(
                 gs.srn,
-                Print(format!("#{:2}", n_cards)),
-                Print(format!(" {}{}", out_str, no_cards)),
-                Print(format!("{}", score_str(player_score))),
+                Print(format!("#{n_cards:2}")),
+                Print(format!(" {out_str}{number_of_cards}")),
+                Print(score_str(player_score)),
             )?;
 
             // Passed Text
