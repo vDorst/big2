@@ -29,7 +29,7 @@ mod tests_big2rules {
 
             match action {
                 0x800 => {
-                    println!("UPDATE {:16x}", play);
+                    println!("UPDATE {play:16x}");
                     if *play == 0x111_1800 {
                         cp += 4;
                         gs.deal(Some(&big2rules_srv_test_vectors::gameserver_vectors::TEST_VECTOR_CARDS_GAME1[cp..cp + 4]));
@@ -52,17 +52,17 @@ mod tests_big2rules {
                     }
                 }
                 0x100 => {
-                    println!("++ PASS: player {}", player);
+                    println!("++ PASS: player {player}");
                     error = gs.pass(player);
                 }
                 0x400 => {
-                    println!("++ DEAL: {:16x}", play);
+                    println!("++ DEAL: {play:16x}");
                     // Match hand
                     assert_eq!(hand, gs.cards[player as usize]);
                     // turn and next user have to match
                     assert_eq!(toact, gs.turn);
                 }
-                _ => println!("Unknown action {}", action),
+                _ => println!("Unknown action {action}"),
             }
 
             println!(
@@ -71,7 +71,7 @@ mod tests_big2rules {
             );
 
             if let Err(e) = error {
-                println!("Error with hand {:?}", e);
+                println!("Error with hand {e:?}");
                 match e {
                     big2rules::SrvGameError::PlayerPlayedIllegalCard(hand) => println!(
                         "PLAY: hand {:16x} card {:16x}",

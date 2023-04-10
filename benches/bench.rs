@@ -12,7 +12,7 @@ use std::convert::TryFrom;
 #[bench]
 fn bench_inlinelist8_convert(b: &mut Bencher) {
     b.iter(|| {
-        for hands in [0u64, 0x1000, 0xF100_0000_0000_0000].iter() {
+        for hands in &[0u64, 0x1000, 0xF100_0000_0000_0000] {
             let il8 = network::muon::InlineList8::try_from(*hands).unwrap();
             let cards = il8.into_card().unwrap();
             assert_eq!(*hands, cards);
@@ -33,10 +33,10 @@ fn bench_game_srv_obj_deal_fix_cards(b: &mut Bencher) {
     let mut gs = big2rules::SrvGameState::new(8);
     b.iter(|| {
         gs.deal(Some(&[
-            0x0d00854004174000,
-            0x2200000008000 | 0x201_0ab6_0100_0000,
-            0xf05c10012a000000,
-            0xa0400800001000 | 0x000_0000_d0e8_2000,
+            0x0d00_8540_0417_4000,
+            0x0002_2000_0000_8000 | 0x201_0ab6_0100_0000,
+            0xf05c_1001_2a00_0000,
+            0x00a0_4008_0000_1000 | 0x000_0000_d0e8_2000,
         ]))
     });
 }
