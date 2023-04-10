@@ -115,9 +115,7 @@ pub mod display {
             Event::Key(key_event) => handle_key_events(key_event),
             Event::Mouse(mouse_event) => handle_mouse_events(mouse_event),
             Event::Resize(_, _) => UserEvent::Resize,
-            Event::FocusGained |
-            Event::FocusLost |
-            Event::Paste(_) => UserEvent::Nothing
+            Event::FocusGained | Event::FocusLost | Event::Paste(_) => UserEvent::Nothing,
         }
     }
 
@@ -400,7 +398,7 @@ pub mod display {
                 Print("PASSED".white().on_dark_grey())
             )?;
         } else if gs.sm.action.action_type == network::StateMessageActionType::Play {
-            let cards = gs.sm.action.cards.into_card().expect("Should not crash!");
+            let cards = gs.sm.action.cards.as_card().expect("Should not crash!");
             let card_str = cards_str(cards);
             execute!(gs.srn, MoveTo(9, 0), Print(&s), Print(card_str))?;
         } else {
@@ -410,7 +408,7 @@ pub mod display {
         let s = format!("Rounds: {}/{}", gs.sm.round, gs.sm.num_rounds);
         execute!(gs.srn, MoveTo(0, 1), Print(s))?;
 
-        let cards = gs.sm.board.into_card().expect("Should not crash!");
+        let cards = gs.sm.board.as_card().expect("Should not crash!");
         let out_str = cards_str(cards);
         execute!(gs.srn, MoveTo(20, 1), Print("Board: "), Print(out_str))?;
 
@@ -461,7 +459,7 @@ pub mod display {
             let player = &gs.sm.players[p as usize];
             let name = player.name.as_string();
             let name = if name.is_empty() {
-                String::from("-- Empty Seat --")                
+                String::from("-- Empty Seat --")
             } else {
                 name
             };

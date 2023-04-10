@@ -202,10 +202,7 @@ pub mod rules {
 
         // Board and hand count must match.
         // Board count 0 means new turn.
-        if card_cnt_board != 0 && card_cnt_board != card_cnt_hand {
-            return false;
-        }
-        true
+        !(card_cnt_board != 0 && card_cnt_board != card_cnt_hand)
     }
 
     #[must_use]
@@ -436,7 +433,11 @@ impl SrvGameState {
 
         // Which player to start
         if self.round == 1 {
-            self.turn = self.cards.iter().position(|&x| x & 0x1000 != 0).expect("Weard a use should start with 0x1000 card!") as i32;
+            self.turn =
+                self.cards
+                    .iter()
+                    .position(|&x| x & 0x1000 != 0)
+                    .expect("Weard a use should start with 0x1000 card!") as i32;
         } else {
             let p = (self.last_action & 0x3) as i32;
             println!("Last action {:16x} P{}", self.last_action, p);

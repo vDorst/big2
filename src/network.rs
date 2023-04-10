@@ -161,12 +161,12 @@ impl StateMessage {
 
         match self.action.action_type {
             StateMessageActionType::Play => {
-                let mut cards = self.action.cards.into_card().expect("invalid cards");
+                let mut cards = self.action.cards.as_card().expect("invalid cards");
                 cards |= p;
                 cards
             }
             StateMessageActionType::Pass => {
-                let mut cards = self.board.into_card().expect("invalid cards");
+                let mut cards = self.board.as_card().expect("invalid cards");
                 cards |= 0x100;
                 cards |= p;
                 cards
@@ -184,7 +184,10 @@ impl StateMessage {
             StateMessageActionType::Deal => {
                 let mut cards = self.your_hand.to_card();
                 cards |= 0x400;
-                cards |= PlayerID::try_from(self.your_index).expect("Shoud fit").in_to::<u64>() & 0x7;
+                cards |= PlayerID::try_from(self.your_index)
+                    .expect("Shoud fit")
+                    .in_to::<u64>()
+                    & 0x7;
                 cards |= ((self.turn as u64) & 0x7) << 4;
                 cards
             }
@@ -198,7 +201,7 @@ pub mod muon {
     #[derive(Serialize, Deserialize, Debug)]
     pub struct String16 {
         pub data: [u8; 16],
-        pub count: i32,
+        pub count: u32,
     }
 
     impl String16 {
@@ -208,21 +211,20 @@ pub mod muon {
                 return "Invalid string".to_string();
             };
 
-            let s_ret = String::from_utf8(self.data[..cnt].to_vec());
-            match s_ret {
+            match String::from_utf8(self.data[..cnt].to_vec()) {
                 Err(_) => "Can't convert".to_string(),
                 Ok(st) => st,
             }
         }
 
         #[must_use]
-        pub fn from_string(name: &String) -> Self {
+        pub fn from_string(name: &str) -> Self {
             let str_size = std::cmp::min(name.len(), 16);
             let mut name_bytes: [u8; 16] = [0; 16];
             let nb = &name.as_bytes()[..str_size];
             name_bytes[..str_size].clone_from_slice(nb);
             String16 {
-                count: i32::try_from(str_size).expect("str_size should fit i32"),
+                count: u32::try_from(str_size).expect("str_size should fit i32"),
                 data: name_bytes,
             }
         }
@@ -291,13 +293,12 @@ pub mod muon {
         // pub fn to_card(&self) -> u64 {
         //     self.into_card().unwrap()
         // }
-        pub fn into_card(&self) -> Result<u64, &'static str> {
-            let Some(count) = usize::try_from(self.count).ok().and_then(|v| if (0..=8).contains(&v) { Some(v)} else { None }) else {
+        pub fn as_card(&self) -> Result<u64, &'static str> {
+            let Some(count) = usize::try_from(self.count).ok().and_then(|v| if (0..=self.data.len()).contains(&v) { Some(v)} else { None }) else {
                 return Err("Count out-of-range!");
             };
             let mut cards: u64 = 0;
-            for c in 0..count {
-                let card = self.data[c];
+            for &card in &self.data[0..count] {
                 let c = card & 0b1100_1111;
                 if !(2..=14).contains(&c) {
                     return Err("Card value out-of-range!");
@@ -374,28 +375,26 @@ pub mod client {
                 }
             }
 
-            let ret = ts.read(&mut buffer);
-
-            if let Err(e) = ret {
-                // if readtimeout then continue.
-                // if e.kind() == io::ErrorKind::TimedOut {
-                //     ();
-                // }
-                if e.kind() == io::ErrorKind::WouldBlock {
-                    continue;
+            let mut n_bytes = match ts.read(&mut buffer) {
+                Ok(0) => {
+                    info!("Connection Closed!");
+                    break;
                 }
-                error!("TCP: RX error {:?}", e);
-                break;
-            }
-
-            let mut n_bytes = ret.unwrap();
+                Ok(n) => n,
+                Err(e) => {
+                    // if readtimeout then continue.
+                    // if e.kind() == io::ErrorKind::TimedOut {
+                    //     ();
+                    // }
+                    if e.kind() == io::ErrorKind::WouldBlock {
+                        continue;
+                    }
+                    error!("TCP: RX error {:?}", e);
+                    break;
+                }
+            };
 
             info!("TCP: Got Bytes {}", n_bytes);
-
-            if n_bytes == 0 {
-                info!("Connection Closed!");
-                break;
-            }
 
             let mut pos: usize = 0;
 
@@ -408,7 +407,9 @@ pub mod client {
 
                 // Update
 
-                if dm.kind == 5 && dm.size as usize == SM_SIZE {
+                let msg_size = usize::try_from(dm.size).unwrap();
+
+                if dm.kind == 5 && msg_size == SM_SIZE {
                     if n_bytes < SM_SIZE {
                         continue 'tcp_loop;
                     }
@@ -428,15 +429,15 @@ pub mod client {
 
                 // HeartbeatMessage
 
-                if dm.kind == 6 && dm.size as usize == M_SIZE {
+                if dm.kind == 6 && msg_size == M_SIZE {
                     info!("TCP: <T>HB");
                     pos += M_SIZE;
                     n_bytes -= M_SIZE;
                     continue;
                 }
 
-                if (dm.size as usize) == buffer.len() {
-                    error!("TCP: GET: {:x?}", &buffer[0..dm.size as usize]);
+                if msg_size == buffer.len() {
+                    error!("TCP: GET: {:x?}", &buffer[0..msg_size]);
                 } else {
                     error!(
                         "TCP: Invalid packet! - Bytes {} Kind {} Size {} - {:?} -",
@@ -551,7 +552,7 @@ pub mod client {
             Ok(0)
         }
 
-        pub fn send_join_msg(&mut self, name: &String) -> Result<usize, io::Error> {
+        pub fn send_join_msg(&mut self, name: &str) -> Result<usize, io::Error> {
             let jm = JoinMessage {
                 kind: 1,
                 size: u32::try_from(mem::size_of::<JoinMessage>()).expect("Should fit u32!"),
@@ -590,11 +591,13 @@ pub mod client {
                     let dm: client::DetectMessage = bincode::deserialize(&buffer)
                         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
-                    if dm.kind == 5 && dm.size as usize == mem::size_of::<StateMessage>() {
+                    let msg_size = usize::try_from(dm.size).unwrap();
+
+                    if dm.kind == 5 && msg_size == mem::size_of::<StateMessage>() {
                         return Ok(Some(StateMessage::new(Some(&buffer))));
                     }
 
-                    if dm.kind > 6 || dm.size as usize > bytes {
+                    if dm.kind > 6 || msg_size > bytes {
                         error!("Unknown packet drop {}", bytes);
                     }
 
@@ -695,7 +698,7 @@ mod tests {
         };
         let muon_hand = muon_hand.unwrap();
         assert_eq!(muon_hand, il8);
-        let cards = il8.into_card();
+        let cards = il8.as_card();
         assert!(cards.is_ok());
         assert_eq!(hand, cards.unwrap());
 
@@ -709,7 +712,7 @@ mod tests {
         };
         let muon_hand = muon_hand.unwrap();
         assert_eq!(muon_hand, il8);
-        let cards = il8.into_card();
+        let cards = il8.as_card();
         assert!(cards.is_ok());
         assert_eq!(hand, cards.unwrap());
 
@@ -723,7 +726,7 @@ mod tests {
         };
         let muon_hand = muon_hand.unwrap();
         assert_eq!(muon_hand, il8);
-        let cards = il8.into_card();
+        let cards = il8.as_card();
         assert!(cards.is_ok());
         assert_eq!(hand, cards.unwrap());
 
@@ -734,7 +737,7 @@ mod tests {
         };
         let muon_hand = muon::InlineList8::try_from(hand).unwrap();
         assert_eq!(muon_hand, il8);
-        assert_eq!(hand, muon_hand.into_card().unwrap());
+        assert_eq!(hand, muon_hand.as_card().unwrap());
 
         let hand: u64 = 0x1F000;
         let il8 = muon::InlineList8 {
@@ -743,13 +746,13 @@ mod tests {
         };
         let muon_hand = muon::InlineList8::try_from(hand).unwrap();
         assert_eq!(muon_hand, il8);
-        assert_eq!(hand, muon_hand.into_card().unwrap());
+        assert_eq!(hand, muon_hand.as_card().unwrap());
 
         let il8 = muon::InlineList8 {
             data: [0; 8],
             count: 0,
         };
-        assert!(il8.into_card().unwrap() == 0);
+        assert!(il8.as_card().unwrap() == 0);
     }
 
     #[test]
@@ -776,43 +779,43 @@ mod tests {
             data: [0xFF; 8],
             count: 1,
         };
-        assert!(il8.into_card().is_err());
+        assert!(il8.as_card().is_err());
 
         let il8 = muon::InlineList8 {
             data: [0; 8],
             count: 9,
         };
-        assert!(il8.into_card().is_err());
+        assert!(il8.as_card().is_err());
 
         let il8 = muon::InlineList8 {
             data: [0; 8],
             count: -1,
         };
-        assert!(il8.into_card().is_err());
+        assert!(il8.as_card().is_err());
 
         let il8 = muon::InlineList8 {
             data: [0xFF, 0, 0, 0, 0, 0, 0, 0],
             count: 1,
         };
-        assert!(il8.into_card().is_err());
+        assert!(il8.as_card().is_err());
 
         let il8 = muon::InlineList8 {
             data: [0x4d, 0, 0, 0, 0, 0, 0, 0],
             count: 1,
         };
-        assert!(il8.into_card().is_err());
+        assert!(il8.as_card().is_err());
 
         let il8 = muon::InlineList8 {
             data: [0x3f, 0, 0, 0, 0, 0, 0, 0],
             count: 1,
         };
-        assert!(il8.into_card().is_err());
+        assert!(il8.as_card().is_err());
 
         let il8 = muon::InlineList8 {
             data: [0x3d, 0, 0, 0, 0, 0, 0, 0],
             count: 2,
         };
-        assert!(il8.into_card().is_err());
+        assert!(il8.as_card().is_err());
     }
     #[test]
     fn statemessage_current_players_names() {
@@ -886,7 +889,7 @@ mod tests {
             0x0, 0x5, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
         ];
         let sm = StateMessage::new(Some(buffer));
-        let cards = sm.action.cards.into_card().unwrap();
+        let cards = sm.action.cards.as_card().unwrap();
         let trail = sm.action_msg();
         assert_eq!(trail, 0x2121_1032);
         assert_eq!(trail & 0xFFFF_FFFF_FFFF_F000, cards);
@@ -909,7 +912,7 @@ mod tests {
             0x0, 0x0, 0x0, 0x5, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
         ];
         let sm = StateMessage::new(Some(buffer));
-        let cards = sm.action.cards.into_card().unwrap();
+        let cards = sm.action.cards.as_card().unwrap();
         let trail = sm.action_msg();
         assert_eq!(trail, 0x005E_0073);
         assert_eq!(trail & 0xFFFF_FFFF_FFFF_F000, cards);
@@ -935,7 +938,7 @@ mod tests {
             0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
         ];
         let sm = StateMessage::new(Some(buffer));
-        let cards = sm.board.into_card().unwrap();
+        let cards = sm.board.as_card().unwrap();
         let trail = sm.action_msg();
         assert_eq!(trail, 0x2000_0000_0000_0103);
         assert_eq!(trail & 0xFFFF_FFFF_FFFF_F000, cards);
@@ -1000,9 +1003,11 @@ mod tests {
             let dm: self::DetectMessage =
                 bincode::deserialize(&buffer[pos..pos + DM_SIZE]).unwrap();
 
+            let msg_size = usize::try_from(dm.size).unwrap();
+
             // Update
             const SM_SIZE: usize = mem::size_of::<StateMessage>();
-            if dm.kind == 5 && dm.size as usize == SM_SIZE {
+            if dm.kind == 5 && msg_size == SM_SIZE {
                 if n_bytes < SM_SIZE {
                     break;
                 }
@@ -1017,15 +1022,15 @@ mod tests {
 
             // HeartbeatMessage
             const M_SIZE: usize = mem::size_of::<Message>();
-            if dm.kind == 6 && dm.size as usize == M_SIZE {
+            if dm.kind == 6 && msg_size == M_SIZE {
                 info!("TCP: <T>HB");
                 pos += M_SIZE;
                 n_bytes -= M_SIZE;
                 continue;
             }
 
-            if (dm.size as usize) == buffer.len() {
-                error!("TCP: GET: {:x?}", &buffer[0..dm.size as usize]);
+            if (msg_size) == buffer.len() {
+                error!("TCP: GET: {:x?}", &buffer[0..msg_size]);
             } else {
                 error!(
                     "TCP: Invalid packet! - Bytes {} Kind {} Size {} - {:?} -",

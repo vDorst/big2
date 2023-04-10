@@ -5,3 +5,4 @@ Cargo.lock
 *.txt
 *.log
 big2
+bigserver/target/
