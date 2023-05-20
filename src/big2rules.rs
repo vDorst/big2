@@ -1,4 +1,4 @@
-use crate::network;
+use crate::network::legacy as network;
 
 pub const RANKS: [u8; 13] = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
@@ -32,7 +32,7 @@ pub mod deck {
         let players_hand: [Cards; 4] = cards
             .chunks_exact(13)
             .map(|v| {
-                let mut card: Cards = 0;
+                let mut card = 0;
                 for &d in v {
                     card |= 1 << Cards::from(d);
                 }
@@ -371,8 +371,8 @@ pub struct SrvGameState {
     pub turn: i32,
     pub round: u8,
     pub rounds: u8,
-    pub cards: [u64; 4],
-    pub played_cards: u64,
+    pub cards: [Cards; 4],
+    pub played_cards: Cards,
     pub score: [i16; 4],
     pub card_cnt: [u8; 4],
 }
@@ -428,17 +428,16 @@ impl SrvGameState {
         // assert!(m == 0xFFFF_FFFF_FFFF_F000);
 
         // Which player to start
-        if self.round == 1 {
-            self.turn =
-                self.cards
-                    .iter()
-                    .position(|&x| x & 0x1000 != 0)
-                    .expect("Weard a use should start with 0x1000 card!") as i32;
+        self.turn = if self.round == 1 {
+            self.cards
+                .iter()
+                .position(|&x| x & 0x1000 != 0)
+                .expect("Weard a use should start with 0x1000 card!") as i32
         } else {
-            let p = (self.last_action & 0x3) as i32;
+            let p = self.last_action & 0x3;
             println!("Last action {:16x} P{}", self.last_action, p);
-            self.turn = p;
-        }
+            p as i32
+        };
     }
     pub fn play(&mut self, player: i32, hand: u64) -> Result<(), SrvGameError> {
         if player != self.turn {
@@ -544,6 +543,7 @@ impl SrvGameState {
 
         self.turn = next;
     }
+
     fn calc_score(&mut self) {
         let prev_player = self.prev_action as usize & 0x3;
         let curr_player = self.last_action as usize & 0x3;
@@ -579,6 +579,7 @@ impl SrvGameState {
             .collect::<Vec<i16>>()
             .try_into()
             .expect("Should fit");
+
         if assisted {
             self.score[prev_player] -= total_score;
         } else {

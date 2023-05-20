@@ -1,10 +1,12 @@
 [package]
 name = "big2"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["René van Dorst"]
 edition = "2021"
 exclude = ["target", "Cargo.lock"]
 license = "MIT"
+rust-version = "1.69"
+description = "Chinees poker game Big2"
 
 [dependencies]
 rand = "0.8"
@@ -16,3 +18,6 @@ log = "0.4"
 simplelog = "0.12"
 smol_str = "0.2.0"
 
+[[bin]]
+name = "big2-cli"
+test = true
