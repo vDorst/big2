@@ -2,8 +2,10 @@ use crate::network;
 
 pub const RANKS: [u8; 13] = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
+type Cards = u64;
+
 pub mod deck {
-    use super::deck;
+    use super::{deck, Cards};
     use rand::seq::SliceRandom;
     use rand::thread_rng;
 
@@ -11,15 +13,12 @@ pub mod deck {
     pub const START_BIT: u8 = 12;
 
     #[must_use]
-    pub fn deal() -> [u64; 4] {
+    pub fn deal() -> [Cards; 4] {
         // Create and shulle deck of cards
         let deck = {
-            let mut deck = Vec::<u8>::with_capacity(52);
-
-            for s in 0..deck::NUMBER_OF_CARDS {
-                let card_bit: u8 = s + deck::START_BIT;
-                deck.push(card_bit);
-            }
+            let mut deck: Vec<u8> = (0..deck::NUMBER_OF_CARDS)
+                .map(|card_number| deck::START_BIT + card_number)
+                .collect();
 
             // Randomize/shuffle the cards
             for _ in 0..256 {
@@ -27,24 +26,21 @@ pub mod deck {
             }
             deck
         };
-        deal_cards(deck)
+        deal_cards(&deck)
     }
-    fn deal_cards(cards: Vec<u8>) -> [u64; 4] {
-        let mut players_hand: [u64; 4] = [0, 0, 0, 0];
-        let mut p: usize = 0;
-        let mut c: usize = 0;
-
-        for r in cards {
-            let card_bit = 1 << r;
-            players_hand[p] |= card_bit;
-            c += 1;
-            if c == 13 {
-                // println!("p{:x} {:#08x?}", p, player_cards[p]);
-                assert!(players_hand[p].count_ones() == 13);
-                c = 0;
-                p += 1;
-            }
-        }
+    pub(crate) fn deal_cards(cards: &[u8]) -> [Cards; 4] {
+        let players_hand: [Cards; 4] = cards
+            .chunks_exact(13)
+            .map(|v| {
+                let mut card: Cards = 0;
+                for &d in v {
+                    card |= 1 << Cards::from(d);
+                }
+                card
+            })
+            .collect::<Vec<Cards>>()
+            .try_into()
+            .unwrap();
         assert!(
             (players_hand[0] | players_hand[1] | players_hand[2] | players_hand[3])
                 == 0xFFFF_FFFF_FFFF_F000u64
@@ -549,15 +545,13 @@ impl SrvGameState {
         self.turn = next;
     }
     fn calc_score(&mut self) {
-        let mut t: i16 = 0;
-
         let prev_player = self.prev_action as usize & 0x3;
         let curr_player = self.last_action as usize & 0x3;
         let hand = self.last_action & 0xFFFF_FFFF_FFFF_F000;
 
         // Assist!
-        let assisted = self.board_score & 0xF00 == 0x100
-            && prev_player != curr_player
+        let assisted = prev_player != curr_player
+            && self.board_score & 0xF00 == 0x100
             && hand < self.cards[prev_player];
 
         if assisted {
@@ -567,26 +561,33 @@ impl SrvGameState {
             );
         }
 
-        let mut delta_score: [i16; 4] = [0; 4];
-        for (i, delta_score) in delta_score.iter_mut().enumerate() {
-            let mut s = i16::from(self.card_cnt[i]);
-            if s == 13 {
-                s *= 3;
-            } else if s > 9 {
-                s *= 2;
-            };
-            t += s;
-            *delta_score = s;
-        }
+        let mut total_score: i16 = 0;
+        let delta_score: [i16; 4] = self
+            .card_cnt
+            .iter()
+            .map(|&card_cnt| {
+                let mut s = i16::from(card_cnt);
+                if card_cnt == 13 {
+                    s *= 3;
+                } else if card_cnt > 9 {
+                    s *= 2;
+                };
+
+                total_score += s;
+                s
+            })
+            .collect::<Vec<i16>>()
+            .try_into()
+            .expect("Should fit");
         if assisted {
-            self.score[prev_player] -= t;
+            self.score[prev_player] -= total_score;
         } else {
             self.score
                 .iter_mut()
-                .enumerate()
-                .for_each(|(i, score)| *score -= delta_score[i]);
+                .zip(delta_score)
+                .for_each(|(score, delta_score)| *score -= delta_score);
         }
-        self.score[self.turn as usize] += t;
+        self.score[self.turn as usize] += total_score;
     }
 }
 
@@ -882,5 +883,26 @@ mod tests {
         let my_hand: u64 = 0xFFF8_0000_0000_0000;
         let play = rules::higher_single_card(board, my_hand);
         assert_eq!(play, 0x8_0000_0000_0000);
+    }
+
+    #[test]
+    fn deal_test() {
+        use super::deck;
+
+        let deck: Vec<u8> = (0..deck::NUMBER_OF_CARDS)
+            .map(|card_number| deck::START_BIT + card_number)
+            .collect();
+
+        let cards = deck::deal_cards(&deck);
+
+        assert_eq!(
+            &cards,
+            &[
+                0x0000_0000_01FF_F000,
+                0x0000_003F_FE00_0000,
+                0x0007_FFC0_0000_0000,
+                0xFFF8_0000_0000_0000,
+            ]
+        );
     }
 }
