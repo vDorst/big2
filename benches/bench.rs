@@ -13,7 +13,7 @@ use std::convert::TryFrom;
 fn bench_inlinelist8_convert(b: &mut Bencher) {
     b.iter(|| {
         for hands in &[0u64, 0x1000, 0xF100_0000_0000_0000] {
-            let il8 = network::muon::InlineList8::try_from(*hands).unwrap();
+            let il8 = network::legacy::muon::InlineList8::try_from(*hands).unwrap();
             let cards = il8.into_card().unwrap();
             assert_eq!(*hands, cards);
         }

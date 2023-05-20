@@ -122,13 +122,11 @@ impl PlayerID {
 impl StateMessage {
     #[must_use]
     pub fn new(init_buffer: Option<&[u8]>) -> Self {
-        let buf: &[u8];
-        if let Some(b) = init_buffer {
-            // assert!(b.len() < std::mem::size_of::<Self>());
-            buf = b;
+        let buf: &[u8] = if let Some(b) = init_buffer {
+            b
         } else {
-            buf = &[0; std::mem::size_of::<Self>()];
-        }
+            &[0; std::mem::size_of::<Self>()]
+        };
         let mut sm: StateMessage =
             bincode::deserialize(buf).expect("Can't deserialize StateMessage");
         sm.size = mem::size_of::<StateMessage>() as u32;
@@ -139,13 +137,12 @@ impl StateMessage {
         PlayerID::try_from(self.turn).map(|p| p.in_to())
     }
     #[must_use]
-    pub fn current_player_name(&self) -> Option<String> {
-        self.current_player()
-            .map(|p| self.players[p].name.as_string())
+    pub fn current_player_name(&self) -> Option<&str> {
+        self.current_player().map(|p| self.players[p].name.as_str())
     }
     #[must_use]
-    pub fn player_name(&self, p: i32) -> Option<String> {
-        PlayerID::try_from(p).map(|p| self.players[p.in_to::<usize>()].name.as_string())
+    pub fn player_name(&self, p: i32) -> Option<&str> {
+        PlayerID::try_from(p).map(|p| self.players[p.in_to::<usize>()].name.as_str())
     }
     #[must_use]
     pub fn action_msg(&self) -> u64 {
@@ -173,7 +170,7 @@ impl StateMessage {
             }
             StateMessageActionType::Update => {
                 let mut ready: u64 = 0;
-                for i in 0..4 {
+                for i in 0..self.players.len() {
                     if self.players[i].is_ready {
                         ready |= 0x1000 << (i * 4);
                     }
@@ -198,35 +195,43 @@ impl StateMessage {
 pub mod muon {
     use super::{big2rules, Deserialize, Serialize, TryFrom};
 
-    #[derive(Serialize, Deserialize, Debug)]
+    #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
     pub struct String16 {
-        pub data: [u8; 16],
-        pub count: u32,
+        data: [u8; 16],
+        count: u32,
     }
 
     impl String16 {
         #[must_use]
-        pub fn as_string(&self) -> String {
+        pub fn as_str(&self) -> &str {
             let Some(cnt) = usize::try_from(self.count).ok().and_then(|v| if (0..=16).contains(&v) { Some(v) } else { None } ) else {
-                return "Invalid string".to_string();
+                return "Invalid string";
             };
 
-            match String::from_utf8(self.data[..cnt].to_vec()) {
-                Err(_) => "Can't convert".to_string(),
+            match core::str::from_utf8(&self.data[..cnt]) {
+                Err(_) => "Can't convert",
                 Ok(st) => st,
             }
         }
 
         #[must_use]
         pub fn from_string(name: &str) -> Self {
-            let str_size = std::cmp::min(name.len(), 16);
-            let mut name_bytes: [u8; 16] = [0; 16];
-            let nb = &name.as_bytes()[..str_size];
-            name_bytes[..str_size].clone_from_slice(nb);
+            let mut name_str16_bytes = [0; 16];
+            let name_bytes = name.as_bytes();
+
+            let str_size = std::cmp::min(name_str16_bytes.len(), name_bytes.len());
+
+            let nb = &name_bytes[..str_size];
+            name_str16_bytes[..str_size].clone_from_slice(nb);
+
             String16 {
                 count: u32::try_from(str_size).expect("str_size should fit i32"),
-                data: name_bytes,
+                data: name_str16_bytes,
             }
+        }
+
+        pub fn is_empty(&self) -> bool {
+            self.count == 0
         }
     }
 
@@ -328,6 +333,67 @@ pub mod muon {
         }
         let suit = (big2rules::cards::card_selected(card) & 0x3) << 4;
         u8::try_from(rank | suit).expect("Should fit u8!")
+    }
+
+    #[test]
+    fn string16_test() {
+        let valid = "";
+        let str16 = String16::from_string(valid);
+        assert_eq!(
+            str16,
+            String16 {
+                data: [0; 16],
+                count: 0
+            }
+        );
+
+        let valid = "Name";
+        let str16 = String16::from_string(valid);
+        assert_eq!(
+            str16,
+            String16 {
+                data: [b'N', b'a', b'm', b'e', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                count: 4
+            }
+        );
+
+        let valid = "Name  Full  Size";
+        let str16 = String16::from_string(valid);
+        assert_eq!(
+            str16,
+            String16 {
+                data: [
+                    b'N', b'a', b'm', b'e', b' ', b' ', b'F', b'u', b'l', b'l', b' ', b' ', b'S',
+                    b'i', b'z', b'e'
+                ],
+                count: 16
+            }
+        );
+
+        let valid = "LongNameSuperLarge";
+        let str16 = String16::from_string(valid);
+        assert_eq!(
+            str16,
+            String16 {
+                data: [
+                    b'L', b'o', b'n', b'g', b'N', b'a', b'm', b'e', b'S', b'u', b'p', b'e', b'r',
+                    b'L', b'a', b'r'
+                ],
+                count: 16
+            }
+        );
+
+        let invalid = "éééééééééééééééé";
+        let str16 = String16::from_string(invalid);
+        assert_eq!(
+            str16,
+            String16 {
+                data: [
+                    195, 169, 195, 169, 195, 169, 195, 169, 195, 169, 195, 169, 195, 169, 195, 169
+                ],
+                count: 16
+            }
+        );
     }
 }
 

@@ -354,9 +354,9 @@ pub mod rules {
 pub struct GameState {
     pub sm: network::StateMessage,
     pub srn: std::io::Stdout,
-    pub board: u64,
+    pub board: Cards,
     pub board_score: u64,
-    pub cards_selected: u64,
+    pub cards_selected: Cards,
     pub auto_pass: bool,
     pub i_am_ready: bool,
     pub is_valid_hand: bool,
@@ -366,7 +366,7 @@ pub struct GameState {
 pub struct SrvGameState {
     pub prev_action: u64,
     pub last_action: u64,
-    pub board_score: u64,
+    pub board_score: Cards,
     pub has_passed: u8,
     pub turn: i32,
     pub round: u8,
@@ -402,7 +402,7 @@ impl SrvGameState {
             card_cnt: [13; 4],
         }
     }
-    pub fn deal(&mut self, cards: Option<&[u64]>) {
+    pub fn deal(&mut self, cards: Option<&[u64; 4]>) {
         // create cards
         if let Some(cards) = cards {
             assert_eq!(cards.len(), 4);
@@ -439,15 +439,15 @@ impl SrvGameState {
             p as i32
         };
     }
-    pub fn play(&mut self, player: i32, hand: u64) -> Result<(), SrvGameError> {
+    pub fn play(&mut self, player: i32, hand: Cards) -> Result<(), SrvGameError> {
         if player != self.turn {
             return Err(SrvGameError::NotPlayersTurn);
         }
 
         let p: usize = player as usize & 0x3;
         let pc = self.cards[p];
-        let illegal_cards = (pc ^ hand) & hand;
 
+        let illegal_cards = (pc ^ hand) & hand;
         if illegal_cards != 0 {
             return Err(SrvGameError::PlayerPlayedIllegalCard(illegal_cards));
         }
@@ -462,7 +462,7 @@ impl SrvGameState {
         }
 
         self.prev_action = self.last_action;
-        self.last_action = hand | (p as u64) | ((self.last_action & 0x3) << 2);
+        self.last_action = hand | (p as Cards) | ((self.last_action & 0x3) << 2);
 
         self.board_score = score;
         self.cards[p] ^= hand;

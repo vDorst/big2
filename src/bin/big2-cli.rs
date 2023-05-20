@@ -6,8 +6,8 @@ use log::error;
 extern crate log;
 extern crate simplelog;
 
-use simplelog::{Config, LevelFilter, WriteLogger};
 use pico_args::{Arguments, Error as paError};
+use simplelog::{Config, LevelFilter, WriteLogger};
 
 #[derive(Debug, PartialEq)]
 enum AppMode {
@@ -107,7 +107,6 @@ fn parse_args(mut args: Arguments) -> Result<CliArgs, paError> {
     }
     Ok(cli_args)
 }
-
 
 pub mod display {
     use super::{big2rules, net_legacy};
@@ -499,7 +498,7 @@ pub mod display {
     }
 
     pub fn board(gs: &mut big2rules::GameState) -> Result<()> {
-        let name = gs.sm.players[gs.sm.action.player as usize].name.as_string();
+        let name = gs.sm.players[gs.sm.action.player as usize].name.as_str();
         let s = format!("{name:>16}: ");
         if gs.sm.action.action_type == net_legacy::StateMessageActionType::Pass {
             execute!(
@@ -532,9 +531,9 @@ pub mod display {
             execute!(gs.srn, MoveTo(0, 3))?;
             for _ in 0..4 {
                 let player = &gs.sm.players[p as usize];
-                let name = player.name.as_string();
+                let name = player.name.as_str();
                 let name = if name.is_empty() {
-                    String::from("-- Empty Seat --")
+                    "-- Empty Seat --"
                 } else {
                     name
                 };
@@ -568,9 +567,9 @@ pub mod display {
 
         for row in 0..4 {
             let player = &gs.sm.players[p as usize];
-            let name = player.name.as_string();
+            let name = player.name.as_str();
             let name = if name.is_empty() {
-                String::from("-- Empty Seat --")
+                "-- Empty Seat --"
             } else {
                 name
             };
@@ -783,7 +782,7 @@ fn main() {
                 let mut out = String::with_capacity(256);
                 for p in 0..4 {
                     let score = gs.sm.players[p].delta_score;
-                    let name = gs.sm.players[p].name.as_string();
+                    let name = gs.sm.players[p].name.as_str();
                     dscore.push(score as i16);
                     cardnum.push(gs.sm.players[p].num_cards as u8);
                     out.push_str(&format!(" {name} {score} "));
@@ -796,16 +795,16 @@ fn main() {
                 trace!("Score: {}", out);
             }
 
-            let next_str: String = if gs.sm.turn == -1 {
+            let next_str = if gs.sm.turn == -1 {
                 if gs.sm.round == gs.sm.num_rounds {
-                    String::from("The END!")
+                    "The END!"
                 } else {
-                    String::from("Waiting for users ready")
+                    "Waiting for users ready"
                 }
             } else if let Some(name) = gs.sm.current_player_name() {
                 name
             } else {
-                String::from("Unknown")
+                "Unknown"
             };
             trace!("toACT: {}", next_str);
 
@@ -894,7 +893,7 @@ fn main() {
             // Auto play
             if cli_args.auto_play {
                 for p in &gs.sm.players {
-                    if p.name.count == 0 {
+                    if p.name.is_empty() {
                         continue 'gameloop;
                     }
                 }
@@ -1052,8 +1051,7 @@ fn main() {
                         }
                     } else {
                         // Pre Pass
-                        if user_event == display::UserEvent::Pass && !you.has_passed_this_cycle
-                        {
+                        if user_event == display::UserEvent::Pass && !you.has_passed_this_cycle {
                             gs.auto_pass = !gs.auto_pass;
                             if let Err(e) = display::board(&mut gs) {
                                 error!("DISPLAY ERROR {}", e);

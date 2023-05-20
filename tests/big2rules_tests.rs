@@ -12,7 +12,9 @@ mod tests_big2rules {
         let mut cp: usize = 0;
 
         gs.deal(Some(
-            &big2rules_srv_test_vectors::gameserver_vectors::TEST_VECTOR_CARDS_GAME1[0..4],
+            &big2rules_srv_test_vectors::gameserver_vectors::TEST_VECTOR_CARDS_GAME1[0..4]
+                .try_into()
+                .unwrap(),
         ));
 
         assert_eq!(gs.turn, 3);
@@ -32,7 +34,7 @@ mod tests_big2rules {
                     println!("UPDATE {play:16x}");
                     if *play == 0x111_1800 {
                         cp += 4;
-                        gs.deal(Some(&big2rules_srv_test_vectors::gameserver_vectors::TEST_VECTOR_CARDS_GAME1[cp..cp + 4]));
+                        gs.deal(Some(&big2rules_srv_test_vectors::gameserver_vectors::TEST_VECTOR_CARDS_GAME1[cp..cp + 4].try_into().unwrap()));
                         println!("++ Start new game, round {}/{}", gs.round, gs.rounds);
                     }
                 }
