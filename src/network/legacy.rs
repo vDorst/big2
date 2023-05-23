@@ -2,15 +2,15 @@ use crate::big2rules;
 use log::{debug, error, info, trace};
 use serde::{Deserialize, Serialize};
 
-use std::{
-    convert::TryFrom,
-    io::{self, Read, Write},
-    mem,
-    net::{TcpStream, ToSocketAddrs},
-    sync::mpsc::{Receiver, Sender},
-    thread,
-    time::Duration,
+use std::{convert::TryFrom, io, mem, thread};
+
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+    sync::mpsc::{channel, Receiver, Sender},
 };
+
+use futures::executor::block_on;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub enum StateMessageActionType {
@@ -405,11 +405,9 @@ pub mod common {
 }
 
 pub mod client {
-    use super::{
-        client, common, debug, error, info, io, mem, muon, thread, trace, DetectMessage, Duration,
-        JoinMessage, Message, PlayMessage, Read, Receiver, Sender, StateMessage, TcpStream,
-        ToSocketAddrs, TryFrom, Write,
-    };
+    use std::net::ToSocketAddrs;
+
+    use super::*;
 
     const DM_SIZE: usize = mem::size_of::<client::DetectMessage>();
     const M_SIZE: usize = mem::size_of::<Message>();
@@ -421,99 +419,90 @@ pub mod client {
         tx: Sender<Vec<u8>>,
     }
 
-    fn thread_tcp(mut ts: TcpStream, tx: &Sender<Vec<u8>>, rx: &Receiver<Vec<u8>>) {
-        let mut buffer = [0; common::BUFSIZE];
+    async fn thread_tcp(mut ts: TcpStream, tx: &Sender<Vec<u8>>, mut rx: Receiver<Vec<u8>>) {
+        let mut buffer = [0u8; common::BUFSIZE];
 
         'tcp_loop: loop {
-            let tx_data = rx.try_recv();
-            match tx_data {
-                Err(std::sync::mpsc::TryRecvError::Empty) => (),
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    error!("TCP: TX channel disconnected");
-                    break;
-                }
-                Ok(data) => {
-                    trace!("TCP: PUSH: {:x?}", data);
-                    let ret = ts.write(&data);
-                    if let Err(e) = ret {
-                        error!("TCP: Error write. {}", e);
+            tokio::select! {
+                recv = rx.recv() => {
+                    if let Some(data) = recv {
+                        trace!("TCP: PUSH: {:x?}", data);
+                        if let Err(e) = ts.write_all(&data).await {
+                            error!("TCP: Error write. {}", e);
+                        }
                     }
-                }
-            }
+                },
+                n_bytes = ts.read(&mut buffer) => {
+                    let mut n_bytes = match n_bytes {
+                        Ok(0) => {
+                            info!("Connection Closed!");
+                            break;
+                        }
+                        Ok(n) => n,
+                        Err(e) => {
+                            // if readtimeout then continue.
+                            // if e.kind() == io::ErrorKind::TimedOut {
+                            //     ();
+                            // }
+                            error!("TCP: RX error {:?}", e);
+                            break;
+                        }
+                    };
 
-            let mut n_bytes = match ts.read(&mut buffer) {
-                Ok(0) => {
-                    info!("Connection Closed!");
-                    break;
-                }
-                Ok(n) => n,
-                Err(e) => {
-                    // if readtimeout then continue.
-                    // if e.kind() == io::ErrorKind::TimedOut {
-                    //     ();
-                    // }
-                    if e.kind() == io::ErrorKind::WouldBlock {
-                        continue;
-                    }
-                    error!("TCP: RX error {:?}", e);
-                    break;
-                }
-            };
+                    info!("TCP: Got Bytes {}", n_bytes);
 
-            info!("TCP: Got Bytes {}", n_bytes);
+                    let mut pos: usize = 0;
 
-            let mut pos: usize = 0;
-
-            if n_bytes > 264 {
-                trace!("SM {:?}", &buffer[0..n_bytes]);
-            }
-
-            while n_bytes >= DM_SIZE {
-                let dm: client::DetectMessage = bincode::deserialize(&buffer[pos..]).unwrap();
-
-                // Update
-
-                let msg_size = usize::try_from(dm.size).unwrap();
-
-                if dm.kind == 5 && msg_size == SM_SIZE {
-                    if n_bytes < SM_SIZE {
-                        continue 'tcp_loop;
+                    if n_bytes > 264 {
+                        trace!("SM {:?}", &buffer[0..n_bytes]);
                     }
 
-                    let buf = buffer[pos..pos + SM_SIZE].to_vec();
+                    while n_bytes >= DM_SIZE {
+                        let dm: client::DetectMessage = bincode::deserialize(&buffer[pos..]).unwrap();
 
-                    info!("TCP: P{} B{} SM: {:?}", pos, n_bytes, buf);
-                    let ret = tx.send(buf);
-                    if ret.is_err() {
-                        error!("TCP: MPSC TX ERROR {:?}", ret.unwrap_err());
-                        break;
+                        // Update
+
+                        let msg_size = usize::try_from(dm.size).unwrap();
+
+                        if dm.kind == 5 && msg_size == SM_SIZE {
+                            if n_bytes < SM_SIZE {
+                                continue 'tcp_loop;
+                            }
+
+                            let buf = buffer[pos..pos + SM_SIZE].to_vec();
+
+                            info!("TCP: P{} B{} SM: {:?}", pos, n_bytes, buf);
+                            if let Err(e) = tx.send(buf).await {
+                                error!("TCP: MPSC TX ERROR {e:?}");
+                                break;
+                            }
+                            pos += SM_SIZE;
+                            n_bytes -= SM_SIZE;
+                            continue;
+                        }
+
+                        // HeartbeatMessage
+
+                        if dm.kind == 6 && msg_size == M_SIZE {
+                            info!("TCP: <T>HB");
+                            pos += M_SIZE;
+                            n_bytes -= M_SIZE;
+                            continue;
+                        }
+
+                        if msg_size == buffer.len() {
+                            error!("TCP: GET: {:x?}", &buffer[0..msg_size]);
+                        } else {
+                            error!(
+                                "TCP: Invalid packet! - Bytes {} Kind {} Size {} - {:?} -",
+                                n_bytes,
+                                dm.kind,
+                                dm.size,
+                                &buffer[0..n_bytes]
+                            );
+                        }
                     }
-                    pos += SM_SIZE;
-                    n_bytes -= SM_SIZE;
-                    continue;
-                }
-
-                // HeartbeatMessage
-
-                if dm.kind == 6 && msg_size == M_SIZE {
-                    info!("TCP: <T>HB");
-                    pos += M_SIZE;
-                    n_bytes -= M_SIZE;
-                    continue;
-                }
-
-                if msg_size == buffer.len() {
-                    error!("TCP: GET: {:x?}", &buffer[0..msg_size]);
-                } else {
-                    error!(
-                        "TCP: Invalid packet! - Bytes {} Kind {} Size {} - {:?} -",
-                        n_bytes,
-                        dm.kind,
-                        dm.size,
-                        &buffer[0..n_bytes]
-                    );
-                }
-                continue 'tcp_loop;
+                },
             }
         }
     }
@@ -529,34 +518,28 @@ pub mod client {
     }
 
     impl TcpClient {
-        pub fn connect(remote_addr: &str) -> Result<TcpClient, io::Error> {
-            let server_list = remote_addr.to_socket_addrs();
-            if let Err(_e) = server_list {
-                return Err(io::Error::new(
-                    io::ErrorKind::NotFound,
-                    "DNS Name not found!",
-                ));
-            }
-            let mut servers = server_list.map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        pub async fn connect(remote_addr: &str) -> Result<TcpClient, io::Error> {
+            let mut servers = remote_addr
+                .to_socket_addrs()
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
             loop {
                 let server = servers.next();
                 let Some(l) = server else { break };
                 info!("Connecting to {:?}", l);
-                let ret = TcpStream::connect_timeout(&l, Duration::from_secs(1));
+                //let ret = TcpStream::connect_timeout(&l, Duration::from_secs(1));
+                let ret = TcpStream::connect(&l).await;
                 match ret {
                     Err(_) => continue,
                     Ok(s) => {
-                        s.set_read_timeout(Some(Duration::from_millis(10)))?;
-                        let (tx, rx) = std::sync::mpsc::channel();
-                        let (tx1, rx1) = std::sync::mpsc::channel();
+                        // s.set_read_timeout(Some(Duration::from_millis(10)))?;
+                        let (tx, rx) = channel(10);
+                        let (tx1, rx1) = channel(10);
 
                         info!("Connected to {:?}!", s.peer_addr());
 
                         let tcp_thread = thread::Builder::new().name("big2_tcp".into());
-                        let id = tcp_thread.spawn(move || {
-                            thread_tcp(s, &tx, &rx1);
-                        })?;
+                        let id = tcp_thread.spawn(move || block_on(thread_tcp(s, &tx, rx1)))?;
 
                         // if let Err(e) = id {
                         //     println!("Can't create thread {}!", e);
@@ -578,30 +561,28 @@ pub mod client {
             ))
         }
 
-        pub fn action_pass(&mut self) -> Result<usize, io::Error> {
+        pub async fn action_pass(&mut self) -> Result<(), io::Error> {
             let sm = Message::new(3);
             let byte_buf =
                 bincode::serialize(&sm).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             // println!("{:?}", byte_buf);
-            let ret = self.tx.send(byte_buf);
-            if ret.is_err() {
+            if let Err(_) = self.tx.send(byte_buf).await {
                 return Err(io::Error::new(io::ErrorKind::BrokenPipe, "Thread died!"));
             }
-            Ok(0)
+            Ok(())
         }
 
-        pub fn action_ready(&mut self) -> Result<usize, io::Error> {
+        pub async fn action_ready(&mut self) -> Result<(), io::Error> {
             let sm = Message::new(4);
             let byte_buf =
                 bincode::serialize(&sm).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-            let ret = self.tx.send(byte_buf);
-            if ret.is_err() {
+            if let Err(_) = self.tx.send(byte_buf).await {
                 return Err(io::Error::new(io::ErrorKind::BrokenPipe, "Thread died!"));
             }
-            Ok(0)
+            Ok(())
         }
 
-        pub fn action_play(&mut self, cards: u64) -> Result<usize, io::Error> {
+        pub async fn action_play(&mut self, cards: u64) -> Result<(), io::Error> {
             let sm = PlayMessage {
                 kind: 2,
                 size: u32::try_from(mem::size_of::<PlayMessage>()).expect("Should fit u32!"),
@@ -611,14 +592,13 @@ pub mod client {
             let byte_buf =
                 bincode::serialize(&sm).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             // println!("action_play: {:x?}", byte_buf);
-            let ret = self.tx.send(byte_buf);
-            if ret.is_err() {
+            if let Err(_) = self.tx.send(byte_buf).await {
                 return Err(io::Error::new(io::ErrorKind::BrokenPipe, "Thread died!"));
             }
-            Ok(0)
+            Ok(())
         }
 
-        pub fn send_join_msg(&mut self, name: &str) -> Result<usize, io::Error> {
+        pub async fn send_join_msg(&mut self, name: &str) -> Result<(), io::Error> {
             let jm = JoinMessage {
                 kind: 1,
                 size: u32::try_from(mem::size_of::<JoinMessage>()).expect("Should fit u32!"),
@@ -630,23 +610,19 @@ pub mod client {
             // Send Join Message.
             let jmb =
                 bincode::serialize(&jm).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-            let ret = self.tx.send(jmb);
-            if ret.is_err() {
+            if let Err(_) = self.tx.send(jmb).await {
                 return Err(io::Error::new(io::ErrorKind::BrokenPipe, "Thread died!"));
             }
-            Ok(0)
+            Ok(())
         }
 
-        pub fn check_buffer(&mut self) -> Result<Option<StateMessage>, io::Error> {
-            let buffer = self.rx.try_recv();
-
-            match buffer {
-                Err(std::sync::mpsc::TryRecvError::Empty) => Ok(None),
-                Err(e) => Err(io::Error::new(
+        pub async fn check_buffer(&mut self) -> Result<Option<StateMessage>, io::Error> {
+            match self.rx.recv().await {
+                None => Err(io::Error::new(
                     io::ErrorKind::TimedOut,
-                    format!("check_buffer: Channel Disconnected {e:?}"),
+                    format!("check_buffer: Channel Disconnected"),
                 )),
-                Ok(buffer) => {
+                Some(buffer) => {
                     let bytes = buffer.len();
 
                     if bytes < mem::size_of::<client::DetectMessage>() {

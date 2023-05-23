@@ -301,7 +301,7 @@ pub mod display {
         match event.code {
             KeyCode::Char('r') => UserEvent::Ready,
             KeyCode::Char('`') => UserEvent::Clear,
-            KeyCode::Esc => UserEvent::Quit,
+            KeyCode::Char('q') => UserEvent::Quit,
             KeyCode::Enter => UserEvent::Play,
             KeyCode::Char('/') => UserEvent::Pass,
             KeyCode::Char('1') => UserEvent::ToggleCard1,
@@ -657,7 +657,8 @@ pub mod display {
     }
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let cli_args = parse_args(Arguments::from_env());
     if let Err(e) = cli_args {
         println!("Invalid arguments! {e:?}");
@@ -711,15 +712,16 @@ fn main() {
 
         let client = net_legacy::client::TcpClient::connect(&cli_args.socket_addr);
 
-        if let Err(e) = client {
-            let _ = display::close(srn);
-            print!("{e}\r\n");
-            std::process::exit(1);
-        }
+        let mut ts = match client.await {
+            Ok(ts) => ts,
+            Err(e) => {
+                let _ = display::close(srn);
+                print!("{e}\r\n");
+                std::process::exit(1);
+            }
+        };
 
-        let mut ts = client.unwrap();
-
-        if let Err(e) = ts.send_join_msg(&cli_args.name) {
+        if let Err(e) = ts.send_join_msg(&cli_args.name).await {
             let _ = display::close(srn);
             print!("{e}\r\n");
             std::process::exit(1);
@@ -739,7 +741,7 @@ fn main() {
 
         // Game loop
         'gameloop: loop {
-            gs.sm = match ts.check_buffer() {
+            gs.sm = match ts.check_buffer().await {
                 Err(e) => {
                     error!("Error: TCPStream: {:?}", e);
                     break 'gameloop;
@@ -951,7 +953,7 @@ fn main() {
                 if is_inbetween {
                     if !gs.i_am_ready && user_event == display::UserEvent::Ready {
                         gs.i_am_ready = true;
-                        if ts.action_ready().is_err() {
+                        if ts.action_ready().await.is_err() {
                             continue;
                         }
                     }
@@ -1031,7 +1033,7 @@ fn main() {
                         // Pass
                         if user_event == display::UserEvent::Pass
                             && !you.has_passed_this_cycle
-                            && ts.action_pass().is_err()
+                            && ts.action_pass().await.is_err()
                         {
                             continue;
                         }
@@ -1041,7 +1043,7 @@ fn main() {
                             // println!("Play hand");
                             gs.sm.action.action_type = net_legacy::StateMessageActionType::Play;
 
-                            if let Err(e) = ts.action_play(gs.cards_selected) {
+                            if let Err(e) = ts.action_play(gs.cards_selected).await {
                                 println!("Could not send your hand to the server!\r\n{e}");
                             }
 
