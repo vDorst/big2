@@ -415,23 +415,28 @@ pub mod client {
 
     pub struct TcpClient {
         id: Option<thread::JoinHandle<()>>,
-        rx: Receiver<Vec<u8>>,
+        pub rx: Receiver<StateMessage>,
         tx: Sender<Vec<u8>>,
     }
 
-    async fn thread_tcp(mut ts: TcpStream, tx: &Sender<Vec<u8>>, mut rx: Receiver<Vec<u8>>) {
+    async fn thread_tcp(mut ts: TcpStream, tx: &Sender<StateMessage>, mut rx: Receiver<Vec<u8>>) {
         let mut buffer = [0u8; common::BUFSIZE];
 
-        'tcp_loop: loop {
+        loop {
             tokio::select! {
-                recv = rx.recv() => {
-                    if let Some(data) = recv {
-                        trace!("TCP: PUSH: {:x?}", data);
-                        if let Err(e) = ts.write_all(&data).await {
-                            error!("TCP: Error write. {}", e);
+                recv = rx.recv() => 
+                    match recv {
+                        Some(data) => {
+                            trace!("TCP: PUSH: {:x?}", data);
+                            if let Err(e) = ts.write_all(&data).await {
+                                error!("TCP: Error write. {}", e);
+                            }
                         }
-                    }
-                },
+                        None => {
+                            info!("Recv channel closed! Shutdown thread");
+                            break;
+                        }
+                    },
                 n_bytes = ts.read(&mut buffer) => {
                     let mut n_bytes = match n_bytes {
                         Ok(0) => {
@@ -449,57 +454,56 @@ pub mod client {
                         }
                     };
 
-                    info!("TCP: Got Bytes {}", n_bytes);
-
                     let mut pos: usize = 0;
 
-                    if n_bytes > 264 {
-                        trace!("SM {:?}", &buffer[0..n_bytes]);
-                    }
-
                     while n_bytes >= DM_SIZE {
-                        let dm: client::DetectMessage = bincode::deserialize(&buffer[pos..]).unwrap();
-
-                        // Update
-
-                        let msg_size = usize::try_from(dm.size).unwrap();
-
-                        if dm.kind == 5 && msg_size == SM_SIZE {
-                            if n_bytes < SM_SIZE {
-                                continue 'tcp_loop;
+                        let dm: client::DetectMessage = match bincode::deserialize(&buffer[pos..]) {
+                            Ok(dm) => dm,
+                            Err(e) => {                        
+                                error!("TCP: DM decode error: {e:?}");
+                                break;                                
                             }
+                        };
 
-                            let buf = buffer[pos..pos + SM_SIZE].to_vec();
+                        let Ok(msg_size) = usize::try_from(dm.size) else { n_bytes += 4; continue; };
 
-                            info!("TCP: P{} B{} SM: {:?}", pos, n_bytes, buf);
-                            if let Err(e) = tx.send(buf).await {
-                                error!("TCP: MPSC TX ERROR {e:?}");
-                                break;
+                        match (dm.kind, msg_size) {
+                            // Update
+                            (5, SM_SIZE) => {
+                                if n_bytes >= SM_SIZE {
+                                    let buf = buffer[pos..pos + SM_SIZE].to_vec();
+    
+                                    trace!("TCP: P{} B{} SM: {:?}", pos, n_bytes, buf);
+
+                                    let sm = StateMessage::new(Some(&buf));
+
+                                    if let Err(e) = tx.send(sm).await {
+                                        error!("TCP: MPSC TX ERROR {e:?}");
+                                        break;
+                                    }
+                                    pos += SM_SIZE;
+                                    n_bytes -= SM_SIZE;
+                                }
                             }
-                            pos += SM_SIZE;
-                            n_bytes -= SM_SIZE;
-                            continue;
-                        }
-
-                        // HeartbeatMessage
-
-                        if dm.kind == 6 && msg_size == M_SIZE {
-                            info!("TCP: <T>HB");
-                            pos += M_SIZE;
-                            n_bytes -= M_SIZE;
-                            continue;
-                        }
-
-                        if msg_size == buffer.len() {
-                            error!("TCP: GET: {:x?}", &buffer[0..msg_size]);
-                        } else {
-                            error!(
-                                "TCP: Invalid packet! - Bytes {} Kind {} Size {} - {:?} -",
-                                n_bytes,
-                                dm.kind,
-                                dm.size,
-                                &buffer[0..n_bytes]
-                            );
+                            // HeartbeatMessage
+                            (6, M_SIZE) => {
+                                info!("TCP: Packet Hearthbeat");
+                                pos += M_SIZE;
+                                n_bytes -= M_SIZE;
+                            }
+                            _ => {
+                                if msg_size == buffer.len() {
+                                    error!("TCP: GET: {:x?}", &buffer[0..msg_size]);
+                                } else {
+                                    error!(
+                                        "TCP: Invalid packet! - Bytes {} Kind {} Size {} - {:?} -",
+                                        n_bytes,
+                                        dm.kind,
+                                        dm.size,
+                                        &buffer[0..n_bytes]
+                                    );
+                                }
+                            }
                         }
                     }
                 },
@@ -512,7 +516,7 @@ pub mod client {
         drop(tc.tx);
         if let Some(thread) = tc.id.take() {
             if let Err(e) = thread.join() {
-                eprintln!("Thread shutdown issue: {e:?}");
+                error!("Thread shutdown issue: {e:?}");
             };
         }
     }
@@ -614,38 +618,6 @@ pub mod client {
                 return Err(io::Error::new(io::ErrorKind::BrokenPipe, "Thread died!"));
             }
             Ok(())
-        }
-
-        pub async fn check_buffer(&mut self) -> Result<Option<StateMessage>, io::Error> {
-            match self.rx.recv().await {
-                None => Err(io::Error::new(
-                    io::ErrorKind::TimedOut,
-                    format!("check_buffer: Channel Disconnected"),
-                )),
-                Some(buffer) => {
-                    let bytes = buffer.len();
-
-                    if bytes < mem::size_of::<client::DetectMessage>() {
-                        error!("Packet size to low {}", bytes);
-                        return Ok(None);
-                    }
-
-                    let dm: client::DetectMessage = bincode::deserialize(&buffer)
-                        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-
-                    let msg_size = usize::try_from(dm.size).unwrap();
-
-                    if dm.kind == 5 && msg_size == mem::size_of::<StateMessage>() {
-                        return Ok(Some(StateMessage::new(Some(&buffer))));
-                    }
-
-                    if dm.kind > 6 || msg_size > bytes {
-                        error!("Unknown packet drop {}", bytes);
-                    }
-
-                    Ok(None)
-                }
-            }
         }
     }
 }
