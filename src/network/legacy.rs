@@ -230,6 +230,7 @@ pub mod muon {
             }
         }
 
+        #[must_use]
         pub fn is_empty(&self) -> bool {
             self.count == 0
         }
@@ -424,19 +425,16 @@ pub mod client {
 
         loop {
             tokio::select! {
-                recv = rx.recv() => 
-                    match recv {
-                        Some(data) => {
+                recv = rx.recv() =>
+                        if let Some(data) = recv {
                             trace!("TCP: PUSH: {:x?}", data);
                             if let Err(e) = ts.write_all(&data).await {
                                 error!("TCP: Error write. {}", e);
                             }
-                        }
-                        None => {
+                        } else {
                             info!("Recv channel closed! Shutdown thread");
                             break;
-                        }
-                    },
+                        },
                 n_bytes = ts.read(&mut buffer) => {
                     let mut n_bytes = match n_bytes {
                         Ok(0) => {
@@ -459,9 +457,9 @@ pub mod client {
                     while n_bytes >= DM_SIZE {
                         let dm: client::DetectMessage = match bincode::deserialize(&buffer[pos..]) {
                             Ok(dm) => dm,
-                            Err(e) => {                        
+                            Err(e) => {
                                 error!("TCP: DM decode error: {e:?}");
-                                break;                                
+                                break;
                             }
                         };
 
@@ -472,7 +470,7 @@ pub mod client {
                             (5, SM_SIZE) => {
                                 if n_bytes >= SM_SIZE {
                                     let buf = buffer[pos..pos + SM_SIZE].to_vec();
-    
+
                                     trace!("TCP: P{} B{} SM: {:?}", pos, n_bytes, buf);
 
                                     let sm = StateMessage::new(Some(&buf));
@@ -570,7 +568,7 @@ pub mod client {
             let byte_buf =
                 bincode::serialize(&sm).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             // println!("{:?}", byte_buf);
-            if let Err(_) = self.tx.send(byte_buf).await {
+            if self.tx.send(byte_buf).await.is_err() {
                 return Err(io::Error::new(io::ErrorKind::BrokenPipe, "Thread died!"));
             }
             Ok(())
@@ -580,7 +578,7 @@ pub mod client {
             let sm = Message::new(4);
             let byte_buf =
                 bincode::serialize(&sm).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-            if let Err(_) = self.tx.send(byte_buf).await {
+            if self.tx.send(byte_buf).await.is_err() {
                 return Err(io::Error::new(io::ErrorKind::BrokenPipe, "Thread died!"));
             }
             Ok(())
@@ -596,7 +594,7 @@ pub mod client {
             let byte_buf =
                 bincode::serialize(&sm).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             // println!("action_play: {:x?}", byte_buf);
-            if let Err(_) = self.tx.send(byte_buf).await {
+            if self.tx.send(byte_buf).await.is_err() {
                 return Err(io::Error::new(io::ErrorKind::BrokenPipe, "Thread died!"));
             }
             Ok(())
@@ -614,7 +612,7 @@ pub mod client {
             // Send Join Message.
             let jmb =
                 bincode::serialize(&jm).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-            if let Err(_) = self.tx.send(jmb).await {
+            if self.tx.send(jmb).await.is_err() {
                 return Err(io::Error::new(io::ErrorKind::BrokenPipe, "Thread died!"));
             }
             Ok(())

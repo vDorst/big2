@@ -1,7 +1,6 @@
 use big2::{big2rules, network::legacy as net_legacy};
-use tokio::sync::mpsc::error::TryRecvError;
 use std::{fs::File, thread, time};
-
+use tokio::sync::mpsc::error::TryRecvError;
 
 use log::error;
 #[macro_use]
@@ -757,18 +756,16 @@ async fn main() {
                     match gs.sm.action.action_type {
                         net_legacy::StateMessageActionType::Play => {
                             let p = gs.sm.action.player;
-                            let name = gs.sm.player_name(p);
-                            if name.is_some() {
+                            if let Some(name) = gs.sm.player_name(p) {
                                 let cards = gs.sm.action.cards.as_card().unwrap();
                                 let cards_str = display::cards_str(cards);
-                                trace!("PLAY: {:>16}: {}", name.unwrap(), cards_str);
+                                trace!("PLAY: {name:>16}: {cards_str}");
                             }
                         }
                         net_legacy::StateMessageActionType::Pass => {
                             let p = gs.sm.action.player;
-                            let name = gs.sm.player_name(p);
-                            if name.is_some() {
-                                trace!("PLAY: {:>16}: PASSED", name.unwrap());
+                            if let Some(name) = gs.sm.player_name(p) {
+                                trace!("PLAY: {name:>16}: PASSED");
                             }
                         }
                         net_legacy::StateMessageActionType::Update => {
@@ -819,7 +816,7 @@ async fn main() {
                         || gs.sm.action.action_type == net_legacy::StateMessageActionType::Pass
                     {
                         if let Err(e) = display::board(&mut gs) {
-                            error!("DISPLAY ERROR {}", e);
+                            error!("DISPLAY ERROR {e}");
                         }
                         let delay = if !cli_args.auto_play { 1000 } else { 10 };
                         let ten_millis = time::Duration::from_millis(delay);
@@ -845,8 +842,8 @@ async fn main() {
                         if gs.sm.action.is_end_of_cycle {
                             // Clear auto_pass and players[x].hasPassed.
                             gs.auto_pass = false;
-                            for p in 0..4 {
-                                gs.sm.players[p].has_passed_this_cycle = false;
+                            for player in &mut gs.sm.players {
+                                player.has_passed_this_cycle = false;
                             }
                             // Clear board and scores.
                             gs.sm.board = net_legacy::muon::InlineList8 {
@@ -884,7 +881,8 @@ async fn main() {
                         gs.board = gs.sm.board.as_card().unwrap();
                         gs.board_score = big2rules::rules::score_hand(gs.board);
                         gs.is_valid_hand = (gs.hand_score > gs.board_score)
-                            && (gs.board == 0 || gs.board.count_ones() == gs.cards_selected.count_ones());
+                            && (gs.board == 0
+                                || gs.board.count_ones() == gs.cards_selected.count_ones());
 
                         if let Err(e) = display::board(&mut gs) {
                             error!("DISPLAY ERROR {}", e);
@@ -904,13 +902,13 @@ async fn main() {
                             && !gs.i_am_ready
                         {
                             // println!("\n\n\r\n## READY ###");
-                            let _ = ts.action_ready();
+                            let _ = ts.action_ready().await;
                             gs.i_am_ready = true;
                             continue;
                         }
                         if gs.sm.turn == gs.sm.your_index {
                             if gs.sm.board.count > 1 {
-                                let _ = ts.action_pass();
+                                let _ = ts.action_pass().await;
                             }
                             let hand = gs.sm.your_hand.to_card();
                             let better_card = big2rules::rules::higher_single_card(gs.board, hand);
@@ -919,9 +917,9 @@ async fn main() {
                             //     gs.board, hand, better_card
                             // );
                             if better_card == 0 {
-                                let _ = ts.action_pass();
+                                let _ = ts.action_pass().await;
                             } else {
-                                let _ = ts.action_play(better_card);
+                                let _ = ts.action_play(better_card).await;
                             }
                             continue;
                         }
@@ -936,10 +934,10 @@ async fn main() {
 
                 if user_event == display::UserEvent::Resize {
                     if let Err(e) = display::clear(&mut gs.srn) {
-                        error!("DISPLAY ERROR {}", e);
+                        error!("DISPLAY ERROR {e}");
                     }
                     if let Err(e) = display::board(&mut gs) {
-                        error!("DISPLAY ERROR {}", e);
+                        error!("DISPLAY ERROR {e}");
                     }
                     continue;
                 }
@@ -1026,7 +1024,7 @@ async fn main() {
                             && (gs.board == 0
                                 || gs.board.count_ones() == gs.cards_selected.count_ones());
                         if let Err(e) = display::board(&mut gs) {
-                            error!("DISPLAY ERROR {}", e);
+                            error!("DISPLAY ERROR {e}");
                         }
                     }
 
@@ -1058,7 +1056,7 @@ async fn main() {
                         if user_event == display::UserEvent::Pass && !you.has_passed_this_cycle {
                             gs.auto_pass = !gs.auto_pass;
                             if let Err(e) = display::board(&mut gs) {
-                                error!("DISPLAY ERROR {}", e);
+                                error!("DISPLAY ERROR {e}");
                             }
                         }
                     }
@@ -1066,7 +1064,7 @@ async fn main() {
             }
         }
         if let Err(e) = display::board(&mut gs) {
-            error!("DISPLAY ERROR {}", e);
+            error!("DISPLAY ERROR {e}");
         }
 
         // close cli right way

@@ -6,6 +6,7 @@
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::too_many_lines)]
+#![allow(clippy::wildcard_imports)]
 // This lines exports the modules for tests/ and benches/
 pub mod big2rules;
 pub mod network;
