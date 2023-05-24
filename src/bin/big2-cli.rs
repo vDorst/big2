@@ -111,6 +111,7 @@ fn parse_args(mut args: Arguments) -> Result<CliArgs, paError> {
 
 pub mod display {
     use super::{big2rules, net_legacy};
+    use big2::legacy::muon::Cards;
     use log::trace;
 
     use std::{io::stdout, time::Duration};
@@ -325,14 +326,14 @@ pub mod display {
 
     fn cards_to_utf8(card: u64, card_str: &mut String) {
         //             0123456789ABCDEF
-        let rank_str: Vec<u8> = ".+-3456789TJQKA2".into();
+        let rank_str = b".+-3456789TJQKA2";
 
         let rank: usize = big2rules::cards::has_rank_idx(card) as usize;
         let suit: u64 = big2rules::cards::has_suit(card);
 
         card_str.push_str(COL_CARD_BACK);
 
-        card_str.push(rank_str[rank] as char);
+        card_str.push(char::from(rank_str[rank]));
 
         if suit == big2rules::cards::Kind::DIAMONDS {
             card_str.push_str(COL_DIAMONDS);
@@ -368,7 +369,7 @@ pub mod display {
         for (p, card) in cards.iter().enumerate() {
             let mut out_str = String::new();
             for c in 0..big2rules::deck::NUMBER_OF_CARDS {
-                let bit: u64 = u64::from(big2rules::deck::START_BIT + c);
+                let bit = u64::from(big2rules::deck::START_BIT + c);
                 let dsp_card = card & (1 << bit);
                 if dsp_card == 0 {
                     continue;
@@ -432,42 +433,52 @@ pub mod display {
     // 2.         pietje3: #13 ## ## ## ## ## ## ## ## ## ## ## ## ##  €   0
 
     pub fn draw_btn_play(gs: &mut big2rules::GameState) -> Result<()> {
-        execute!(gs.srn, SavePosition, MoveTo(43, 1))?;
-
-        if gs.sm.your_index == gs.sm.turn && gs.is_valid_hand {
-            execute!(gs.srn, Print("[ PLAY ]".white().on_green()))?;
+        let line = if gs.sm.your_index == gs.sm.turn && gs.is_valid_hand {
+            "[ PLAY ]".white().on_green()
         } else {
-            execute!(gs.srn, Print("[ PLAY ]".white().on_dark_grey()))?;
-        }
-        execute!(gs.srn, RestorePosition)?;
-        Ok(())
+            "[ PLAY ]".white().on_dark_grey()
+        };
+        execute!(
+            gs.srn,
+            SavePosition,
+            MoveTo(43, 1),
+            Print(line),
+            RestorePosition
+        )
     }
 
     pub fn draw_btn_ready(gs: &mut big2rules::GameState) -> Result<()> {
-        execute!(gs.srn, SavePosition, MoveTo(66, 1))?;
-
-        if gs.i_am_ready {
-            execute!(gs.srn, Print("[x] READY".white().on_dark_grey()))?;
+        let line = if gs.i_am_ready {
+            "[x] READY".white().on_dark_grey()
         } else {
-            execute!(gs.srn, Print("[ ] READY".white().on_dark_blue()))?;
-        }
-        execute!(gs.srn, RestorePosition)?;
-        Ok(())
+            "[ ] READY".white().on_dark_blue()
+        };
+        execute!(
+            gs.srn,
+            SavePosition,
+            MoveTo(66, 1),
+            Print(line),
+            RestorePosition
+        )
     }
 
     pub fn draw_btn_pass(gs: &mut big2rules::GameState) -> Result<()> {
-        execute!(gs.srn, SavePosition, MoveTo(55, 1))?;
-
         let has_passed_this_cycle = gs.sm.players[gs.sm.your_index as usize].has_passed_this_cycle;
 
-        if has_passed_this_cycle {
-            execute!(gs.srn, Print("[X] PASS".white().on_dark_grey()))?;
+        let line = if has_passed_this_cycle {
+            "[X] PASS".white().on_dark_grey()
         } else if gs.auto_pass {
-            execute!(gs.srn, Print("[v] PASS".white().on_blue()))?;
+            "[v] PASS".white().on_blue()
         } else {
-            execute!(gs.srn, Print("[ ] PASS".white().on_red()))?;
-        }
-        execute!(gs.srn, RestorePosition)?;
+            "[ ] PASS".white().on_red()
+        };
+        execute!(
+            gs.srn,
+            SavePosition,
+            MoveTo(55, 1),
+            Print(line),
+            RestorePosition
+        )?;
         Ok(())
     }
 
@@ -538,9 +549,11 @@ pub mod display {
                 } else {
                     name
                 };
-                let n_cards: usize = player.num_cards as usize;
-                print!("\r{}.{:>16}{}:", p + 1, name, COL_NORMAL);
-                print!(" #{n_cards:2}");
+                print!(
+                    "\r{}.{name:>16}{COL_NORMAL}: #{:2}",
+                    p + 1,
+                    player.num_cards
+                );
                 print!("{:>34}: ", "Delta Score");
                 print!(
                     " {}  {}",
@@ -576,8 +589,8 @@ pub mod display {
             };
             let s = format!("{name:>16}: ");
 
-            let mut out_str = String::new();
-            let mut out_sel_str = String::new();
+            let mut out_str = String::with_capacity(39);
+            let mut out_sel_str = String::with_capacity(39);
             let n_cards = player.num_cards as usize;
 
             let has_passed = player.has_passed_this_cycle;
@@ -585,11 +598,7 @@ pub mod display {
 
             if p == gs.sm.your_index {
                 let cards = gs.sm.your_hand.to_card();
-                for bit in 12..64 {
-                    let card = cards & (1 << bit);
-                    if card == 0 {
-                        continue;
-                    }
+                for card in Cards(cards) {
                     if gs.cards_selected & card == 0 {
                         out_sel_str.push_str("  ");
                         cards_to_utf8(card, &mut out_str);
@@ -612,20 +621,21 @@ pub mod display {
             let number_of_cards = ".. ".to_string().repeat(13 - n_cards);
 
             // Number and Names.
-            execute!(gs.srn, MoveTo(0, 3 + row), Print(format!("{}.", p + 1)),)?;
-            if p == gs.sm.turn {
-                execute!(gs.srn, Print(s.on_dark_green()))?;
+            let player_name = if p == gs.sm.turn {
+                s.white().on_dark_green()
             } else if has_passed {
-                execute!(gs.srn, Print(s.on_dark_grey()))?;
+                s.on_dark_grey()
             } else {
-                execute!(gs.srn, Print(s))?;
-            }
+                s.white()
+            };
 
             // Cards
             execute!(
                 gs.srn,
-                Print(format!("#{n_cards:2}")),
-                Print(format!(" {out_str}{number_of_cards}")),
+                MoveTo(0, 3 + row),
+                Print(format!("{}.", p + 1)),
+                Print(player_name),
+                Print(format!("#{n_cards:2} {out_str}{number_of_cards}")),
                 Print(score_str(player_score)),
             )?;
 

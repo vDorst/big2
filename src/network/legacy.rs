@@ -195,6 +195,28 @@ impl StateMessage {
 pub mod muon {
     use super::{big2rules, Deserialize, Serialize, TryFrom};
 
+    pub struct Cards(pub u64);
+
+    impl Iterator for Cards {
+        type Item = u64;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            if self.0 == 0 {
+                None
+            } else {
+                let zeros = u64::from(self.0.trailing_zeros());
+                let mask = 1 << zeros;
+                self.0 ^= mask;
+                Some(mask)
+            }
+        }
+
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            let size = usize::try_from(self.0.count_ones()).unwrap();
+            (size, Some(size))
+        }
+    }
+
     #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
     pub struct String16 {
         data: [u8; 16],
@@ -236,23 +258,23 @@ pub mod muon {
         }
     }
 
-    #[derive(Serialize, Deserialize, Debug)]
-    pub struct InlineList16 {
-        pub data: [u8; 16],
-        pub count: i32,
-    }
-
     #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq)]
     pub struct InlineList8 {
         pub data: [u8; 8],
-        pub count: i32,
+        pub count: u32,
+    }
+
+    #[derive(Serialize, Deserialize, Debug)]
+    pub struct InlineList16 {
+        pub data: [u8; 16],
+        pub count: u32,
     }
 
     impl InlineList16 {
         #[must_use]
         pub fn to_card(&self) -> u64 {
             let mut cards: u64 = 0;
-            if self.count > 0 && self.count < 14 {
+            if self.count < 14 {
                 if let Ok(count) = usize::try_from(self.count) {
                     for c in 0..count {
                         let card = self.data[c];
@@ -279,17 +301,10 @@ pub mod muon {
                 return Err("Invalid Hand!");
             }
 
-            cards.count = i32::try_from(num_cards).expect("Shoud fit");
+            cards.count = num_cards;
 
-            let mut hand = hand;
-            let mut p: usize = 0;
-            while hand != 0 {
-                let zeros = u64::from(hand.trailing_zeros());
-
-                let mask = 1 << zeros;
-                hand ^= mask;
-                cards.data[p] = cards_to_byte(mask);
-                p += 1;
+            for (card, data) in Cards(hand).map(cards_to_byte).zip(&mut cards.data) {
+                *data = card;
             }
             Ok(cards)
         }
@@ -334,6 +349,13 @@ pub mod muon {
         }
         let suit = (big2rules::cards::card_selected(card) & 0x3) << 4;
         u8::try_from(rank | suit).expect("Should fit u8!")
+    }
+
+    #[test]
+    fn cards_iter() {
+        let hand = 0;
+        let cards = Cards(hand).into_iter().collect::<Vec<u64>>();
+        assert_eq!(cards, vec![]);
     }
 
     #[test]
@@ -796,12 +818,6 @@ mod tests {
         let il8 = muon::InlineList8 {
             data: [0; 8],
             count: 9,
-        };
-        assert!(il8.as_card().is_err());
-
-        let il8 = muon::InlineList8 {
-            data: [0; 8],
-            count: -1,
         };
         assert!(il8.as_card().is_err());
 
