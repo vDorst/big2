@@ -569,7 +569,7 @@ pub mod client {
                         //     println!("Can't create thread {}!", e);
                         //     return Err(e);
                         // }
-
+                        
                         return Ok(TcpClient {
                             rx,
                             tx: tx1,

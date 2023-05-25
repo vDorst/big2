@@ -1,6 +1,7 @@
 use big2::{big2rules, network::legacy as net_legacy};
+use crossterm::event::{EventStream, Event};
+use futures::{select, FutureExt, StreamExt};
 use std::{fs::File, thread, time};
-use tokio::sync::mpsc::error::TryRecvError;
 
 use log::error;
 #[macro_use]
@@ -9,6 +10,8 @@ extern crate simplelog;
 
 use pico_args::{Arguments, Error as paError};
 use simplelog::{Config, LevelFilter, WriteLogger};
+
+use crate::display::UserEvent;
 
 #[derive(Debug, PartialEq)]
 enum AppMode {
@@ -114,12 +117,12 @@ pub mod display {
     use big2::legacy::muon::Cards;
     use log::trace;
 
-    use std::{io::stdout, time::Duration};
+    use std::{io::stdout};
 
     use crossterm::{
         cursor::{MoveTo, RestorePosition, SavePosition},
         event::{
-            poll, read, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers,
+            DisableMouseCapture, EnableMouseCapture, KeyCode, KeyModifiers,
             MouseButton, MouseEvent, MouseEventKind,
         },
         execute,
@@ -212,26 +215,7 @@ pub mod display {
         )
     }
 
-    #[must_use]
-    pub fn poll_user_events() -> UserEvent {
-        // Poll user events
-        let polled_event = poll(Duration::from_millis(100));
-
-        let cli_user_event = match polled_event {
-            Err(_) | Ok(false) => return UserEvent::Nothing,
-            // It's guaranteed that read() wont block if `poll` returns `Ok(true)`
-            Ok(true) => read().expect("Read should not"),
-        };
-
-        match cli_user_event {
-            Event::Key(key_event) => handle_key_events(key_event),
-            Event::Mouse(mouse_event) => handle_mouse_events(mouse_event),
-            Event::Resize(_, _) => UserEvent::Resize,
-            Event::FocusGained | Event::FocusLost | Event::Paste(_) => UserEvent::Nothing,
-        }
-    }
-
-    fn handle_mouse_events(event: MouseEvent) -> UserEvent {
+    pub fn handle_mouse_events(event: MouseEvent) -> UserEvent {
         if let MouseEventKind::Down(MouseButton::Right) = event.kind {
             return UserEvent::Clear;
         }
@@ -295,7 +279,7 @@ pub mod display {
         UserEvent::Nothing
     }
 
-    fn handle_key_events(event: crossterm::event::KeyEvent) -> UserEvent {
+    pub fn handle_key_events(event: crossterm::event::KeyEvent) -> UserEvent {
         if event.modifiers != KeyModifiers::NONE {
             return UserEvent::Nothing;
         }
@@ -512,6 +496,7 @@ pub mod display {
     pub fn board(gs: &mut big2rules::GameState) -> Result<()> {
         let name = gs.sm.players[gs.sm.action.player as usize].name.as_str();
         let s = format!("{name:>16}: ");
+
         if gs.sm.action.action_type == net_legacy::StateMessageActionType::Pass {
             execute!(
                 gs.srn,
@@ -670,12 +655,13 @@ pub mod display {
 
 #[tokio::main]
 async fn main() {
-    let cli_args = parse_args(Arguments::from_env());
-    if let Err(e) = cli_args {
-        println!("Invalid arguments! {e:?}");
-        std::process::exit(1);
-    }
-    let cli_args = cli_args.unwrap();
+    let cli_args = match parse_args(Arguments::from_env()) {
+        Ok(args) => args,
+        Err(e) => {
+            println!("Invalid arguments! {e:?}");
+            std::process::exit(1);
+        }
+    };
 
     let logfilename = if cli_args.app_mode == AppMode::Client {
         format!("{}.log", &cli_args.name)
@@ -721,9 +707,7 @@ async fn main() {
 
         let srn = display::init(&title).unwrap();
 
-        let client = net_legacy::client::TcpClient::connect(&cli_args.socket_addr);
-
-        let mut ts = match client.await {
+        let mut ts = match net_legacy::client::TcpClient::connect(&cli_args.socket_addr).await {
             Ok(ts) => ts,
             Err(e) => {
                 let _ = display::close(srn);
@@ -750,333 +734,356 @@ async fn main() {
             sm: net_legacy::StateMessage::new(None),
         };
 
+        let mut reader = EventStream::new();
+
         // Game loop
         'gameloop: loop {
-            match ts.rx.try_recv() {
-                Err(TryRecvError::Empty) => (),
-                Err(TryRecvError::Disconnected) => {
-                    error!("Error: TCPStream Closed!");
-                    break 'gameloop;
-                }
-                // Process new StateMessage
-                Ok(sm) => {
-                    gs.sm = sm;
+            let mut user_event = reader.next().fuse();
 
-                    trace!("TRAIL: {:16x}h", gs.sm.action_msg());
-                    match gs.sm.action.action_type {
-                        net_legacy::StateMessageActionType::Play => {
-                            let p = gs.sm.action.player;
-                            if let Some(name) = gs.sm.player_name(p) {
-                                let cards = gs.sm.action.cards.as_card().unwrap();
-                                let cards_str = display::cards_str(cards);
-                                trace!("PLAY: {name:>16}: {cards_str}");
-                            }
-                        }
-                        net_legacy::StateMessageActionType::Pass => {
-                            let p = gs.sm.action.player;
-                            if let Some(name) = gs.sm.player_name(p) {
-                                trace!("PLAY: {name:>16}: PASSED");
-                            }
-                        }
-                        net_legacy::StateMessageActionType::Update => {
-                            trace!("PLAY: UPDATE");
-                        }
-                        net_legacy::StateMessageActionType::Deal => {
-                            trace!("PLAY: DEAL: ROUND {}/{}", gs.sm.round, gs.sm.num_rounds);
-                        }
-                    };
-                    if gs.sm.turn == -1 {
-                        let mut dscore = Vec::<i16>::with_capacity(4);
-                        let mut cardnum = Vec::<u8>::with_capacity(4);
-                        let mut out = String::with_capacity(256);
-                        for p in 0..4 {
-                            let score = gs.sm.players[p].delta_score;
-                            let name = gs.sm.players[p].name.as_str();
-                            dscore.push(score as i16);
-                            cardnum.push(gs.sm.players[p].num_cards as u8);
-                            out.push_str(&format!(" {name} {score} "));
-                            if gs.sm.round == gs.sm.num_rounds {
-                                let score = gs.sm.players[p].score;
-                                out.push_str(&format!("[{score}] "));
-                            }
-                            out.push('|');
-                        }
-                        trace!("Score: {}", out);
-                    }
+            select! {
+                sm = ts.rx.recv().fuse() => {
+                    match sm {
+                        None => {
+                            error!("Error: TCPStream Closed!");
+                            break 'gameloop;
+                        },
+                        // Process new StateMessage
+                        Some(sm) => {
+                            gs.sm = sm;
 
-                    let next_str = if gs.sm.turn == -1 {
-                        if gs.sm.round == gs.sm.num_rounds {
-                            "The END!"
-                        } else {
-                            "Waiting for users ready"
-                        }
-                    } else if let Some(name) = gs.sm.current_player_name() {
-                        name
-                    } else {
-                        "Unknown"
-                    };
-                    trace!("toACT: {}", next_str);
-
-                    let title: &str = &format!("TURN: {next_str}");
-                    if let Err(e) = display::titlebar(&mut gs.srn, title) {
-                        error!("DISPLAY TITLE ERROR {}", e);
-                    }
-
-                    if gs.sm.action.action_type == net_legacy::StateMessageActionType::Play
-                        || gs.sm.action.action_type == net_legacy::StateMessageActionType::Pass
-                    {
-                        if let Err(e) = display::board(&mut gs) {
-                            error!("DISPLAY ERROR {e}");
-                        }
-                        let delay = if !cli_args.auto_play { 1000 } else { 10 };
-                        let ten_millis = time::Duration::from_millis(delay);
-                        thread::sleep(ten_millis);
-
-                        if gs.sm.action.action_type == net_legacy::StateMessageActionType::Play {
-                            gs.sm.board = gs.sm.action.cards;
-                        }
-                        gs.sm.action.action_type = net_legacy::StateMessageActionType::Update;
-
-                        // DISABLED FOR NOW!
-                        // // Auto pass when hand count is less then board count
-                        // if gs.sm.board.count != 0 && gs.sm.board.count > gs.sm.your_hand.count { info!("AUTO PASS: CARD COUNT"); gs.auto_pass = true; }
-
-                        // // Auto pass when sigle card is lower then board.
-                        // if gs.sm.board.count == 1 {
-                        //     let boardcard = net_legacy::client::card_from_byte(gs.sm.board.data[0] );
-                        //     let handcard = net_legacy::client::card_from_byte(gs.sm.your_hand.data[gs.sm.your_hand.count as usize -1]);
-                        //     if  boardcard > handcard { info!("AUTO PASS: SINGLE B {:x} H {:x}", boardcard, handcard); gs.auto_pass = true; }
-                        // }
-
-                        // End of cycle?
-                        if gs.sm.action.is_end_of_cycle {
-                            // Clear auto_pass and players[x].hasPassed.
-                            gs.auto_pass = false;
-                            for player in &mut gs.sm.players {
-                                player.has_passed_this_cycle = false;
-                            }
-                            // Clear board and scores.
-                            gs.sm.board = net_legacy::muon::InlineList8 {
-                                data: [0; 8],
-                                count: 0,
+                            trace!("TRAIL: {:16x}h", gs.sm.action_msg());
+                            match gs.sm.action.action_type {
+                                net_legacy::StateMessageActionType::Play => {
+                                    let p = gs.sm.action.player;
+                                    if let Some(name) = gs.sm.player_name(p) {
+                                        let cards = gs.sm.action.cards.as_card().unwrap();
+                                        let cards_str = display::cards_str(cards);
+                                        trace!("PLAY: {name:>16}: {cards_str}");
+                                    }
+                                }
+                                net_legacy::StateMessageActionType::Pass => {
+                                    let p = gs.sm.action.player;
+                                    if let Some(name) = gs.sm.player_name(p) {
+                                        trace!("PLAY: {name:>16}: PASSED");
+                                    }
+                                }
+                                net_legacy::StateMessageActionType::Update => {
+                                    trace!("PLAY: UPDATE");
+                                }
+                                net_legacy::StateMessageActionType::Deal => {
+                                    trace!("PLAY: DEAL: ROUND {}/{}", gs.sm.round, gs.sm.num_rounds);
+                                }
                             };
-                            gs.board = 0;
-                            gs.board_score = 0;
-                            gs.i_am_ready = false;
-                            // Clear only the cards when it is not your turn.
-                            if gs.sm.turn != gs.sm.your_index {
-                                gs.cards_selected = 0;
+                            if gs.sm.turn == -1 {
+                                let mut dscore = Vec::<i16>::with_capacity(4);
+                                let mut cardnum = Vec::<u8>::with_capacity(4);
+                                let mut out = String::with_capacity(256);
+                                for p in 0..4 {
+                                    let score = gs.sm.players[p].delta_score;
+                                    let name = gs.sm.players[p].name.as_str();
+                                    dscore.push(score as i16);
+                                    cardnum.push(gs.sm.players[p].num_cards as u8);
+                                    out.push_str(&format!(" {name} {score} "));
+                                    if gs.sm.round == gs.sm.num_rounds {
+                                        let score = gs.sm.players[p].score;
+                                        out.push_str(&format!("[{score}] "));
+                                    }
+                                    out.push('|');
+                                }
+                                trace!("Score: {}", out);
                             }
-                            gs.hand_score = big2rules::rules::score_hand(gs.cards_selected);
-                            if let Err(e) = display::clear(&mut gs.srn) {
-                                error!("DISPLAY ERROR {}", e);
-                            }
-                            trace!("END OF THE CYCLE");
-                        }
-                    }
 
-                    if gs.sm.action.action_type == net_legacy::StateMessageActionType::Deal {
-                        gs.board = 0;
-                        gs.board_score = 0;
-                        gs.i_am_ready = false;
-                        gs.cards_selected = 0;
-                        gs.hand_score = 0;
-                        if let Err(e) = display::clear(&mut gs.srn) {
-                            error!("DISPLAY ERROR {}", e);
-                        }
-                        gs.sm.action.action_type = net_legacy::StateMessageActionType::Update;
-                    }
-
-                    if gs.sm.action.action_type == net_legacy::StateMessageActionType::Update {
-                        gs.board = gs.sm.board.as_card().unwrap();
-                        gs.board_score = big2rules::rules::score_hand(gs.board);
-                        gs.is_valid_hand = (gs.hand_score > gs.board_score)
-                            && (gs.board == 0
-                                || gs.board.count_ones() == gs.cards_selected.count_ones());
-
-                        if let Err(e) = display::board(&mut gs) {
-                            error!("DISPLAY ERROR {}", e);
-                        }
-                    }
-
-                    // println!("\n\n\r\n## B 0x{:16x} T {:2} ##", gs.board, gs.sm.turn);
-                    // Auto play
-                    if cli_args.auto_play {
-                        for p in &gs.sm.players {
-                            if p.name.is_empty() {
-                                continue 'gameloop;
-                            }
-                        }
-                        if gs.sm.turn == -1
-                            && !gs.sm.players[gs.sm.your_index as usize].is_ready
-                            && !gs.i_am_ready
-                        {
-                            // println!("\n\n\r\n## READY ###");
-                            let _ = ts.action_ready().await;
-                            gs.i_am_ready = true;
-                            continue;
-                        }
-                        if gs.sm.turn == gs.sm.your_index {
-                            if gs.sm.board.count > 1 {
-                                let _ = ts.action_pass().await;
-                            }
-                            let hand = gs.sm.your_hand.to_card();
-                            let better_card = big2rules::rules::higher_single_card(gs.board, hand);
-                            // println!(
-                            //     "\n\n\r\n-- B 0x{:16x} H 0x{:16x} C 0x{:16x} --",
-                            //     gs.board, hand, better_card
-                            // );
-                            if better_card == 0 {
-                                let _ = ts.action_pass().await;
+                            let next_str = if gs.sm.turn == -1 {
+                                if gs.sm.round == gs.sm.num_rounds {
+                                    "The END!"
+                                } else {
+                                    "Waiting for users ready"
+                                }
+                            } else if let Some(name) = gs.sm.current_player_name() {
+                                name
                             } else {
-                                let _ = ts.action_play(better_card).await;
-                            }
-                            continue;
-                        }
-                    }
-                }
-            }
+                                "Unknown"
+                            };
+                            trace!("toACT: {}", next_str);
 
-            // Poll user events
-            let user_event = display::poll_user_events();
-            if user_event != display::UserEvent::Nothing {
-                let mut toggle_card = 0;
-
-                if user_event == display::UserEvent::Resize {
-                    if let Err(e) = display::clear(&mut gs.srn) {
-                        error!("DISPLAY ERROR {e}");
-                    }
-                    if let Err(e) = display::board(&mut gs) {
-                        error!("DISPLAY ERROR {e}");
-                    }
-                    continue;
-                }
-
-                if user_event == display::UserEvent::Quit {
-                    net_legacy::client::disconnect(ts);
-                    break 'gameloop;
-                }
-
-                let is_inbetween: bool = gs.sm.turn == -1;
-
-                // Ready
-                if is_inbetween {
-                    if !gs.i_am_ready && user_event == display::UserEvent::Ready {
-                        gs.i_am_ready = true;
-                        if ts.action_ready().await.is_err() {
-                            continue;
-                        }
-                    }
-                    continue;
-                } else {
-                    // (De)Select cards
-                    if user_event == display::UserEvent::ToggleCard1 {
-                        toggle_card = 1;
-                    }
-                    if user_event == display::UserEvent::ToggleCard2 {
-                        toggle_card = 2;
-                    }
-                    if user_event == display::UserEvent::ToggleCard3 {
-                        toggle_card = 3;
-                    }
-                    if user_event == display::UserEvent::ToggleCard4 {
-                        toggle_card = 4;
-                    }
-                    if user_event == display::UserEvent::ToggleCard5 {
-                        toggle_card = 5;
-                    }
-                    if user_event == display::UserEvent::ToggleCard6 {
-                        toggle_card = 6;
-                    }
-                    if user_event == display::UserEvent::ToggleCard7 {
-                        toggle_card = 7;
-                    }
-                    if user_event == display::UserEvent::ToggleCard8 {
-                        toggle_card = 8;
-                    }
-                    if user_event == display::UserEvent::ToggleCard9 {
-                        toggle_card = 9;
-                    }
-                    if user_event == display::UserEvent::ToggleCard10 {
-                        toggle_card = 10;
-                    }
-                    if user_event == display::UserEvent::ToggleCard11 {
-                        toggle_card = 11;
-                    }
-                    if user_event == display::UserEvent::ToggleCard12 {
-                        toggle_card = 12;
-                    }
-                    if user_event == display::UserEvent::ToggleCard13 {
-                        toggle_card = 13;
-                    }
-                    if user_event == display::UserEvent::Clear && gs.cards_selected != 0 {
-                        gs.cards_selected = 0;
-                        gs.hand_score = 0;
-                        gs.is_valid_hand = false;
-                        if let Err(e) = display::board(&mut gs) {
-                            error!("DISPLAY ERROR {}", e);
-                        }
-                    }
-
-                    let me_index = gs.sm.your_index;
-                    let is_your_turn: bool = gs.sm.turn == me_index;
-
-                    if toggle_card != 0 {
-                        if toggle_card > gs.sm.your_hand.count as usize {
-                            continue;
-                        }
-                        let card =
-                            net_legacy::muon::card_from_byte(gs.sm.your_hand.data[toggle_card - 1]);
-                        gs.cards_selected ^= card;
-                        gs.hand_score = big2rules::rules::score_hand(gs.cards_selected);
-                        gs.is_valid_hand = is_your_turn
-                            && (gs.hand_score > gs.board_score)
-                            && (gs.board == 0
-                                || gs.board.count_ones() == gs.cards_selected.count_ones());
-                        if let Err(e) = display::board(&mut gs) {
-                            error!("DISPLAY ERROR {e}");
-                        }
-                    }
-
-                    let you = &gs.sm.players[me_index as usize];
-                    if is_your_turn {
-                        // Pass
-                        if user_event == display::UserEvent::Pass
-                            && !you.has_passed_this_cycle
-                            && ts.action_pass().await.is_err()
-                        {
-                            continue;
-                        }
-
-                        // Play hand
-                        if user_event == display::UserEvent::Play && gs.is_valid_hand {
-                            // println!("Play hand");
-                            gs.sm.action.action_type = net_legacy::StateMessageActionType::Play;
-
-                            if let Err(e) = ts.action_play(gs.cards_selected).await {
-                                println!("Could not send your hand to the server!\r\n{e}");
+                            let title: &str = &format!("TURN: {next_str}");
+                            if let Err(e) = display::titlebar(&mut gs.srn, title) {
+                                error!("DISPLAY TITLE ERROR {}", e);
                             }
 
-                            gs.cards_selected = 0;
-                            gs.hand_score = 0;
-                            gs.is_valid_hand = false;
+                            if gs.sm.action.action_type == net_legacy::StateMessageActionType::Play
+                                || gs.sm.action.action_type == net_legacy::StateMessageActionType::Pass
+                            {
+                                if let Err(e) = display::board(&mut gs) {
+                                    error!("DISPLAY ERROR {e}");
+                                }
+                                let delay = if !cli_args.auto_play { 1000 } else { 10 };
+                                let ten_millis = time::Duration::from_millis(delay);
+                                thread::sleep(ten_millis);
+
+                                if gs.sm.action.action_type == net_legacy::StateMessageActionType::Play {
+                                    gs.sm.board = gs.sm.action.cards;
+                                }
+                                gs.sm.action.action_type = net_legacy::StateMessageActionType::Update;
+
+                                // DISABLED FOR NOW!
+                                // // Auto pass when hand count is less then board count
+                                // if gs.sm.board.count != 0 && gs.sm.board.count > gs.sm.your_hand.count { info!("AUTO PASS: CARD COUNT"); gs.auto_pass = true; }
+
+                                // // Auto pass when sigle card is lower then board.
+                                // if gs.sm.board.count == 1 {
+                                //     let boardcard = net_legacy::client::card_from_byte(gs.sm.board.data[0] );
+                                //     let handcard = net_legacy::client::card_from_byte(gs.sm.your_hand.data[gs.sm.your_hand.count as usize -1]);
+                                //     if  boardcard > handcard { info!("AUTO PASS: SINGLE B {:x} H {:x}", boardcard, handcard); gs.auto_pass = true; }
+                                // }
+
+                                // End of cycle?
+                                if gs.sm.action.is_end_of_cycle {
+                                    // Clear auto_pass and players[x].hasPassed.
+                                    gs.auto_pass = false;
+                                    for player in &mut gs.sm.players {
+                                        player.has_passed_this_cycle = false;
+                                    }
+                                    // Clear board and scores.
+                                    gs.sm.board = net_legacy::muon::InlineList8 {
+                                        data: [0; 8],
+                                        count: 0,
+                                    };
+                                    gs.board = 0;
+                                    gs.board_score = 0;
+                                    gs.i_am_ready = false;
+                                    // Clear only the cards when it is not your turn.
+                                    if gs.sm.turn != gs.sm.your_index {
+                                        gs.cards_selected = 0;
+                                    }
+                                    gs.hand_score = big2rules::rules::score_hand(gs.cards_selected);
+                                    if let Err(e) = display::clear(&mut gs.srn) {
+                                        error!("DISPLAY ERROR {}", e);
+                                    }
+                                    trace!("END OF THE CYCLE");
+                                }
+                            }
+
+                            if gs.sm.action.action_type == net_legacy::StateMessageActionType::Deal {
+                                gs.board = 0;
+                                gs.board_score = 0;
+                                gs.i_am_ready = false;
+                                gs.cards_selected = 0;
+                                gs.hand_score = 0;
+                                if let Err(e) = display::clear(&mut gs.srn) {
+                                    error!("DISPLAY ERROR {}", e);
+                                }
+                                gs.sm.action.action_type = net_legacy::StateMessageActionType::Update;
+                            }
+
+                            if gs.sm.action.action_type == net_legacy::StateMessageActionType::Update {
+                                gs.board = gs.sm.board.as_card().unwrap();
+                                gs.board_score = big2rules::rules::score_hand(gs.board);
+                                gs.is_valid_hand = (gs.hand_score > gs.board_score)
+                                    && (gs.board == 0
+                                        || gs.board.count_ones() == gs.cards_selected.count_ones());
+
+                                if let Err(e) = display::board(&mut gs) {
+                                    error!("DISPLAY ERROR {}", e);
+                                }
+                            }
+
+                            // println!("\n\n\r\n## B 0x{:16x} T {:2} ##", gs.board, gs.sm.turn);
+                            // Auto play
+                            if cli_args.auto_play {
+                                for p in &gs.sm.players {
+                                    if p.name.is_empty() {
+                                        continue 'gameloop;
+                                    }
+                                }
+                                if gs.sm.turn == -1
+                                    && !gs.sm.players[gs.sm.your_index as usize].is_ready
+                                    && !gs.i_am_ready
+                                {
+                                    // println!("\n\n\r\n## READY ###");
+                                    let _ = ts.action_ready().await;
+                                    gs.i_am_ready = true;
+                                    continue;
+                                }
+                                if gs.sm.turn == gs.sm.your_index {
+                                    if gs.sm.board.count > 1 {
+                                        let _ = ts.action_pass().await;
+                                    }
+                                    let hand = gs.sm.your_hand.to_card();
+                                    let better_card = big2rules::rules::higher_single_card(gs.board, hand);
+                                    // println!(
+                                    //     "\n\n\r\n-- B 0x{:16x} H 0x{:16x} C 0x{:16x} --",
+                                    //     gs.board, hand, better_card
+                                    // );
+                                    if better_card == 0 {
+                                        let _ = ts.action_pass().await;
+                                    } else {
+                                        let _ = ts.action_play(better_card).await;
+                                    }
+                                    continue;
+                                }
+                            }
                         }
-                    } else {
-                        // Pre Pass
-                        if user_event == display::UserEvent::Pass && !you.has_passed_this_cycle {
-                            gs.auto_pass = !gs.auto_pass;
+                    }
+                },
+                polled_event = user_event => {
+                    let user_event = match polled_event {
+                        Some(Ok(event)) => event,
+                        Some(Err(e)) => {
+                            println!("Error: {:?}\r", e);
+                            break 'gameloop;
+                        },
+                        None => break 'gameloop,
+                    };
+
+                    // Poll user events
+                    let user_event = match user_event {
+                        Event::Key(key_event) => display::handle_key_events(key_event),
+                        Event::Mouse(mouse_event) => display::handle_mouse_events(mouse_event),
+                        Event::Resize(_, _) => UserEvent::Resize,
+                        Event::FocusGained | Event::FocusLost | Event::Paste(_) => UserEvent::Nothing,
+                    };
+
+                    if user_event != display::UserEvent::Nothing {
+                        let mut toggle_card = 0;
+
+                        if user_event == display::UserEvent::Resize {
+                            if let Err(e) = display::clear(&mut gs.srn) {
+                                error!("DISPLAY ERROR {e}");
+                            }
                             if let Err(e) = display::board(&mut gs) {
                                 error!("DISPLAY ERROR {e}");
                             }
+                            continue;
+                        }
+
+                        if user_event == display::UserEvent::Quit {
+                            net_legacy::client::disconnect(ts);
+                            break 'gameloop;
+                        }
+
+                        let is_inbetween: bool = gs.sm.turn == -1;
+
+                        // Ready
+                        if is_inbetween {
+                            if !gs.i_am_ready && user_event == display::UserEvent::Ready {
+                                gs.i_am_ready = true;
+                                if ts.action_ready().await.is_err() {
+                                    continue;
+                                }
+                            }
+                            continue;
+                        } else {
+                            // (De)Select cards
+                            if user_event == display::UserEvent::ToggleCard1 {
+                                toggle_card = 1;
+                            }
+                            if user_event == display::UserEvent::ToggleCard2 {
+                                toggle_card = 2;
+                            }
+                            if user_event == display::UserEvent::ToggleCard3 {
+                                toggle_card = 3;
+                            }
+                            if user_event == display::UserEvent::ToggleCard4 {
+                                toggle_card = 4;
+                            }
+                            if user_event == display::UserEvent::ToggleCard5 {
+                                toggle_card = 5;
+                            }
+                            if user_event == display::UserEvent::ToggleCard6 {
+                                toggle_card = 6;
+                            }
+                            if user_event == display::UserEvent::ToggleCard7 {
+                                toggle_card = 7;
+                            }
+                            if user_event == display::UserEvent::ToggleCard8 {
+                                toggle_card = 8;
+                            }
+                            if user_event == display::UserEvent::ToggleCard9 {
+                                toggle_card = 9;
+                            }
+                            if user_event == display::UserEvent::ToggleCard10 {
+                                toggle_card = 10;
+                            }
+                            if user_event == display::UserEvent::ToggleCard11 {
+                                toggle_card = 11;
+                            }
+                            if user_event == display::UserEvent::ToggleCard12 {
+                                toggle_card = 12;
+                            }
+                            if user_event == display::UserEvent::ToggleCard13 {
+                                toggle_card = 13;
+                            }
+                            if user_event == display::UserEvent::Clear && gs.cards_selected != 0 {
+                                gs.cards_selected = 0;
+                                gs.hand_score = 0;
+                                gs.is_valid_hand = false;
+                                if let Err(e) = display::board(&mut gs) {
+                                    error!("DISPLAY ERROR {}", e);
+                                }
+                            }
+
+                            let me_index = gs.sm.your_index;
+                            let is_your_turn: bool = gs.sm.turn == me_index;
+
+                            if toggle_card != 0 {
+                                if toggle_card > gs.sm.your_hand.count as usize {
+                                    continue;
+                                }
+                                let card =
+                                    net_legacy::muon::card_from_byte(gs.sm.your_hand.data[toggle_card - 1]);
+                                gs.cards_selected ^= card;
+                                gs.hand_score = big2rules::rules::score_hand(gs.cards_selected);
+                                gs.is_valid_hand = is_your_turn
+                                    && (gs.hand_score > gs.board_score)
+                                    && (gs.board == 0
+                                        || gs.board.count_ones() == gs.cards_selected.count_ones());
+                                if let Err(e) = display::board(&mut gs) {
+                                    error!("DISPLAY ERROR {e}");
+                                }
+                            }
+
+                            let you = &gs.sm.players[me_index as usize];
+                            if is_your_turn {
+                                // Pass
+                                if user_event == display::UserEvent::Pass
+                                    && !you.has_passed_this_cycle
+                                    && ts.action_pass().await.is_err()
+                                {
+                                    continue;
+                                }
+
+                                // Play hand
+                                if user_event == display::UserEvent::Play && gs.is_valid_hand {
+                                    // println!("Play hand");
+                                    gs.sm.action.action_type = net_legacy::StateMessageActionType::Play;
+
+                                    if let Err(e) = ts.action_play(gs.cards_selected).await {
+                                        println!("Could not send your hand to the server!\r\n{e}");
+                                    }
+
+                                    gs.cards_selected = 0;
+                                    gs.hand_score = 0;
+                                    gs.is_valid_hand = false;
+                                }
+                            } else {
+                                // Pre Pass
+                                if user_event == display::UserEvent::Pass && !you.has_passed_this_cycle {
+                                    gs.auto_pass = !gs.auto_pass;
+                                    if let Err(e) = display::board(&mut gs) {
+                                        error!("DISPLAY ERROR {e}");
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
-        }
-        if let Err(e) = display::board(&mut gs) {
-            error!("DISPLAY ERROR {e}");
-        }
 
+            if let Err(e) = display::board(&mut gs) {
+                error!("DISPLAY ERROR {e}");
+            }
+        }
         // close cli right way
         let _ = display::close(gs.srn);
     }
