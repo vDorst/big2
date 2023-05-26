@@ -202,6 +202,7 @@ pub mod muon {
     pub struct Cards(pub u64);
 
     impl Cards {
+        #[must_use]
         pub fn from_hand(hand: u64) -> Option<Self> {
             score_hand(hand)?;
 
@@ -354,7 +355,7 @@ pub mod muon {
     #[must_use]
     pub fn cards_to_byte(card: u64) -> u8 {
         let mut rank = big2rules::cards::has_rank_idx(card);
-        if rank == big2rules::cards::Rank::TWO {
+        if rank == big2rules::cards::CardRank::TWO as u8 {
             rank = 2;
         }
         let suit = (big2rules::cards::card_selected(card) & 0x3) << 4;

@@ -319,29 +319,20 @@ pub mod display {
 
         card_str.push(char::from(rank_str[rank]));
 
-        if suit == big2rules::cards::Kind::DIAMONDS {
+        if suit == big2rules::cards::CardSuit::Diamonds as u64 {
             card_str.push_str(COL_DIAMONDS);
-        }
-        if suit == big2rules::cards::Kind::CLUBS {
-            card_str.push_str(COL_CLUBS);
-        }
-        if suit == big2rules::cards::Kind::HEARTS {
-            card_str.push_str(COL_HEARTS);
-        }
-        if suit == big2rules::cards::Kind::SPADES {
-            card_str.push_str(COL_SPADES);
-        }
-
-        if suit == big2rules::cards::Kind::DIAMONDS {
             card_str.push('\u{2666}');
         }
-        if suit == big2rules::cards::Kind::CLUBS {
+        if suit == big2rules::cards::CardSuit::Clubs as u64  {
+            card_str.push_str(COL_CLUBS);
             card_str.push('\u{2663}');
         }
-        if suit == big2rules::cards::Kind::HEARTS {
+        if suit == big2rules::cards::CardSuit::Hearts as u64  {
+            card_str.push_str(COL_HEARTS);
             card_str.push('\u{2665}');
         }
-        if suit == big2rules::cards::Kind::SPADES {
+        if suit == big2rules::cards::CardSuit::Spades as u64  {
+            card_str.push_str(COL_SPADES);
             card_str.push('\u{2660}');
         }
 
@@ -471,7 +462,7 @@ pub mod display {
         let mut bit: u64 = 1 << 11;
         let odd_straight = if let Some(score) = big2rules::rules::score_hand(cards) {
             match score {
-                ScoreKind::Straight(a) | ScoreKind::StraightFlush(a) => a & (0x40 | 0x80) != 0,
+                ScoreKind::Straight(a) | ScoreKind::StraightFlush(a) => a.is_odd_straight(),
                 _ => false,
             }
         } else {
