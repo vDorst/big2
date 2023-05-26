@@ -102,13 +102,10 @@ impl PlayerID {
     where
         u8: TryFrom<T>,
     {
-        u8::try_from(val).ok().and_then(|v| {
-            if (0..=3).contains(&v) {
-                Some(Self(v))
-            } else {
-                None
-            }
-        })
+        u8::try_from(val)
+            .ok()
+            .filter(|v| (0..=3).contains(v))
+            .map(Self)
     }
 
     pub fn in_to<T>(&self) -> T
@@ -138,11 +135,15 @@ impl StateMessage {
     }
     #[must_use]
     pub fn current_player_name(&self) -> Option<&str> {
-        self.current_player().map(|p| self.players[p].name.as_str())
+        self.current_player()
+            .and_then(|p| self.players.get(p))
+            .map(|p| p.name.as_str())
     }
     #[must_use]
     pub fn player_name(&self, p: i32) -> Option<&str> {
-        PlayerID::try_from(p).map(|p| self.players[p.in_to::<usize>()].name.as_str())
+        PlayerID::try_from(p)
+            .and_then(|p| self.players.get(p.in_to::<usize>()))
+            .map(|p| p.name.as_str())
     }
     #[must_use]
     pub fn action_msg(&self) -> u64 {
@@ -193,9 +194,20 @@ impl StateMessage {
 }
 
 pub mod muon {
+    use crate::big2rules::rules::{is_valid_hand, score_hand};
+
     use super::{big2rules, Deserialize, Serialize, TryFrom};
 
+    #[non_exhaustive]
     pub struct Cards(pub u64);
+
+    impl Cards {
+        pub fn from_hand(hand: u64) -> Option<Self> {
+            score_hand(hand)?;
+
+            Some(Self(hand))
+        }
+    }
 
     impl Iterator for Cards {
         type Item = u64;
@@ -295,13 +307,11 @@ pub mod muon {
                 count: 0,
             };
 
-            let num_cards = hand.count_ones();
-
-            if num_cards > 6 || num_cards == 4 || hand & 0xFFF != 0 {
+            if hand != 0 && !is_valid_hand(hand) {
                 return Err("Invalid Hand!");
             }
 
-            cards.count = num_cards;
+            cards.count = hand.count_ones();
 
             for (card, data) in Cards(hand).map(cards_to_byte).zip(&mut cards.data) {
                 *data = card;
@@ -569,7 +579,7 @@ pub mod client {
                         //     println!("Can't create thread {}!", e);
                         //     return Err(e);
                         // }
-                        
+
                         return Ok(TcpClient {
                             rx,
                             tx: tx1,

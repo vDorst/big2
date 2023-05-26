@@ -68,7 +68,7 @@ mod tests_big2rules {
             }
 
             println!(
-                " AFTER: BS{:4x} HP{:4x} T{}",
+                " AFTER: BS{:?} HP{:4x} T{}",
                 gs.board_score, gs.has_passed, gs.turn
             );
 

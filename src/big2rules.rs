@@ -1,5 +1,7 @@
 use crate::network::legacy as network;
 
+use self::cards::ScoreKind;
+
 pub const RANKS: [u8; 13] = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
 pub type Cards = u64;
@@ -55,19 +57,59 @@ pub mod cards {
     #[non_exhaustive]
     pub struct Rank;
 
-    #[allow(dead_code)]
-    impl Kind {
-        pub const ONE: u64 = 0x100;
-        pub const PAIR: u64 = 0x200;
-        pub const SET: u64 = 0x300;
-        pub const FIVECARD: u64 = 0x800;
-        pub const STRAIGHT: u64 = Kind::FIVECARD | 0x100;
-        pub const FLUSH: u64 = Kind::FIVECARD | 0x200;
-        pub const FULLHOUSE: u64 = Kind::FIVECARD | 0x300;
-        pub const QUADS: u64 = Kind::FIVECARD | 0x400;
-        pub const STRAIGHTFLUSH: u64 = Kind::FIVECARD | 0x500;
-        pub const TYPE: u64 = 0xF00;
+    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+    pub enum ScoreKind {
+        Single(u8),
+        Pair(u8),
+        Set(u8),
+        Straight(u8),
+        Flush(u8),
+        FullHouse(u8),
+        Quads(u8),
+        StraightFlush(u8),
+    }
 
+    impl PartialOrd for ScoreKind {
+        fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+            match (self, other) {
+                (ScoreKind::Single(a), ScoreKind::Single(b)) => Some(a.cmp(b)),
+                (ScoreKind::Single(_), _) => None,
+                (ScoreKind::Pair(a), ScoreKind::Pair(b)) => Some(a.cmp(b)),
+                (ScoreKind::Pair(_), _) => None,
+                (ScoreKind::Set(a), ScoreKind::Set(b)) => Some(a.cmp(b)),
+                (ScoreKind::Set(_), _) => None,
+                (ScoreKind::Straight(a), ScoreKind::Straight(b)) => Some(a.cmp(b)),
+                (
+                    ScoreKind::Straight(_),
+                    ScoreKind::Flush(_)
+                    | ScoreKind::FullHouse(_)
+                    | ScoreKind::Quads(_)
+                    | ScoreKind::StraightFlush(_),
+                ) => Some(std::cmp::Ordering::Greater),
+                (ScoreKind::Straight(_), _) => None,
+                (ScoreKind::Flush(a), ScoreKind::Flush(b)) => Some(a.cmp(b)),
+                (
+                    ScoreKind::Flush(_),
+                    ScoreKind::FullHouse(_) | ScoreKind::Quads(_) | ScoreKind::StraightFlush(_),
+                ) => Some(std::cmp::Ordering::Greater),
+                (ScoreKind::Flush(_), _) => None,
+                (ScoreKind::FullHouse(a), ScoreKind::FullHouse(b)) => Some(a.cmp(b)),
+                (ScoreKind::FullHouse(_), ScoreKind::Quads(_) | ScoreKind::StraightFlush(_)) => {
+                    Some(std::cmp::Ordering::Greater)
+                }
+                (ScoreKind::FullHouse(_), _) => None,
+                (ScoreKind::Quads(a), ScoreKind::Quads(b)) => Some(a.cmp(b)),
+                (ScoreKind::Quads(_), ScoreKind::StraightFlush(_)) => {
+                    Some(std::cmp::Ordering::Greater)
+                }
+                (ScoreKind::Quads(_), _) => None,
+                (ScoreKind::StraightFlush(a), ScoreKind::StraightFlush(b)) => Some(a.cmp(b)),
+                (ScoreKind::StraightFlush(_), _) => None,
+            }
+        }
+    }
+
+    impl Kind {
         pub const SPADES: u64 = 0b1000;
         pub const HEARTS: u64 = 0b0100;
         pub const CLUBS: u64 = 0b0010;
@@ -80,40 +122,40 @@ pub mod cards {
 
     #[allow(dead_code)]
     impl Rank {
-        pub const THREE: u64 = 3;
-        pub const FOUR: u64 = 4;
-        pub const FIVE: u64 = 5;
-        pub const SIX: u64 = 6;
-        pub const SEVEN: u64 = 7;
-        pub const EIGTH: u64 = 8;
-        pub const NINE: u64 = 9;
-        pub const TEN: u64 = 10;
-        pub const JACK: u64 = 11;
-        pub const QUEEN: u64 = 12;
-        pub const KING: u64 = 13;
-        pub const ACE: u64 = 14;
-        pub const TWO: u64 = 15;
+        pub const THREE: u8 = 3;
+        pub const FOUR: u8 = 4;
+        pub const FIVE: u8 = 5;
+        pub const SIX: u8 = 6;
+        pub const SEVEN: u8 = 7;
+        pub const EIGTH: u8 = 8;
+        pub const NINE: u8 = 9;
+        pub const TEN: u8 = 10;
+        pub const JACK: u8 = 11;
+        pub const QUEEN: u8 = 12;
+        pub const KING: u8 = 13;
+        pub const ACE: u8 = 14;
+        pub const TWO: u8 = 15;
     }
 
     #[must_use]
-    pub fn has_rank(hand: u64, rank: u64) -> u64 {
+    pub fn has_rank(hand: u64, rank: u8) -> u64 {
         let mask = Kind::SUITMASK << (rank << 2);
         hand & mask
     }
 
     #[must_use]
-    pub fn cnt_rank(hand: u64, rank: u64) -> u64 {
+    pub fn cnt_rank(hand: u64, rank: u8) -> u64 {
         u64::from(has_rank(hand, rank).count_ones())
     }
 
     #[must_use]
-    pub fn card_selected(card: u64) -> u64 {
-        u64::from(card.trailing_zeros())
+    pub fn card_selected(card: u64) -> u8 {
+        u8::try_from(card.trailing_zeros()).expect("Should fit")
     }
 
     #[must_use]
-    pub fn has_rank_idx(card: u64) -> u64 {
-        card_selected(card) >> 2
+    pub fn has_rank_idx(card: u64) -> u8 {
+        card_selected(card) as u8 >> 2 
     }
 
     #[must_use]
@@ -123,7 +165,10 @@ pub mod cards {
 }
 
 pub mod rules {
-    use super::{cards, RANKS};
+    use super::{
+        cards::{self, ScoreKind},
+        RANKS,
+    };
 
     #[allow(dead_code)]
     pub fn get_numbers(hand: u64) {
@@ -136,7 +181,7 @@ pub mod rules {
 
         for r in &RANKS {
             let idx: usize = (*r).into();
-            ranks[idx] = cards::cnt_rank(hand, idx as u64) as u32;
+            ranks[idx] = cards::cnt_rank(hand, idx as u8) as u32;
             if ranks[idx] != 0 {
                 straigth |= 1 << r;
             }
@@ -234,71 +279,72 @@ pub mod rules {
         flushs
     }
     #[must_use]
-    pub fn score_hand(hand: u64) -> u64 {
+    pub fn score_hand(hand: u64) -> Option<ScoreKind> {
         // Score:
         //  0xKNN = One, Pair and Straigth, Flush
         //    |++- highest card: bit nummer of the highest card
-        //        +--- Kind: Kind::ONE or Kind::TWO
+        //    +--- Kind: Kind::ONE or Kind::TWO
 
         //  0xK0R = Set, Quad, FullHouse
         //    ||+- Rank: Only the RANK. Because only one RANK of each can exists.
         //    |+-- Zero
-        //        +--- Kind: Kind::QUADS or Kind::SET or Kind::FULLHOUSE
+        //    +--- Kind: Kind::QUADS or Kind::SET or Kind::FULLHOUSE
 
         if !is_valid_hand(hand) {
-            return 0;
+            return None;
         }
-        let card_cnt_hand: u64 = hand.count_ones().into();
+
+        let card_cnt_hand = hand.count_ones();
 
         // find the highest card and calc the rank.
-        let highest_card: u64 = 63 - u64::from(hand.leading_zeros());
-        let rank: u64 = highest_card >> 2;
+        let highest_card = 63 - u8::try_from(hand.leading_zeros()).ok()?;
+        let rank = highest_card >> 2;
 
         // Get the played suit of that rank.
         let suitmask = hand >> (rank << 2);
         // Count number of cards based on the suit
-        let cnt: u64 = u64::from(suitmask.count_ones());
+        let cnt = suitmask.count_ones();
 
         if card_cnt_hand <= 3 {
             // If cnt doesn't match the card_cnt then it is invalid hand.
             if cnt != card_cnt_hand {
-                return 0;
+                return None;
             }
 
             if card_cnt_hand == 1 {
-                return cards::Kind::ONE | highest_card;
+                return Some(ScoreKind::Single(highest_card));
             }
             if card_cnt_hand == 2 {
-                return cards::Kind::PAIR | highest_card;
+                return Some(ScoreKind::Pair(highest_card));
             }
             if card_cnt_hand == 3 {
-                return cards::Kind::SET | rank;
+                return Some(ScoreKind::Set(rank));
             }
 
-            return 0;
+            return None;
         }
 
-        let lowest_card: u64 = u64::from(hand.trailing_zeros());
-        let low_rank: u64 = lowest_card >> 2;
+        let lowest_card = u8::try_from(hand.trailing_zeros()).ok()?;
+        let low_rank = lowest_card >> 2;
         // Get the played suit of that rank.
         let low_suitmask = hand >> (low_rank << 2) & cards::Kind::SUITMASK;
         // Count number of cards based on the suit
-        let low_cnt: u64 = u64::from(low_suitmask.count_ones());
+        let low_cnt = low_suitmask.count_ones();
 
         // Quad
         if cnt == 4 {
-            return cards::Kind::QUADS | rank;
+            return Some(ScoreKind::Quads(rank as u8));
         }
         if low_cnt == 4 {
-            return cards::Kind::QUADS | low_rank;
+            return Some(ScoreKind::Quads(low_rank as u8));
         }
 
         // Full House
         if cnt == 3 && low_cnt == 2 {
-            return cards::Kind::FULLHOUSE | rank;
+            return Some(ScoreKind::FullHouse(rank as u8));
         }
         if cnt == 2 && low_cnt == 3 {
-            return cards::Kind::FULLHOUSE | low_rank;
+            return Some(ScoreKind::FullHouse(low_rank as u8));
         }
 
         // Flush
@@ -308,7 +354,7 @@ pub mod rules {
         let mut is_straight: bool = rank - low_rank == 4 || rank - low_rank == 12;
 
         if is_straight {
-            let mut straigth_score: u64 = 0;
+            let mut straigth_score: u8 = 0;
             if rank - low_rank == 12 {
                 is_straight = cards::has_rank(hand, cards::Rank::THREE) != 0
                     && cards::has_rank(hand, cards::Rank::FOUR) != 0
@@ -337,17 +383,17 @@ pub mod rules {
 
             if is_straight {
                 if is_flush {
-                    return cards::Kind::STRAIGHTFLUSH | straigth_score;
+                    return Some(ScoreKind::StraightFlush(straigth_score as u8));
                 }
-                return cards::Kind::STRAIGHT | straigth_score;
+                return Some(ScoreKind::Straight(straigth_score as u8));
             }
         }
 
         if !is_straight && is_flush {
-            return cards::Kind::FLUSH | highest_card;
+            return Some(ScoreKind::Flush(highest_card as u8));
         }
 
-        0
+        None
     }
 }
 
@@ -355,18 +401,18 @@ pub struct GameState {
     pub sm: network::StateMessage,
     pub srn: std::io::Stdout,
     pub board: Cards,
-    pub board_score: u64,
-    pub cards_selected: Cards,
+    pub board_score: Option<ScoreKind>,
+    pub cards_selected: u64,
     pub auto_pass: bool,
     pub i_am_ready: bool,
     pub is_valid_hand: bool,
-    pub hand_score: u64,
+    pub hand_score: Option<ScoreKind>,
 }
 
 pub struct SrvGameState {
     pub prev_action: u64,
     pub last_action: u64,
-    pub board_score: Cards,
+    pub board_score: Option<ScoreKind>,
     pub has_passed: u8,
     pub turn: i32,
     pub round: u8,
@@ -391,7 +437,7 @@ impl SrvGameState {
         SrvGameState {
             prev_action: 0,
             last_action: 0,
-            board_score: 0,
+            board_score: None,
             has_passed: 0,
             turn: -1,
             round: 0,
@@ -414,7 +460,7 @@ impl SrvGameState {
         // Setup
         self.round += 1;
         self.has_passed = 0;
-        self.board_score = 0;
+        self.board_score = None;
         self.has_passed = 0;
         self.card_cnt = [13; 4];
 
@@ -452,19 +498,20 @@ impl SrvGameState {
             return Err(SrvGameError::PlayerPlayedIllegalCard(illegal_cards));
         }
 
-        let score = rules::score_hand(hand);
-        if score == 0 {
+        let Some(score) = rules::score_hand(hand) else {
             return Err(SrvGameError::InvalidHand);
-        }
+        };
 
-        if self.board_score != 0 && score <= self.board_score {
-            return Err(SrvGameError::InvalidHand);
+        if let Some(board_score) = &self.board_score {
+            if &score <= board_score {
+                return Err(SrvGameError::InvalidHand);
+            }
         }
 
         self.prev_action = self.last_action;
         self.last_action = hand | (p as Cards) | ((self.last_action & 0x3) << 2);
 
-        self.board_score = score;
+        self.board_score = Some(score);
         self.cards[p] ^= hand;
 
         let cnt = hand.count_ones();
@@ -507,14 +554,16 @@ impl SrvGameState {
     fn next_player(&mut self) {
         let mut next = self.turn;
 
-        if self.board_score == 0x23f || self.board_score == 0x13f || self.board_score == 0x33f {
-            println!(
-                "Play 2s which is the highest card bs {:3x}",
-                self.board_score
-            );
-            self.board_score = 0;
-            self.has_passed = 0;
-            return;
+        if let Some(board_score) = self.board_score {
+            if board_score == ScoreKind::Single(0x3F)
+                || board_score == ScoreKind::Pair(0x3F)
+                || board_score == ScoreKind::Set(0x3F)
+            {
+                println!("Play 2s which is the highest card bs {:?}", board_score);
+                self.board_score = None;
+                self.has_passed = 0;
+                return;
+            }
         }
 
         for _ in 0..3 {
@@ -536,9 +585,9 @@ impl SrvGameState {
         }
         if self.has_passed.count_ones() == 3 {
             // everyone has passed.
-            self.board_score = 0;
+            println!("\tEveryone has passed bs {:?}", self.board_score);
+            self.board_score = None;
             self.has_passed = 0;
-            println!("\tEveryone has passed bs {:3x}", self.board_score);
         }
 
         self.turn = next;
@@ -551,7 +600,7 @@ impl SrvGameState {
 
         // Assist!
         let assisted = prev_player != curr_player
-            && self.board_score & 0xF00 == 0x100
+            && matches!(self.board_score, Some(ScoreKind::Single(_)))
             && hand < self.cards[prev_player];
 
         if assisted {
@@ -647,105 +696,160 @@ mod tests {
     #[test]
     fn b_rules_score_hand() {
         // ONE
-        assert!(rules::score_hand(0x0000_0000_0000_1000) == cards::Kind::ONE | cards::Kind::LOWEST);
-        assert!(
-            rules::score_hand(0x8000_0000_0000_0000) == cards::Kind::ONE | cards::Kind::HIGHEST
+        assert_eq!(
+            rules::score_hand(0x0000_0000_0000_1000),
+            Some(ScoreKind::Single(cards::Kind::LOWEST as u8))
+        );
+        assert_eq!(
+            rules::score_hand(0x8000_0000_0000_0000),
+            Some(ScoreKind::Single(cards::Kind::HIGHEST as u8))
         );
 
         // PAIR
-        assert!(rules::score_hand(0b11 << 12) == cards::Kind::PAIR | 13);
+        assert_eq!(rules::score_hand(0b11 << 12), Some(ScoreKind::Pair(13)));
         // Select one 3 and one 4
-        assert!(rules::score_hand(0b11000 << 12) == 0);
+        assert!(rules::score_hand(0b11000 << 12).is_none());
         assert!(rules::score_hand(0b11 << 12) < rules::score_hand(0b11 << 62));
 
         // SET
-        assert!(rules::score_hand(0b0111 << 12) == cards::Kind::SET | cards::Rank::THREE);
-        assert!(rules::score_hand(0b1110 << 12) == cards::Kind::SET | cards::Rank::THREE);
-        assert!(rules::score_hand(0b1101 << 12) == cards::Kind::SET | cards::Rank::THREE);
-        assert!(rules::score_hand(0b1011 << 12) == cards::Kind::SET | cards::Rank::THREE);
-        assert!(rules::score_hand(0b11100 << 12) == 0);
+        assert_eq!(
+            rules::score_hand(0b0111 << 12),
+            Some(ScoreKind::Set(cards::Rank::THREE as u8))
+        );
+        assert_eq!(
+            rules::score_hand(0b1110 << 12),
+            Some(ScoreKind::Set(cards::Rank::THREE as u8))
+        );
+        assert_eq!(
+            rules::score_hand(0b1101 << 12),
+            Some(ScoreKind::Set(cards::Rank::THREE as u8))
+        );
+        assert_eq!(
+            rules::score_hand(0b1011 << 12),
+            Some(ScoreKind::Set(cards::Rank::THREE as u8))
+        );
+        assert!(rules::score_hand(0b11100 << 12).is_none());
         assert!(rules::score_hand(0b11 << 12) < rules::score_hand(0b11 << 13));
 
         // QUAD
-        assert!(
-            rules::score_hand(0b0001_1111_0000 << 12) == cards::Kind::QUADS | cards::Rank::FOUR
+        assert_eq!(
+            rules::score_hand(0b0001_1111_0000 << 12),
+            Some(ScoreKind::Quads(cards::Rank::FOUR as u8))
         );
-        assert!(
-            rules::score_hand(0b0000_1111_1000 << 12) == cards::Kind::QUADS | cards::Rank::FOUR
+        assert_eq!(
+            rules::score_hand(0b0000_1111_1000 << 12),
+            Some(ScoreKind::Quads(cards::Rank::FOUR as u8))
         );
-        assert!(rules::score_hand(0b0001_1111_0000 << 52) == cards::Kind::QUADS | cards::Rank::ACE);
-        assert!(rules::score_hand(0b0000_1111_1000 << 52) == cards::Kind::QUADS | cards::Rank::ACE);
-        assert!(rules::score_hand(0b1111_0000_1000 << 52) == cards::Kind::QUADS | cards::Rank::TWO);
-        assert!(rules::score_hand(0b1111_0001_1000 << 52) == 0);
-        assert!(rules::score_hand(0b1111_0000_1001 << 52) == 0);
+        assert_eq!(
+            rules::score_hand(0b0001_1111_0000 << 52),
+            Some(ScoreKind::Quads(cards::Rank::ACE as u8))
+        );
+        assert_eq!(
+            rules::score_hand(0b0000_1111_1000 << 52),
+            Some(ScoreKind::Quads(cards::Rank::ACE as u8))
+        );
+        assert_eq!(
+            rules::score_hand(0b1111_0000_1000 << 52),
+            Some(ScoreKind::Quads(cards::Rank::TWO as u8))
+        );
+        assert!(rules::score_hand(0b1111_0001_1000 << 52).is_none());
+        assert!(rules::score_hand(0b1111_0000_1001 << 52).is_none());
 
         // FULL HOUSE
-        assert!(
-            rules::score_hand(0b0011_1011_0000 << 12) == cards::Kind::FULLHOUSE | cards::Rank::FOUR
+        assert_eq!(
+            rules::score_hand(0b0011_1011_0000 << 12),
+            Some(ScoreKind::FullHouse(cards::Rank::FOUR as u8))
         );
-        assert!(
-            rules::score_hand(0b0000_1101_1001 << 12) == cards::Kind::FULLHOUSE | cards::Rank::FOUR
+
+        assert_eq!(
+            rules::score_hand(0b0000_1101_1001 << 12),
+            Some(ScoreKind::FullHouse(cards::Rank::FOUR as u8))
         );
-        assert!(
-            rules::score_hand(0b0000_1011_0110 << 12) == cards::Kind::FULLHOUSE | cards::Rank::FOUR
+        assert_eq!(
+            rules::score_hand(0b0000_1011_0110 << 12),
+            Some(ScoreKind::FullHouse(cards::Rank::FOUR as u8))
         );
-        assert!(
-            rules::score_hand(0b1110_1001_0000 << 52) == cards::Kind::FULLHOUSE | cards::Rank::TWO
+        assert_eq!(
+            rules::score_hand(0b1110_1001_0000 << 52),
+            Some(ScoreKind::FullHouse(cards::Rank::TWO as u8))
         );
-        assert!(
-            rules::score_hand(0b0000_0111_1001 << 52) == cards::Kind::FULLHOUSE | cards::Rank::ACE
+        assert_eq!(
+            rules::score_hand(0b0000_0111_1001 << 52),
+            Some(ScoreKind::FullHouse(cards::Rank::ACE as u8))
         );
-        assert!(
-            rules::score_hand(0b0000_1101_0110 << 52) == cards::Kind::FULLHOUSE | cards::Rank::ACE
+        assert_eq!(
+            rules::score_hand(0b0000_1101_0110 << 52),
+            Some(ScoreKind::FullHouse(cards::Rank::ACE as u8))
         );
 
         // STRAIGHT
-        assert!(rules::score_hand(0x0002_1111 << 12) == cards::Kind::STRAIGHT | 0x1d);
-        assert!(rules::score_hand(0x0002_2221 << 12) == cards::Kind::STRAIGHT | 0x1d);
-        assert!(rules::score_hand(0x0000_0002_2221 << 12) == cards::Kind::STRAIGHT | 0x1d);
+        assert_eq!(
+            rules::score_hand(0x0002_1111 << 12),
+            Some(ScoreKind::Straight(0x1d))
+        );
+        assert_eq!(
+            rules::score_hand(0x0002_2221 << 12),
+            Some(ScoreKind::Straight(0x1d))
+        );
+        assert_eq!(
+            rules::score_hand(0x0000_0002_2221 << 12),
+            Some(ScoreKind::Straight(0x1d))
+        );
         // 23456
-        assert!(
-            rules::score_hand(0x8000_0000_0111_1000)
-                == cards::Kind::STRAIGHT | cards::Kind::HIGHEST | 0x40
+        assert_eq!(
+            rules::score_hand(0x8000_0000_0111_1000),
+            Some(ScoreKind::Straight(cards::Kind::HIGHEST as u8 | 0x40))
         );
         // A2345
-        assert!(
-            rules::score_hand(0x8200_0000_0011_1000)
-                == cards::Kind::STRAIGHT | cards::Kind::HIGHEST | 0x80
+        assert_eq!(
+            rules::score_hand(0x8200_0000_0011_1000),
+            Some(ScoreKind::Straight(cards::Kind::HIGHEST as u8 | 0x80))
         );
 
         // FLUSH
-        assert!(rules::score_hand(0x0011_1101 << 12) == cards::Kind::FLUSH | 32);
-        assert!(
-            rules::score_hand(0x8800_0000_0808_8000) == cards::Kind::FLUSH | cards::Kind::HIGHEST
+        assert_eq!(
+            rules::score_hand(0x0011_1101 << 12),
+            Some(ScoreKind::Flush(32))
+        );
+        assert_eq!(
+            rules::score_hand(0x8800_0000_0808_8000),
+            Some(ScoreKind::Flush(cards::Kind::HIGHEST as u8))
         );
 
         // STRAIGHT FLUSH
-        assert!(rules::score_hand(0x0001_1111 << 12) == cards::Kind::STRAIGHTFLUSH | 0x1c);
-        assert!(rules::score_hand(0x1111_1000_0000_0000) == cards::Kind::STRAIGHTFLUSH | 0x3c);
-        assert!(
-            rules::score_hand(0x8888_8000_0000_0000)
-                == cards::Kind::STRAIGHTFLUSH | cards::Kind::HIGHEST
+        assert_eq!(
+            rules::score_hand(0x0001_1111 << 12),
+            Some(ScoreKind::StraightFlush(0x1c))
+        );
+        assert_eq!(
+            rules::score_hand(0x1111_1000_0000_0000),
+            Some(ScoreKind::StraightFlush(0x3c))
+        );
+        assert_eq!(
+            rules::score_hand(0x8888_8000_0000_0000),
+            Some(ScoreKind::StraightFlush(cards::Kind::HIGHEST as u8))
         );
         // 23456
-        assert!(
-            rules::score_hand(0x8000_0000_0888_8000)
-                == cards::Kind::STRAIGHTFLUSH | cards::Kind::HIGHEST | 0x40
+        assert_eq!(
+            rules::score_hand(0x8000_0000_0888_8000),
+            Some(ScoreKind::StraightFlush(cards::Kind::HIGHEST as u8 | 0x40))
         );
-        assert!(
-            rules::score_hand(0x1000_0000_0111_1000) == cards::Kind::STRAIGHTFLUSH | 0x3c | 0x40
+        assert_eq!(
+            rules::score_hand(0x1000_0000_0111_1000),
+            Some(ScoreKind::StraightFlush(0x3c | 0x40))
         );
         // A2345
-        assert!(
-            rules::score_hand(0x8800_0000_0088_8000)
-                == cards::Kind::STRAIGHTFLUSH | cards::Kind::HIGHEST | 0x80
+        assert_eq!(
+            rules::score_hand(0x8800_0000_0088_8000),
+            Some(ScoreKind::StraightFlush(cards::Kind::HIGHEST as u8 | 0x80))
         );
-        assert!(
-            rules::score_hand(0x1100_0000_0011_1000) == cards::Kind::STRAIGHTFLUSH | 0x3c | 0x80
+        assert_eq!(
+            rules::score_hand(0x1100_0000_0011_1000),
+            Some(ScoreKind::StraightFlush(0x3c | 0x80))
         );
 
         // GARBAGE
-        assert!(rules::score_hand(0x0001_0311 << 12) == 0);
+        assert!(rules::score_hand(0x0001_0311 << 12).is_none());
     }
     #[test]
     fn c_deal_hand() {
@@ -794,14 +898,8 @@ mod tests {
         gs.cards = [0x24000, 0x8000, 0x2000, 0x1000];
         gs.card_cnt = [2, 1, 1, 1];
 
-        match gs.play(0, 0x4000) {
-            Ok(_) => assert!(true),
-            Err(_) => assert!(false),
-        }
-        match gs.play(1, 0x8000) {
-            Ok(_) => assert!(true),
-            Err(_) => assert!(false),
-        }
+        assert!(gs.play(0, 0x4000).is_ok());
+        assert!(gs.play(1, 0x8000).is_ok());
         assert_eq!(gs.score, [-3, 3, 0, 0]);
     }
     #[test]
@@ -819,14 +917,8 @@ mod tests {
         gs.cards = [0x5000, 0x8000, 0x2000, 0x40000];
         gs.card_cnt = [2, 1, 1, 1];
 
-        match gs.play(0, 0x4000) {
-            Ok(_) => assert!(true),
-            Err(_) => assert!(false),
-        }
-        match gs.play(1, 0x8000) {
-            Ok(_) => assert!(true),
-            Err(_) => assert!(false),
-        }
+        assert!(gs.play(0, 0x4000).is_ok());
+        assert!(gs.play(1, 0x8000).is_ok());
         assert_eq!(gs.score, [-1, 3, -1, -1]);
     }
     #[test]

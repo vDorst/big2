@@ -1,5 +1,5 @@
 use big2::{big2rules, network::legacy as net_legacy};
-use crossterm::event::{EventStream, Event};
+use crossterm::event::{Event, EventStream};
 use futures::{select, FutureExt, StreamExt};
 use std::{fs::File, thread, time};
 
@@ -114,16 +114,16 @@ fn parse_args(mut args: Arguments) -> Result<CliArgs, paError> {
 
 pub mod display {
     use super::{big2rules, net_legacy};
-    use big2::legacy::muon::Cards;
+    use big2::{big2rules::cards::ScoreKind, legacy::muon::Cards};
     use log::trace;
 
-    use std::{io::stdout};
+    use std::io::stdout;
 
     use crossterm::{
         cursor::{MoveTo, RestorePosition, SavePosition},
         event::{
-            DisableMouseCapture, EnableMouseCapture, KeyCode, KeyModifiers,
-            MouseButton, MouseEvent, MouseEventKind,
+            DisableMouseCapture, EnableMouseCapture, KeyCode, KeyModifiers, MouseButton,
+            MouseEvent, MouseEventKind,
         },
         execute,
         //queue,
@@ -469,11 +469,15 @@ pub mod display {
     #[must_use]
     pub fn cards_str(cards: u64) -> String {
         let mut bit: u64 = 1 << 11;
-        let score = big2rules::rules::score_hand(cards);
-        let board_kind = score & big2rules::cards::Kind::TYPE;
-        let odd_straight: bool = (board_kind == big2rules::cards::Kind::STRAIGHT
-            || board_kind == big2rules::cards::Kind::STRAIGHTFLUSH)
-            && score & (0x40 | 0x80) != 0;
+        let odd_straight = if let Some(score) = big2rules::rules::score_hand(cards) {
+            match score {
+                ScoreKind::Straight(a) | ScoreKind::StraightFlush(a) => a & (0x40 | 0x80) != 0,
+                _ => false,
+            }
+        } else {
+            false
+        };
+
         if odd_straight {
             bit = 1 << 38;
         };
@@ -583,7 +587,7 @@ pub mod display {
 
             if p == gs.sm.your_index {
                 let cards = gs.sm.your_hand.to_card();
-                for card in Cards(cards) {
+                for card in Cards::from_hand(cards).unwrap() {
                     if gs.cards_selected & card == 0 {
                         out_sel_str.push_str("  ");
                         cards_to_utf8(card, &mut out_str);
@@ -725,12 +729,12 @@ async fn main() {
         let mut gs = big2rules::GameState {
             srn,
             board: 0,
-            board_score: 0,
+            board_score: None,
             cards_selected: 0,
             auto_pass: false,
             i_am_ready: true,
             is_valid_hand: false,
-            hand_score: 0,
+            hand_score: None,
             sm: net_legacy::StateMessage::new(None),
         };
 
@@ -850,7 +854,7 @@ async fn main() {
                                         count: 0,
                                     };
                                     gs.board = 0;
-                                    gs.board_score = 0;
+                                    gs.board_score = None;
                                     gs.i_am_ready = false;
                                     // Clear only the cards when it is not your turn.
                                     if gs.sm.turn != gs.sm.your_index {
@@ -866,10 +870,10 @@ async fn main() {
 
                             if gs.sm.action.action_type == net_legacy::StateMessageActionType::Deal {
                                 gs.board = 0;
-                                gs.board_score = 0;
+                                gs.board_score = None;
                                 gs.i_am_ready = false;
                                 gs.cards_selected = 0;
-                                gs.hand_score = 0;
+                                gs.hand_score = None;
                                 if let Err(e) = display::clear(&mut gs.srn) {
                                     error!("DISPLAY ERROR {}", e);
                                 }
@@ -1016,7 +1020,7 @@ async fn main() {
                             }
                             if user_event == display::UserEvent::Clear && gs.cards_selected != 0 {
                                 gs.cards_selected = 0;
-                                gs.hand_score = 0;
+                                gs.hand_score = None;
                                 gs.is_valid_hand = false;
                                 if let Err(e) = display::board(&mut gs) {
                                     error!("DISPLAY ERROR {}", e);
@@ -1063,7 +1067,7 @@ async fn main() {
                                     }
 
                                     gs.cards_selected = 0;
-                                    gs.hand_score = 0;
+                                    gs.hand_score = None;
                                     gs.is_valid_hand = false;
                                 }
                             } else {

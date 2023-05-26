@@ -114,7 +114,7 @@ fn bench_score_hand(b: &mut Bencher) {
         for &hand in benchfactor::gameserver_vectors::TEST_VECTOR_TRAIL_GAME1 {
             let score = big2rules::rules::score_hand(hand);
             // score is never 3, but to be sure that score is tested and not optimized out.
-            assert!(score != 3);
+            assert_ne!(score, Some(big2rules::cards::ScoreKind::StraightFlush(0xFF)));
         }
     });
 }
