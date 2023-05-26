@@ -64,18 +64,21 @@ pub mod cards {
     pub struct CardNum(u8);
 
     impl CardNum {
+        #[must_use]
         pub fn highcard(cards: u64) -> Option<Self> {
             let cardnum = 63 - u8::try_from(cards.leading_zeros()).ok()?;
             Self::try_from(cardnum)
         }
 
+        #[must_use]
         pub fn lowcard(cards: u64) -> Option<Self> {
             let cardnum = u8::try_from(cards.trailing_zeros()).ok()?;
             Self::try_from(cardnum)
         }
 
+        #[must_use]
         pub fn try_from(val: u8) -> Option<Self> {
-            if (12..12+ super::deck::NUMBER_OF_CARDS).contains(&val) {
+            if (12..12 + super::deck::NUMBER_OF_CARDS).contains(&val) {
                 Some(Self(val))
             } else {
                 None
@@ -85,19 +88,27 @@ pub mod cards {
         pub const HIGHCARD: CardNum = Self(63);
         pub const LOWCARD: CardNum = Self(12);
 
+        #[must_use]
         pub fn rank(&self) -> CardRank {
             CardRank::from(self.0 >> 2)
         }
+        #[must_use]
+        pub fn suit(&self) -> CardSuit {
+            CardSuit::from(self.0 & 0x3)
+        }
 
+        #[must_use]
         pub fn set_straight_23456(self) -> Self {
             Self(self.0 | 0x40)
         }
 
         #[allow(non_snake_case)]
+        #[must_use]
         pub fn set_straight_A2345(self) -> Self {
             Self(self.0 | 0x80)
         }
 
+        #[must_use]
         pub fn is_odd_straight(&self) -> bool {
             self.0 & (0x40 | 0x80) != 0
         }
@@ -110,6 +121,19 @@ pub mod cards {
         Diamonds = 0b0010,
         Hearts = 0b0100,
         Spades = 0b1000,
+    }
+
+    impl CardSuit {
+        pub fn from(suit: u8) -> Self {
+            assert!(suit < 4);
+            match 1 << suit {
+                0b0001 => Self::Clubs,
+                0b0010 => Self::Diamonds,
+                0b0100 => Self::Hearts,
+                0b1000 => Self::Spades,
+                _ => panic!("Invalid suit"),
+            }
+        }
     }
 
     #[derive(Debug, PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]
@@ -131,6 +155,7 @@ pub mod cards {
     }
 
     impl CardRank {
+        #[must_use]
         pub fn from(rank: u8) -> Self {
             match rank {
                 3 => CardRank::THREE,
@@ -181,6 +206,7 @@ pub mod cards {
 
     impl PartialOrd for ScoreKind {
         fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+            #[allow(clippy::match_same_arms)]
             match (self, other) {
                 (ScoreKind::Single(a), ScoreKind::Single(b)) => Some(a.cmp(b)),
                 (ScoreKind::Single(_), _) => None,
@@ -236,25 +262,23 @@ pub mod cards {
     }
 
     #[must_use]
-    pub fn card_selected(card: u64) -> u8 {
-        u8::try_from(card.trailing_zeros()).expect("Should fit")
+    pub fn card_selected(card: u64) -> CardNum {
+        CardNum::highcard(card).expect("Should fit")
     }
 
-    #[must_use]
-    pub fn has_rank_idx(card: u64) -> u8 {
-        card_selected(card) as u8 >> 2
-    }
+    // #[must_use]
+    // pub fn has_rank_idx(card: u64) -> u8 {
+    //     card_selected(card) >> 2
+    // }
 
-    #[must_use]
-    pub fn has_suit(card: u64) -> u64 {
-        1 << (card_selected(card) & 0x3)
-    }
+    // #[must_use]
+    // pub fn has_suit(card: u64) -> u64 {
+    //     1 << (card_selected(card) & 0x3)
+    // }
 }
 
 pub mod rules {
-    use super::{
-        cards::{self, CardNum, CardRank, ScoreKind},
-    };
+    use super::cards::{self, CardNum, CardRank, ScoreKind};
 
     // #[allow(dead_code)]
     // pub fn get_numbers(hand: u64) {
@@ -447,7 +471,7 @@ pub mod rules {
                     && cards::has_rank(hand, CardRank::FOUR) != 0
                     && cards::has_rank(hand, CardRank::FIVE) != 0
                     && cards::has_rank(hand, CardRank::TWO) != 0;
-                
+
                 if is_straight {
                     // Straight 23456
                     if cards::has_rank(hand, CardRank::SIX) != 0 {
@@ -471,12 +495,12 @@ pub mod rules {
 
             if let Some(straigth_score) = straigth_score {
                 if !is_flush {
-                    return Some(ScoreKind::Straight(straigth_score));    
+                    return Some(ScoreKind::Straight(straigth_score));
                 }
                 return Some(ScoreKind::StraightFlush(straigth_score));
             }
         }
-        
+
         if is_flush {
             return Some(ScoreKind::Flush(highest_card));
         }
@@ -647,7 +671,7 @@ impl SrvGameState {
                 || board_score == ScoreKind::Pair(CardNum::HIGHCARD)
                 || board_score == ScoreKind::Set(CardRank::TWO)
             {
-                println!("Play 2s which is the highest card bs {:?}", board_score);
+                println!("Play 2s which is the highest card bs {board_score:?}");
                 self.board_score = None;
                 self.has_passed = 0;
                 return;
@@ -796,7 +820,10 @@ mod tests {
         );
 
         // PAIR
-        assert_eq!(rules::score_hand(0b11 << 12), Some(ScoreKind::Pair( CardNum::try_from(13).unwrap() )));
+        assert_eq!(
+            rules::score_hand(0b11 << 12),
+            Some(ScoreKind::Pair(CardNum::try_from(13).unwrap()))
+        );
         // Select one 3 and one 4
         assert!(rules::score_hand(0b11000 << 12).is_none());
         assert!(rules::score_hand(0b11 << 12) < rules::score_hand(0b11 << 62));
@@ -922,20 +949,28 @@ mod tests {
         // 23456
         assert_eq!(
             rules::score_hand(0x8000_0000_0888_8000),
-            Some(ScoreKind::StraightFlush(CardNum::HIGHCARD.set_straight_23456()))
+            Some(ScoreKind::StraightFlush(
+                CardNum::HIGHCARD.set_straight_23456()
+            ))
         );
         assert_eq!(
             rules::score_hand(0x1000_0000_0111_1000),
-            Some(ScoreKind::StraightFlush(CardNum::try_from(0x3c).unwrap().set_straight_23456()))
+            Some(ScoreKind::StraightFlush(
+                CardNum::try_from(0x3c).unwrap().set_straight_23456()
+            ))
         );
         // A2345
         assert_eq!(
             rules::score_hand(0x8800_0000_0088_8000),
-            Some(ScoreKind::StraightFlush(CardNum::HIGHCARD.set_straight_A2345()))
+            Some(ScoreKind::StraightFlush(
+                CardNum::HIGHCARD.set_straight_A2345()
+            ))
         );
         assert_eq!(
             rules::score_hand(0x1100_0000_0011_1000),
-            Some(ScoreKind::StraightFlush(CardNum::try_from(0x3c).unwrap().set_straight_A2345()))
+            Some(ScoreKind::StraightFlush(
+                CardNum::try_from(0x3c).unwrap().set_straight_A2345()
+            ))
         );
 
         // GARBAGE

@@ -194,7 +194,10 @@ impl StateMessage {
 }
 
 pub mod muon {
-    use crate::big2rules::rules::{is_valid_hand, score_hand};
+    use crate::big2rules::{
+        cards::CardNum,
+        rules::is_valid_hand,
+    };
 
     use super::{big2rules, Deserialize, Serialize, TryFrom};
 
@@ -204,7 +207,9 @@ pub mod muon {
     impl Cards {
         #[must_use]
         pub fn from_hand(hand: u64) -> Option<Self> {
-            score_hand(hand)?;
+            // if hand != 0 {
+            //     score_hand(hand)?;
+            // }
 
             Some(Self(hand))
         }
@@ -314,8 +319,9 @@ pub mod muon {
 
             cards.count = hand.count_ones();
 
-            for (card, data) in Cards(hand).map(cards_to_byte).zip(&mut cards.data) {
-                *data = card;
+            for (card, data) in Cards(hand).zip(&mut cards.data) {
+                let card = CardNum::lowcard(card).unwrap();
+                *data = cards_to_byte(card);
             }
             Ok(cards)
         }
@@ -353,19 +359,24 @@ pub mod muon {
     }
 
     #[must_use]
-    pub fn cards_to_byte(card: u64) -> u8 {
-        let mut rank = big2rules::cards::has_rank_idx(card);
+    pub fn cards_to_byte(card: CardNum) -> u8 {
+        let mut rank = card.rank() as u8;
         if rank == big2rules::cards::CardRank::TWO as u8 {
             rank = 2;
         }
-        let suit = (big2rules::cards::card_selected(card) & 0x3) << 4;
-        u8::try_from(rank | suit).expect("Should fit u8!")
+        let suit = match card.suit() {
+            big2rules::cards::CardSuit::Clubs => 0,
+            big2rules::cards::CardSuit::Diamonds => 1,
+            big2rules::cards::CardSuit::Hearts => 2,
+            big2rules::cards::CardSuit::Spades => 3,
+        } << 4;
+        rank | suit
     }
 
     #[test]
     fn cards_iter() {
         let hand = 0;
-        let cards = Cards(hand).into_iter().collect::<Vec<u64>>();
+        let cards = Cards(hand).collect::<Vec<u64>>();
         assert_eq!(cards, vec![]);
     }
 

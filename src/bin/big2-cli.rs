@@ -114,7 +114,10 @@ fn parse_args(mut args: Arguments) -> Result<CliArgs, paError> {
 
 pub mod display {
     use super::{big2rules, net_legacy};
-    use big2::{big2rules::cards::ScoreKind, legacy::muon::Cards};
+    use big2::{
+        big2rules::cards::{CardNum, ScoreKind},
+        legacy::muon::Cards,
+    };
     use log::trace;
 
     use std::io::stdout;
@@ -308,30 +311,30 @@ pub mod display {
         }
     }
 
-    fn cards_to_utf8(card: u64, card_str: &mut String) {
-        //             0123456789ABCDEF
+    fn cards_to_utf8(card: CardNum, card_str: &mut String) {
+        //                          0123456789ABCDEF
         let rank_str = b".+-3456789TJQKA2";
-
-        let rank: usize = big2rules::cards::has_rank_idx(card) as usize;
-        let suit: u64 = big2rules::cards::has_suit(card);
 
         card_str.push_str(COL_CARD_BACK);
 
+        let rank = card.rank() as usize;
+        let suit = card.suit();
+
         card_str.push(char::from(rank_str[rank]));
 
-        if suit == big2rules::cards::CardSuit::Diamonds as u64 {
+        if suit == big2rules::cards::CardSuit::Diamonds {
             card_str.push_str(COL_DIAMONDS);
             card_str.push('\u{2666}');
         }
-        if suit == big2rules::cards::CardSuit::Clubs as u64  {
+        if suit == big2rules::cards::CardSuit::Clubs {
             card_str.push_str(COL_CLUBS);
             card_str.push('\u{2663}');
         }
-        if suit == big2rules::cards::CardSuit::Hearts as u64  {
+        if suit == big2rules::cards::CardSuit::Hearts {
             card_str.push_str(COL_HEARTS);
             card_str.push('\u{2665}');
         }
-        if suit == big2rules::cards::CardSuit::Spades as u64  {
+        if suit == big2rules::cards::CardSuit::Spades {
             card_str.push_str(COL_SPADES);
             card_str.push('\u{2660}');
         }
@@ -344,13 +347,13 @@ pub mod display {
         for (p, card) in cards.iter().enumerate() {
             let mut out_str = String::new();
             for c in 0..big2rules::deck::NUMBER_OF_CARDS {
-                let bit = u64::from(big2rules::deck::START_BIT + c);
+                let bit = big2rules::deck::START_BIT + c;
                 let dsp_card = card & (1 << bit);
                 if dsp_card == 0 {
                     continue;
                 }
                 if way == 2 {
-                    cards_to_utf8(dsp_card, &mut out_str);
+                    cards_to_utf8(CardNum::try_from(bit).unwrap(), &mut out_str);
                 };
 
                 out_str.push(' ');
@@ -363,12 +366,12 @@ pub mod display {
     pub fn my_cards(cards: u64) {
         let mut out_str = String::new();
         for c in 0..big2rules::deck::NUMBER_OF_CARDS {
-            let bit: u64 = u64::from(big2rules::deck::START_BIT + c);
+            let bit = big2rules::deck::START_BIT + c;
             let dsp_card = cards & (1 << bit);
             if dsp_card == 0 {
                 continue;
             }
-            cards_to_utf8(dsp_card, &mut out_str);
+            cards_to_utf8(CardNum::try_from(bit).unwrap(), &mut out_str);
             out_str.push(' ');
         }
         println!("mycards: {out_str}");
@@ -482,7 +485,7 @@ pub mod display {
             if card == 0 {
                 continue;
             }
-            cards_to_utf8(card, &mut card_str);
+            cards_to_utf8(CardNum::lowcard(bit).unwrap(), &mut card_str);
             card_str.push(' ');
         }
         card_str
@@ -578,12 +581,14 @@ pub mod display {
 
             if p == gs.sm.your_index {
                 let cards = gs.sm.your_hand.to_card();
+                info!("Cards: {cards:X}");
                 for card in Cards::from_hand(cards).unwrap() {
+                    let cardnum = CardNum::lowcard(card).unwrap();
                     if gs.cards_selected & card == 0 {
                         out_sel_str.push_str("  ");
-                        cards_to_utf8(card, &mut out_str);
+                        cards_to_utf8(cardnum, &mut out_str);
                     } else {
-                        cards_to_utf8(card, &mut out_sel_str);
+                        cards_to_utf8(cardnum, &mut out_sel_str);
                         out_str.push_str("^^");
                     }
                     out_str.push(' ');
