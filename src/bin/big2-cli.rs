@@ -4,7 +4,7 @@ use big2::{
 };
 use crossterm::event::{Event, EventStream};
 use futures::{select, FutureExt, StreamExt};
-use std::{fs::File, thread, time};
+use std::{cmp::Ordering, fs::File, thread, time};
 
 use log::error;
 #[macro_use]
@@ -492,7 +492,10 @@ pub mod display {
     }
 
     pub fn board(gs: &mut big2rules::GameState) -> Result<()> {
-        let name = gs.sm.players[gs.sm.action.player as usize].name.as_str();
+        let name = gs.sm.players[gs.sm.action.player as usize]
+            .name
+            .as_str()
+            .unwrap();
         let s = format!("{name:>16}: ");
 
         if gs.sm.action.action_type == net_legacy::StateMessageActionType::Pass {
@@ -526,11 +529,14 @@ pub mod display {
             execute!(gs.srn, MoveTo(0, 3))?;
             for _ in 0..4 {
                 let player = &gs.sm.players[p as usize];
-                let name = player.name.as_str();
-                let name = if name.is_empty() {
-                    "-- Empty Seat --"
+                let name = if let Ok(name) = player.name.as_str() {
+                    if name.is_empty() {
+                        "-- Empty Seat --"
+                    } else {
+                        name
+                    }
                 } else {
-                    name
+                    "Conv. Error"
                 };
                 print!(
                     "\r{}.{name:>16}{COL_NORMAL}: #{:2}",
@@ -564,12 +570,16 @@ pub mod display {
 
         for row in 0..4 {
             let player = &gs.sm.players[p as usize];
-            let name = player.name.as_str();
-            let name = if name.is_empty() {
-                "-- Empty Seat --"
+            let name = if let Ok(name) = player.name.as_str() {
+                if name.is_empty() {
+                    "-- Empty Seat --"
+                } else {
+                    name
+                }
             } else {
-                name
+                "Conv. Error"
             };
+
             let s = format!("{name:>16}: ");
 
             let mut out_str = String::with_capacity(39);
@@ -781,7 +791,7 @@ async fn main() {
                                 let mut out = String::with_capacity(256);
                                 for p in 0..4 {
                                     let score = gs.sm.players[p].delta_score;
-                                    let name = gs.sm.players[p].name.as_str();
+                                    let name = if let Ok(name) = gs.sm.players[p].name.as_str() { name } else { "Conv. Error" };
                                     dscore.push(score as i16);
                                     cardnum.push(gs.sm.players[p].num_cards as u8);
                                     out.push_str(&format!(" {name} {score} "));
@@ -880,10 +890,12 @@ async fn main() {
                             if gs.sm.action.action_type == net_legacy::StateMessageActionType::Update {
                                 gs.board = gs.sm.board.try_into().unwrap();
                                 gs.board_score = big2rules::rules::score_hand(gs.board.0);
-                                gs.is_valid_hand = (gs.hand_score > gs.board_score)
-                                    && (gs.board == Cards::default()
-                                        || gs.board.count_ones() == gs.cards_selected.count_ones());
-
+                                gs.is_valid_hand = match (gs.board_score, gs.hand_score) {
+                                        (_, None) => false,
+                                        (None, Some(_)) => true,
+                                        (Some(b), Some(h)) => matches!(b.partial_cmp(&h), Some(Ordering::Greater)),
+                                };
+                                info!("is_valid: b{:?} vs h{:?} = {}", gs.board_score, gs.hand_score, gs.is_valid_hand);
                                 update_display = true;
                             }
 
@@ -1046,10 +1058,12 @@ async fn main() {
                                 net_legacy::muon::card_from_byte(gs.sm.your_hand.data[toggle_card - 1]);
                             gs.cards_selected ^= card;
                             gs.hand_score = big2rules::rules::score_hand(gs.cards_selected);
-                            gs.is_valid_hand = is_your_turn
-                                && (gs.hand_score > gs.board_score)
-                                && (gs.board == Cards::default()
-                                    || gs.board.count_ones() == gs.cards_selected.count_ones());
+                            gs.is_valid_hand = match (gs.board_score, gs.hand_score) {
+                                    (_, None) => false,
+                                    (None, Some(_)) => true,
+                                    (Some(b), Some(h)) => matches!(h.partial_cmp(&b), Some(Ordering::Greater)),
+                            };
+                            info!("is_valid: b{:?} vs h{:?} = {}", gs.board_score, gs.hand_score, gs.is_valid_hand);
                             update_display = true;
                         }
                     }

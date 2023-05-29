@@ -132,26 +132,28 @@ pub struct ServerState {
 impl ServerState {
     #[must_use]
     pub fn from(sm: &StateMessage) -> Option<Self> {
-        //     Some(ServerState {
-        //         round: u8::try_from(sm.round).ok()?,
-        //         rounds: u8::try_from(sm.num_rounds).ok()?,
-        //         turn: PlayerID::try_from(sm.turn),
-        //         player_id: PlayerID::try_from(sm.your_index)?,
-        //         player_hand: sm.your_hand.try_into().ok()?,
-        //         players: sm
-        //             .players
-        //             .iter()
-        //             .map(|player| StateMessagePlayer {
-        //                 name: player.name.as_str()?.into(),
-        //                 score: i16::try_from(player.score)?,
-        //             })
-        //             .collect::<Vec<ServerStatePlayers>>()
-        //             .try_into()
-        //             .ok()?,
-        //         board: Cards::try_from(sm.board).ok()?,
-        //     })
-        // }
-        None
+        Some(ServerState {
+            round: u8::try_from(sm.round).ok()?,
+            rounds: u8::try_from(sm.num_rounds).ok()?,
+            turn: PlayerID::try_from(sm.turn),
+            player_id: PlayerID::try_from(sm.your_index)?,
+            player_hand: (&sm.your_hand).try_into().ok()?,
+            players: sm
+                .players
+                .iter()
+                .filter_map(|player| {
+                    Some(ServerStatePlayers {
+                        name: player.name.as_str().ok()?.into(),
+                        score: i16::try_from(player.score).ok()?,
+                        num_cards: u8::try_from(player.num_cards).ok()?,
+                    })
+                })
+                .collect::<Vec<ServerStatePlayers>>()
+                .try_into()
+                .ok()?,
+            board: Some((sm.board).try_into().ok()?),
+        })
+        //None
     }
 }
 
@@ -199,13 +201,13 @@ impl StateMessage {
     pub fn current_player_name(&self) -> Option<&str> {
         self.current_player()
             .and_then(|p| self.players.get(p))
-            .map(|p| p.name.as_str())
+            .and_then(|p| p.name.as_str().ok())
     }
     #[must_use]
     pub fn player_name(&self, p: i32) -> Option<&str> {
         PlayerID::try_from(p)
             .and_then(|p| self.players.get(p.in_to::<usize>()))
-            .map(|p| p.name.as_str())
+            .and_then(|p| p.name.as_str().ok())
     }
     #[must_use]
     pub fn action_msg(&self) -> u64 {
@@ -311,15 +313,14 @@ pub mod muon {
     }
 
     impl String16 {
-        #[must_use]
-        pub fn as_str(&self) -> &str {
+        pub fn as_str(&self) -> Result<&str, &str> {
             let Some(cnt) = usize::try_from(self.count).ok().and_then(|v| if (0..=16).contains(&v) { Some(v) } else { None } ) else {
-                return "Invalid string";
+                return Err("Invalid string");
             };
 
             match core::str::from_utf8(&self.data[..cnt]) {
-                Err(_) => "Can't convert",
-                Ok(st) => st,
+                Err(_) => Err("UTF8 Error"),
+                Ok(st) => Ok(st),
             }
         }
 
@@ -1197,8 +1198,11 @@ mod tests {
         sm.turn = 4;
         assert!(sm.current_player().is_none());
 
-        let new = ServerState::from(&sm);
+        let new = ServerState::from(&sm).unwrap();
 
-        assert!(new.is_none());
+        assert_eq!(new.players[0].name.as_str(), "Tikkie");
+        assert_eq!(new.players[1].name.as_str(), "host");
+        assert_eq!(new.players[2].name.as_str(), "Rene123");
+        assert_eq!(new.players[3].name.as_str(), "Rene");
     }
 }
