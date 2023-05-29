@@ -1,6 +1,7 @@
-use crate::big2rules;
+use crate::big2rules::{self, Cards};
 use log::{debug, error, info, trace};
 use serde::{Deserialize, Serialize};
+use smol_str::SmolStr;
 
 use std::{convert::TryFrom, io, mem, thread};
 
@@ -94,8 +95,41 @@ pub struct StateMessage {
     pub action: StateMessageAction,
 }
 
+pub enum GameUpdate<'a> {
+    Deal {
+        yourhand: Cards,
+        to_act: PlayerID,
+    },
+    Play {
+        acted: PlayerID,
+        played: Cards,
+        to_act: PlayerID,
+    },
+    EndRound {
+        round_score: [i8; 4],
+        ready: u8,
+    },
+    Update(&'a ServerStatePlayers),
+}
+
+pub struct ServerStatePlayers {
+    pub name: SmolStr,
+    pub score: i16,
+    pub num_cards: u8,
+}
+
+pub struct ServerState {
+    pub round: u8,
+    pub rounds: u8,
+    pub turn: Option<PlayerID>,
+    pub player_id: PlayerID,
+    pub player_hand: Cards,
+    pub players: [ServerStatePlayers; 4],
+    pub board: Option<Cards>,
+}
+
 #[non_exhaustive]
-struct PlayerID(pub u8);
+pub struct PlayerID(pub u8);
 
 impl PlayerID {
     pub fn try_from<T>(val: T) -> Option<Self>
@@ -108,6 +142,7 @@ impl PlayerID {
             .map(Self)
     }
 
+    #[must_use]
     pub fn in_to<T>(&self) -> T
     where
         T: From<u8>,
@@ -194,10 +229,7 @@ impl StateMessage {
 }
 
 pub mod muon {
-    use crate::big2rules::{
-        cards::CardNum,
-        rules::is_valid_hand,
-    };
+    use crate::big2rules::{cards::CardNum, rules::is_valid_hand};
 
     use super::{big2rules, Deserialize, Serialize, TryFrom};
 
@@ -668,6 +700,10 @@ pub mod client {
 mod tests {
     use super::*;
 
+    const DM_SIZE: usize = mem::size_of::<self::DetectMessage>();
+    const SM_SIZE: usize = mem::size_of::<StateMessage>();
+    const M_SIZE: usize = mem::size_of::<Message>();
+
     // #[test]
     // fn a_connect() {
     //  let name = String::from("René");
@@ -714,7 +750,7 @@ mod tests {
             let suit = 1 << ((card & 0x30) >> 4);
             let mut rank = card & 0xF;
             if rank == 2 {
-                rank = 15
+                rank = 15;
             }
             mycards |= suit << (rank << 2);
         }
@@ -1046,7 +1082,6 @@ mod tests {
         let mut n_bytes = buffer.len();
         let mut pos: usize = 0;
 
-        const DM_SIZE: usize = mem::size_of::<self::DetectMessage>();
         while n_bytes >= DM_SIZE {
             println!("Bytes {n_bytes} Pos {pos}");
 
@@ -1056,7 +1091,6 @@ mod tests {
             let msg_size = usize::try_from(dm.size).unwrap();
 
             // Update
-            const SM_SIZE: usize = mem::size_of::<StateMessage>();
             if dm.kind == 5 && msg_size == SM_SIZE {
                 if n_bytes < SM_SIZE {
                     break;
@@ -1071,7 +1105,6 @@ mod tests {
             }
 
             // HeartbeatMessage
-            const M_SIZE: usize = mem::size_of::<Message>();
             if dm.kind == 6 && msg_size == M_SIZE {
                 info!("TCP: <T>HB");
                 pos += M_SIZE;

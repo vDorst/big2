@@ -1151,10 +1151,9 @@ mod tests {
         let args = Arguments::from_vec(to_vec(&["--host", "--name", "IamL33T", "--rounds", "256"]));
         let ar = parse_args(args);
         match ar {
-            Err(paError::Utf8ArgumentParsingFailed { value: _, cause: _ }) => assert!(true),
+            Err(paError::Utf8ArgumentParsingFailed { value: _, cause: _ }) => (),
             _ => {
-                println!("{ar:?}");
-                assert!(false)
+                panic!("{ar:?}");
             }
         };
     }
@@ -1164,10 +1163,9 @@ mod tests {
         let args = Arguments::from_vec(to_vec(&["--host", "--name", "Morethensixteenchars"]));
         let ar = parse_args(args);
         match ar {
-            Err(paError::ArgumentParsingFailed { cause: _ }) => assert!(true),
+            Err(paError::ArgumentParsingFailed { cause: _ }) => (),
             _ => {
-                println!("{ar:?}");
-                assert!(false)
+                panic!("{ar:?}");
             }
         };
     }
@@ -1177,10 +1175,9 @@ mod tests {
         let args = Arguments::from_vec(to_vec(&["--host", "--name", ""]));
         let ar = parse_args(args);
         match ar {
-            Err(paError::ArgumentParsingFailed { cause: _ }) => assert!(true),
+            Err(paError::ArgumentParsingFailed { cause: _ }) => (),
             _ => {
-                println!("{ar:?}");
-                assert!(false)
+                panic!("{ar:?}");
             }
         };
     }
@@ -1190,10 +1187,9 @@ mod tests {
         let args = Arguments::from_vec(to_vec(&["--host", "--name"]));
         let ar = parse_args(args);
         match ar {
-            Err(paError::OptionWithoutAValue(_)) => assert!(true),
+            Err(paError::OptionWithoutAValue(_)) => (),
             _ => {
-                println!("{ar:?}");
-                assert!(false)
+                panic!("{ar:?}");
             }
         };
     }
@@ -1203,10 +1199,9 @@ mod tests {
         let args = Arguments::from_vec(to_vec(&["--host", "--name", "Space Me"]));
         let ar = parse_args(args);
         match ar {
-            Err(paError::ArgumentParsingFailed { cause: _ }) => assert!(true),
+            Err(paError::ArgumentParsingFailed { cause: _ }) => (),
             _ => {
-                println!("{ar:?}");
-                assert!(false)
+                panic!("{ar:?}");
             }
         };
     }
@@ -1222,10 +1217,9 @@ mod tests {
         ]));
         let ar = parse_args(args);
         match ar {
-            Err(paError::ArgumentParsingFailed { cause: _ }) => assert!(true),
+            Err(paError::ArgumentParsingFailed { cause: _ }) => (),
             _ => {
-                println!("{ar:?}");
-                assert!(false)
+                panic!("{ar:?}");
             }
         };
     }
@@ -1241,10 +1235,9 @@ mod tests {
         ]));
         let ar = parse_args(args);
         match ar {
-            Err(paError::ArgumentParsingFailed { cause: _ }) => assert!(true),
+            Err(paError::ArgumentParsingFailed { cause: _ }) => (),
             _ => {
-                println!("{ar:?}");
-                assert!(false)
+                panic!("{ar:?}");
             }
         };
     }
@@ -1260,10 +1253,9 @@ mod tests {
         ]));
         let ar = parse_args(args);
         match ar {
-            Err(paError::MissingArgument) => assert!(true),
+            Err(paError::MissingArgument) => (),
             _ => {
-                println!("{ar:?}");
-                assert!(false)
+                panic!("{ar:?}");
             }
         };
     }
@@ -1273,10 +1265,9 @@ mod tests {
         let args = Arguments::from_vec(to_vec(&["--join", "--name", "ValidName"]));
         let ar = parse_args(args);
         match ar {
-            Err(paError::ArgumentParsingFailed { cause: _ }) => assert!(true),
+            Err(paError::ArgumentParsingFailed { cause: _ }) => (),
             _ => {
-                println!("{ar:?}");
-                assert!(false)
+                panic!("{ar:?}");
             }
         };
     }
@@ -1286,10 +1277,9 @@ mod tests {
         let args = Arguments::from_vec(to_vec(&["--name", "ValidName", "--join"]));
         let ar = parse_args(args);
         match ar {
-            Err(paError::OptionWithoutAValue(_)) => assert!(true),
+            Err(paError::OptionWithoutAValue(_)) => (),
             _ => {
-                println!("{ar:?}");
-                assert!(false)
+                panic!("{ar:?}");
             }
         };
     }

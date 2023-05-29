@@ -124,6 +124,7 @@ pub mod cards {
     }
 
     impl CardSuit {
+        #[must_use]
         pub fn from(suit: u8) -> Self {
             assert!(suit < 4);
             match 1 << suit {
@@ -1061,18 +1062,9 @@ mod tests {
         gs.cards[2] = 0x8000_0000_0000_0000;
         gs.card_cnt[2] = 1;
 
-        match gs.play(0, 0x1000) {
-            Ok(_) => assert!(true),
-            Err(_) => assert!(false),
-        }
-        match gs.play(1, 0x2000) {
-            Ok(_) => assert!(true),
-            Err(_) => assert!(false),
-        }
-        match gs.play(2, 0x8000_0000_0000_0000) {
-            Ok(_) => assert!(true),
-            Err(_) => assert!(false),
-        }
+        assert!(gs.play(0, 0x1000).is_ok());
+        assert!(gs.play(1, 0x2000).is_ok());
+        assert!(gs.play(2, 0x8000_0000_0000_0000).is_ok());
         assert_eq!(gs.score, [-24, -24, 87, -39]);
     }
 
