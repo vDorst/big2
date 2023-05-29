@@ -132,20 +132,25 @@ pub struct ServerState {
 impl ServerState {
     #[must_use]
     pub fn from(sm: &StateMessage) -> Option<Self> {
-        // Some(ServerState {
-        //     round: u8::try_from(sm.round).ok()?,
-        //     rounds: u8::try_from(sm.num_rounds).ok()?,
-        //     turn: PlayerID::try_from(sm.turn),
-        //     player_id: PlayerID::try_from(sm.your_index)?,
-        //     player_hand: Cards::try_from(sm.your_hand)?,
-        //     players: sm.players.iter().map(|player|
-        //         StateMessagePlayer {
-        //             name: player.name.as_str()?.into(),
-        //             score: i16::try_from(player.score)?,
-        //         }
-        //     ).collect::<Vec<ServerStatePlayers>>.try_into().ok()?,
-        //     board: Cards::try_from(sm.board),
-        // })
+        //     Some(ServerState {
+        //         round: u8::try_from(sm.round).ok()?,
+        //         rounds: u8::try_from(sm.num_rounds).ok()?,
+        //         turn: PlayerID::try_from(sm.turn),
+        //         player_id: PlayerID::try_from(sm.your_index)?,
+        //         player_hand: sm.your_hand.try_into().ok()?,
+        //         players: sm
+        //             .players
+        //             .iter()
+        //             .map(|player| StateMessagePlayer {
+        //                 name: player.name.as_str()?.into(),
+        //                 score: i16::try_from(player.score)?,
+        //             })
+        //             .collect::<Vec<ServerStatePlayers>>()
+        //             .try_into()
+        //             .ok()?,
+        //         board: Cards::try_from(sm.board).ok()?,
+        //     })
+        // }
         None
     }
 }
@@ -216,12 +221,16 @@ impl StateMessage {
 
         match self.action.action_type {
             StateMessageActionType::Play => {
-                let mut cards = self.action.cards.as_card().expect("invalid cards").0;
+                let mut cards = TryInto::<Cards>::try_into(self.action.cards)
+                    .expect("invalid cards")
+                    .0;
                 cards |= p;
                 cards
             }
             StateMessageActionType::Pass => {
-                let mut cards = self.board.as_card().expect("invalid cards").0;
+                let mut cards = TryInto::<Cards>::try_into(self.board)
+                    .expect("invalid cards")
+                    .0;
                 cards |= 0x100;
                 cards |= p;
                 cards
@@ -237,7 +246,9 @@ impl StateMessage {
                 ready
             }
             StateMessageActionType::Deal => {
-                let mut cards = self.your_hand.to_card();
+                let mut cards = TryInto::<Cards>::try_into(&self.your_hand)
+                    .expect("Valid hand")
+                    .0;
                 cards |= 0x400;
                 cards |= PlayerID::try_from(self.your_index)
                     .expect("Shoud fit")
@@ -252,7 +263,7 @@ impl StateMessage {
 
 pub mod muon {
     use crate::big2rules::{
-        cards::{CardNum, Cards},
+        cards::{CardNum, Cards, ParseCardsError},
         rules::is_valid_hand,
     };
 
@@ -346,10 +357,11 @@ pub mod muon {
         pub count: u32,
     }
 
-    impl InlineList16 {
-        #[must_use]
-        pub fn to_card(&self) -> u64 {
-            let mut cards: u64 = 0;
+    impl TryInto<Cards> for &InlineList16 {
+        type Error = ParseCardsError;
+
+        fn try_into(self) -> Result<Cards, Self::Error> {
+            let mut cards = Cards::default();
             if self.count < 14 {
                 if let Ok(count) = usize::try_from(self.count) {
                     for c in 0..count {
@@ -357,8 +369,10 @@ pub mod muon {
                         cards |= card_from_byte(card);
                     }
                 }
+                Ok(cards)
+            } else {
+                Err(ParseCardsError::InvalidInput)
             }
-            cards
         }
     }
 
@@ -385,23 +399,22 @@ pub mod muon {
         }
     }
 
-    impl InlineList8 {
-        // pub fn to_card(&self) -> u64 {
-        //     self.into_card().unwrap()
-        // }
-        pub fn as_card(&self) -> Result<Cards, &'static str> {
+    impl TryInto<Cards> for InlineList8 {
+        type Error = ParseCardsError;
+
+        fn try_into(self) -> Result<Cards, Self::Error> {
             let Some(count) = usize::try_from(self.count).ok().and_then(|v| if (0..=self.data.len()).contains(&v) { Some(v)} else { None }) else {
-                return Err("Count out-of-range!");
+                return Err(ParseCardsError::InvalidInput);
             };
-            let mut cards: u64 = 0;
+            let mut cards = Cards::default();
             for &card in &self.data[0..count] {
                 let c = card & 0b1100_1111;
                 if !(2..=14).contains(&c) {
-                    return Err("Card value out-of-range!");
+                    return Err(ParseCardsError::InvalidInput);
                 }
                 cards |= card_from_byte(card);
             }
-            Ok(Cards(cards))
+            Ok(cards)
         }
     }
 
@@ -816,7 +829,7 @@ mod tests {
         };
         let muon_hand = muon_hand.unwrap();
         assert_eq!(muon_hand, il8);
-        let cards = il8.as_card();
+        let cards = il8.try_into();
         assert!(cards.is_ok());
         assert_eq!(hand, cards.unwrap());
 
@@ -830,7 +843,7 @@ mod tests {
         };
         let muon_hand = muon_hand.unwrap();
         assert_eq!(muon_hand, il8);
-        let cards = il8.as_card();
+        let cards = il8.try_into();
         assert!(cards.is_ok());
         assert_eq!(hand, cards.unwrap());
 
@@ -844,7 +857,7 @@ mod tests {
         };
         let muon_hand = muon_hand.unwrap();
         assert_eq!(muon_hand, il8);
-        let cards = il8.as_card();
+        let cards = il8.try_into();
         assert!(cards.is_ok());
         assert_eq!(hand, cards.unwrap());
 
@@ -855,7 +868,7 @@ mod tests {
         };
         let muon_hand = muon::InlineList8::try_from(hand.0).unwrap();
         assert_eq!(muon_hand, il8);
-        assert_eq!(hand, muon_hand.as_card().unwrap());
+        assert_eq!(hand, muon_hand.try_into().unwrap());
 
         let hand = Cards::from(0x1F000);
         let il8 = muon::InlineList8 {
@@ -864,13 +877,13 @@ mod tests {
         };
         let muon_hand = muon::InlineList8::try_from(hand.0).unwrap();
         assert_eq!(muon_hand, il8);
-        assert_eq!(hand, muon_hand.as_card().unwrap());
+        assert_eq!(hand, muon_hand.try_into().unwrap());
 
         let il8 = muon::InlineList8 {
             data: [0; 8],
             count: 0,
         };
-        assert!(il8.as_card().unwrap() == Cards::default());
+        assert_eq!(TryInto::<Cards>::try_into(il8), Ok(Cards::default()));
     }
 
     #[test]
@@ -897,37 +910,37 @@ mod tests {
             data: [0xFF; 8],
             count: 1,
         };
-        assert!(il8.as_card().is_err());
+        assert!(TryInto::<Cards>::try_into(il8).is_err());
 
         let il8 = muon::InlineList8 {
             data: [0; 8],
             count: 9,
         };
-        assert!(il8.as_card().is_err());
+        assert!(TryInto::<Cards>::try_into(il8).is_err());
 
         let il8 = muon::InlineList8 {
             data: [0xFF, 0, 0, 0, 0, 0, 0, 0],
             count: 1,
         };
-        assert!(il8.as_card().is_err());
+        assert!(TryInto::<Cards>::try_into(il8).is_err());
 
         let il8 = muon::InlineList8 {
             data: [0x4d, 0, 0, 0, 0, 0, 0, 0],
             count: 1,
         };
-        assert!(il8.as_card().is_err());
+        assert!(TryInto::<Cards>::try_into(il8).is_err());
 
         let il8 = muon::InlineList8 {
             data: [0x3f, 0, 0, 0, 0, 0, 0, 0],
             count: 1,
         };
-        assert!(il8.as_card().is_err());
+        assert!(TryInto::<Cards>::try_into(il8).is_err());
 
         let il8 = muon::InlineList8 {
             data: [0x3d, 0, 0, 0, 0, 0, 0, 0],
             count: 2,
         };
-        assert!(il8.as_card().is_err());
+        assert!(TryInto::<Cards>::try_into(il8).is_err());
     }
     #[test]
     fn statemessage_current_players_names() {
@@ -1001,7 +1014,7 @@ mod tests {
             0x0, 0x5, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
         ];
         let sm = StateMessage::new(Some(buffer));
-        let cards = sm.action.cards.as_card().unwrap();
+        let cards = sm.action.cards.try_into().unwrap();
         let trail = sm.action_msg();
         assert_eq!(trail, 0x2121_1032);
         assert_eq!(Cards::from(trail & 0xFFFF_FFFF_FFFF_F000), cards);
@@ -1024,7 +1037,7 @@ mod tests {
             0x0, 0x0, 0x0, 0x5, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
         ];
         let sm = StateMessage::new(Some(buffer));
-        let cards = sm.action.cards.as_card().unwrap();
+        let cards = sm.action.cards.try_into().unwrap();
         let trail = sm.action_msg();
         assert_eq!(trail, 0x005E_0073);
         assert_eq!(Cards::from(trail & 0xFFFF_FFFF_FFFF_F000), cards);
@@ -1050,7 +1063,7 @@ mod tests {
             0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
         ];
         let sm = StateMessage::new(Some(buffer));
-        let cards = sm.board.as_card().unwrap();
+        let cards = sm.board.try_into().unwrap();
         let trail = sm.action_msg();
         assert_eq!(trail, 0x2000_0000_0000_0103);
         assert_eq!(Cards::from(trail & 0xFFFF_FFFF_FFFF_F000), cards);

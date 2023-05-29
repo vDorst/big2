@@ -503,7 +503,7 @@ pub mod display {
                 Print("PASSED".white().on_dark_grey())
             )?;
         } else if gs.sm.action.action_type == net_legacy::StateMessageActionType::Play {
-            let cards = gs.sm.action.cards.as_card().expect("Should not crash!");
+            let cards = gs.sm.action.cards.try_into().expect("Should not crash!");
             let card_str = cards_str(cards);
             execute!(gs.srn, MoveTo(9, 0), Print(&s), Print(card_str))?;
         } else {
@@ -513,7 +513,7 @@ pub mod display {
         let s = format!("Rounds: {}/{}", gs.sm.round, gs.sm.num_rounds);
         execute!(gs.srn, MoveTo(0, 1), Print(s))?;
 
-        let cards = gs.sm.board.as_card().expect("Should not crash!");
+        let cards = gs.sm.board.try_into().expect("Should not crash!");
         let out_str = cards_str(cards);
         execute!(gs.srn, MoveTo(20, 1), Print("Board: "), Print(out_str))?;
 
@@ -580,9 +580,9 @@ pub mod display {
             let player_score = player.score;
 
             if p == gs.sm.your_index {
-                let cards = gs.sm.your_hand.to_card();
+                let cards: Cards = (&gs.sm.your_hand).try_into().expect("Should not crash");
                 info!("Cards: {cards:X}");
-                for card in Cards::try_from(cards).unwrap() {
+                for card in cards {
                     let cardnum = CardNum::lowcard(card).unwrap();
                     if gs.cards_selected & card == 0 {
                         out_sel_str.push_str("  ");
@@ -757,7 +757,7 @@ async fn main() {
                                 net_legacy::StateMessageActionType::Play => {
                                     let p = gs.sm.action.player;
                                     if let Some(name) = gs.sm.player_name(p) {
-                                        let cards = gs.sm.action.cards.as_card().unwrap();
+                                        let cards = gs.sm.action.cards.try_into().unwrap();
                                         let cards_str = display::cards_str(cards);
                                         trace!("PLAY: {name:>16}: {cards_str}");
                                     }
@@ -878,7 +878,7 @@ async fn main() {
                             }
 
                             if gs.sm.action.action_type == net_legacy::StateMessageActionType::Update {
-                                gs.board = gs.sm.board.as_card().unwrap();
+                                gs.board = gs.sm.board.try_into().unwrap();
                                 gs.board_score = big2rules::rules::score_hand(gs.board.0);
                                 gs.is_valid_hand = (gs.hand_score > gs.board_score)
                                     && (gs.board == Cards::default()
@@ -913,8 +913,8 @@ async fn main() {
                                     if gs.sm.board.count > 1 {
                                         let _ = ts.action_pass().await;
                                     }
-                                    let hand = gs.sm.your_hand.to_card();
-                                    let better_card = big2rules::rules::higher_single_card(gs.board.0, hand);
+                                    let hand: Cards = (&gs.sm.your_hand).try_into().expect("Should not crash");
+                                    let better_card = big2rules::rules::higher_single_card(gs.board.0, hand.0);
                                     // println!(
                                     //     "\n\n\r\n-- B 0x{:16x} H 0x{:16x} C 0x{:16x} --",
                                     //     gs.board, hand, better_card

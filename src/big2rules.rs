@@ -51,18 +51,25 @@ pub mod deck {
 
 pub mod cards {
     use core::fmt;
-    use std::ops::{Add, BitAnd, BitOr, BitXor, BitXorAssign, Sub};
+    use std::ops::{Add, BitAnd, BitOr, BitOrAssign, BitXor, BitXorAssign, Sub};
 
-    #[derive(Debug)]
+    #[derive(Debug, Eq, PartialEq)]
     pub enum ParseCardsError {
         InvalidLowerBits,
         InvalidBoard,
         InvalidHand,
         IlligalHand,
+        InvalidInput,
     }
 
-    #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+    #[derive(Copy, Clone, PartialEq, Eq, Default)]
     pub struct Cards(pub u64);
+
+    impl fmt::Debug for Cards {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "Cards(0x{:08X})", &self.0)
+        }
+    }
 
     impl Cards {
         #[must_use]
@@ -127,6 +134,12 @@ pub mod cards {
         }
     }
 
+    impl BitOrAssign<u64> for Cards {
+        fn bitor_assign(&mut self, rhs: u64) {
+            self.0 |= rhs;
+        }
+    }
+
     impl BitOr<Cards> for u64 {
         type Output = u64;
 
@@ -146,6 +159,14 @@ pub mod cards {
 
         fn bitand(self, rhs: Cards) -> Self::Output {
             self & rhs.0
+        }
+    }
+
+    impl BitAnd for Cards {
+        type Output = u64;
+
+        fn bitand(self, rhs: Cards) -> Self::Output {
+            self.0 & rhs.0
         }
     }
 
