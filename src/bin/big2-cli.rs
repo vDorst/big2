@@ -139,7 +139,7 @@ pub mod display {
         Result,
     };
 
-    #[derive(PartialEq)]
+    #[derive(PartialEq, Debug)]
     pub enum UserEvent {
         Nothing,
         Play,
@@ -739,6 +739,7 @@ async fn main() {
         // Game loop
         'gameloop: loop {
             let mut user_event = reader.next().fuse();
+            let mut update_display = false;
 
             select! {
                 sm = ts.rx.recv().fuse() => {
@@ -883,9 +884,12 @@ async fn main() {
                                     && (gs.board == 0
                                         || gs.board.count_ones() == gs.cards_selected.count_ones());
 
-                                if let Err(e) = display::board(&mut gs) {
-                                    error!("DISPLAY ERROR {}", e);
-                                }
+                                update_display = true;
+                            }
+
+                            if gs.sm.turn == gs.sm.your_index && gs.auto_pass {
+                                gs.auto_pass = false;
+                                let _ = ts.action_pass().await;
                             }
 
                             // println!("\n\n\r\n## B 0x{:16x} T {:2} ##", gs.board, gs.sm.turn);
@@ -927,161 +931,135 @@ async fn main() {
                     }
                 },
                 polled_event = user_event => {
+                    // Poll user events
                     let user_event = match polled_event {
-                        Some(Ok(event)) => event,
+                        Some(Ok(event)) =>  match event {
+                            Event::Key(key_event) => display::handle_key_events(key_event),
+                            Event::Mouse(mouse_event) => display::handle_mouse_events(mouse_event),
+                            Event::Resize(_, _) => UserEvent::Resize,
+                            Event::FocusGained | Event::FocusLost | Event::Paste(_) => UserEvent::Nothing,
+                        },
                         Some(Err(e)) => {
-                            println!("Error: {:?}\r", e);
+                            error!("Error: {:?}\r", e);
                             break 'gameloop;
                         },
                         None => break 'gameloop,
                     };
 
-                    // Poll user events
-                    let user_event = match user_event {
-                        Event::Key(key_event) => display::handle_key_events(key_event),
-                        Event::Mouse(mouse_event) => display::handle_mouse_events(mouse_event),
-                        Event::Resize(_, _) => UserEvent::Resize,
-                        Event::FocusGained | Event::FocusLost | Event::Paste(_) => UserEvent::Nothing,
-                    };
+                    if user_event == display::UserEvent::Nothing {
+                        continue;
+                    }
 
-                    if user_event != display::UserEvent::Nothing {
-                        let mut toggle_card = 0;
+                    // info!("user event: {user_event:?}");
+                    let mut toggle_card = 0;
 
-                        if user_event == display::UserEvent::Resize {
-                            if let Err(e) = display::clear(&mut gs.srn) {
-                                error!("DISPLAY ERROR {e}");
-                            }
-                            if let Err(e) = display::board(&mut gs) {
-                                error!("DISPLAY ERROR {e}");
-                            }
-                            continue;
+                    if user_event == display::UserEvent::Resize {
+                        if let Err(e) = display::clear(&mut gs.srn) {
+                            error!("DISPLAY ERROR {e}");
                         }
-
-                        if user_event == display::UserEvent::Quit {
-                            net_legacy::client::disconnect(ts);
-                            break 'gameloop;
+                        if let Err(e) = display::board(&mut gs) {
+                            error!("DISPLAY ERROR {e}");
                         }
+                        continue;
+                    }
 
-                        let is_inbetween: bool = gs.sm.turn == -1;
+                    if user_event == display::UserEvent::Quit {
+                        net_legacy::client::disconnect(ts);
+                        break 'gameloop;
+                    }
 
-                        // Ready
-                        if is_inbetween {
-                            if !gs.i_am_ready && user_event == display::UserEvent::Ready {
-                                gs.i_am_ready = true;
-                                if ts.action_ready().await.is_err() {
-                                    continue;
-                                }
+                    let is_inbetween: bool = gs.sm.turn == -1;
+
+                    // Ready
+                    if is_inbetween {
+                        if !gs.i_am_ready && user_event == display::UserEvent::Ready {
+                            gs.i_am_ready = true;
+                            if ts.action_ready().await.is_err() {
+                                continue;
                             }
-                            continue;
-                        } else {
-                            // (De)Select cards
-                            if user_event == display::UserEvent::ToggleCard1 {
-                                toggle_card = 1;
-                            }
-                            if user_event == display::UserEvent::ToggleCard2 {
-                                toggle_card = 2;
-                            }
-                            if user_event == display::UserEvent::ToggleCard3 {
-                                toggle_card = 3;
-                            }
-                            if user_event == display::UserEvent::ToggleCard4 {
-                                toggle_card = 4;
-                            }
-                            if user_event == display::UserEvent::ToggleCard5 {
-                                toggle_card = 5;
-                            }
-                            if user_event == display::UserEvent::ToggleCard6 {
-                                toggle_card = 6;
-                            }
-                            if user_event == display::UserEvent::ToggleCard7 {
-                                toggle_card = 7;
-                            }
-                            if user_event == display::UserEvent::ToggleCard8 {
-                                toggle_card = 8;
-                            }
-                            if user_event == display::UserEvent::ToggleCard9 {
-                                toggle_card = 9;
-                            }
-                            if user_event == display::UserEvent::ToggleCard10 {
-                                toggle_card = 10;
-                            }
-                            if user_event == display::UserEvent::ToggleCard11 {
-                                toggle_card = 11;
-                            }
-                            if user_event == display::UserEvent::ToggleCard12 {
-                                toggle_card = 12;
-                            }
-                            if user_event == display::UserEvent::ToggleCard13 {
-                                toggle_card = 13;
-                            }
-                            if user_event == display::UserEvent::Clear && gs.cards_selected != 0 {
+                        }
+                        continue;
+                    } else {
+                        let me_index = gs.sm.your_index;
+                        let is_your_turn: bool = gs.sm.turn == me_index;
+                        let you = &gs.sm.players[me_index as usize];
+
+                        // (De)Select cards
+                        match user_event {
+                            display::UserEvent::ToggleCard1 => toggle_card = 1,
+                            display::UserEvent::ToggleCard2 => toggle_card = 2,
+                            display::UserEvent::ToggleCard3 => toggle_card = 3,
+                            display::UserEvent::ToggleCard4 => toggle_card = 4,
+                            display::UserEvent::ToggleCard5 => toggle_card = 5,
+                            display::UserEvent::ToggleCard6 => toggle_card = 6,
+                            display::UserEvent::ToggleCard7 => toggle_card = 7,
+                            display::UserEvent::ToggleCard8 => toggle_card = 8,
+                            display::UserEvent::ToggleCard9 => toggle_card = 9,
+                            display::UserEvent::ToggleCard10 => toggle_card = 10,
+                            display::UserEvent::ToggleCard11 => toggle_card = 11,
+                            display::UserEvent::ToggleCard12 => toggle_card = 12,
+                            display::UserEvent::ToggleCard13 => toggle_card = 13,
+                            display::UserEvent::Clear => if gs.cards_selected != 0 {
                                 gs.cards_selected = 0;
                                 gs.hand_score = None;
                                 gs.is_valid_hand = false;
-                                if let Err(e) = display::board(&mut gs) {
-                                    error!("DISPLAY ERROR {}", e);
-                                }
-                            }
-
-                            let me_index = gs.sm.your_index;
-                            let is_your_turn: bool = gs.sm.turn == me_index;
-
-                            if toggle_card != 0 {
-                                if toggle_card > gs.sm.your_hand.count as usize {
-                                    continue;
-                                }
-                                let card =
-                                    net_legacy::muon::card_from_byte(gs.sm.your_hand.data[toggle_card - 1]);
-                                gs.cards_selected ^= card;
-                                gs.hand_score = big2rules::rules::score_hand(gs.cards_selected);
-                                gs.is_valid_hand = is_your_turn
-                                    && (gs.hand_score > gs.board_score)
-                                    && (gs.board == 0
-                                        || gs.board.count_ones() == gs.cards_selected.count_ones());
-                                if let Err(e) = display::board(&mut gs) {
-                                    error!("DISPLAY ERROR {e}");
-                                }
-                            }
-
-                            let you = &gs.sm.players[me_index as usize];
-                            if is_your_turn {
-                                // Pass
-                                if user_event == display::UserEvent::Pass
-                                    && !you.has_passed_this_cycle
-                                    && ts.action_pass().await.is_err()
-                                {
-                                    continue;
-                                }
-
+                                update_display = true;
+                            },
+                            display::UserEvent::Play => {
                                 // Play hand
-                                if user_event == display::UserEvent::Play && gs.is_valid_hand {
+                                if gs.is_valid_hand {
                                     // println!("Play hand");
                                     gs.sm.action.action_type = net_legacy::StateMessageActionType::Play;
 
                                     if let Err(e) = ts.action_play(gs.cards_selected).await {
-                                        println!("Could not send your hand to the server!\r\n{e}");
+                                        error!("Could not send your hand to the server!\r\n{e}");
                                     }
 
                                     gs.cards_selected = 0;
                                     gs.hand_score = None;
                                     gs.is_valid_hand = false;
                                 }
-                            } else {
-                                // Pre Pass
-                                if user_event == display::UserEvent::Pass && !you.has_passed_this_cycle {
-                                    gs.auto_pass = !gs.auto_pass;
-                                    if let Err(e) = display::board(&mut gs) {
-                                        error!("DISPLAY ERROR {e}");
+                            },
+                            display::UserEvent::Pass => {
+                                if !you.has_passed_this_cycle {
+                                    if is_your_turn {
+                                        // Pass
+                                        if ts.action_pass().await.is_err()
+                                        {
+                                            continue;
+                                        }
+                                    } else {
+                                        // Pre Pass
+                                        gs.auto_pass = !gs.auto_pass;
+                                        update_display = true;
                                     }
                                 }
                             }
+                            display::UserEvent::Nothing
+                            | display::UserEvent::Quit
+                            | display::UserEvent::Ready
+                            | display::UserEvent::Resize => (),
+                        }
+
+                        if toggle_card != 0 && toggle_card <= gs.sm.your_hand.count as usize {
+                            let card =
+                                net_legacy::muon::card_from_byte(gs.sm.your_hand.data[toggle_card - 1]);
+                            gs.cards_selected ^= card;
+                            gs.hand_score = big2rules::rules::score_hand(gs.cards_selected);
+                            gs.is_valid_hand = is_your_turn
+                                && (gs.hand_score > gs.board_score)
+                                && (gs.board == 0
+                                    || gs.board.count_ones() == gs.cards_selected.count_ones());
+                            update_display = true;
                         }
                     }
                 }
             }
 
-            if let Err(e) = display::board(&mut gs) {
-                error!("DISPLAY ERROR {e}");
+            if update_display {
+                if let Err(e) = display::board(&mut gs) {
+                    error!("DISPLAY ERROR {e}");
+                }
             }
         }
         // close cli right way
@@ -1099,7 +1077,6 @@ mod tests {
     }
 
     // valid argument tests
-
     #[test]
     fn argument_test_client_join_name() {
         let args = Arguments::from_vec(to_vec(&["--join", "10.10.10.10", "--name", "Test"]));
@@ -1145,16 +1122,13 @@ mod tests {
     }
 
     // Invalid argument tests
-
     #[test]
     fn argument_test_host_join_name_rounds256() {
         let args = Arguments::from_vec(to_vec(&["--host", "--name", "IamL33T", "--rounds", "256"]));
         let ar = parse_args(args);
         match ar {
             Err(paError::Utf8ArgumentParsingFailed { value: _, cause: _ }) => (),
-            _ => {
-                panic!("{ar:?}");
-            }
+            _ => panic!("{ar:?}"),
         };
     }
 
@@ -1164,9 +1138,7 @@ mod tests {
         let ar = parse_args(args);
         match ar {
             Err(paError::ArgumentParsingFailed { cause: _ }) => (),
-            _ => {
-                panic!("{ar:?}");
-            }
+            _ => panic!("{ar:?}"),
         };
     }
 
@@ -1176,9 +1148,7 @@ mod tests {
         let ar = parse_args(args);
         match ar {
             Err(paError::ArgumentParsingFailed { cause: _ }) => (),
-            _ => {
-                panic!("{ar:?}");
-            }
+            _ => panic!("{ar:?}"),
         };
     }
 
@@ -1188,9 +1158,7 @@ mod tests {
         let ar = parse_args(args);
         match ar {
             Err(paError::OptionWithoutAValue(_)) => (),
-            _ => {
-                panic!("{ar:?}");
-            }
+            _ => panic!("{ar:?}"),
         };
     }
 
@@ -1200,9 +1168,7 @@ mod tests {
         let ar = parse_args(args);
         match ar {
             Err(paError::ArgumentParsingFailed { cause: _ }) => (),
-            _ => {
-                panic!("{ar:?}");
-            }
+            _ => panic!("{ar:?}"),
         };
     }
 
@@ -1218,9 +1184,7 @@ mod tests {
         let ar = parse_args(args);
         match ar {
             Err(paError::ArgumentParsingFailed { cause: _ }) => (),
-            _ => {
-                panic!("{ar:?}");
-            }
+            _ => panic!("{ar:?}"),
         };
     }
 
@@ -1236,9 +1200,7 @@ mod tests {
         let ar = parse_args(args);
         match ar {
             Err(paError::ArgumentParsingFailed { cause: _ }) => (),
-            _ => {
-                panic!("{ar:?}");
-            }
+            _ => panic!("{ar:?}"),
         };
     }
 
@@ -1254,9 +1216,7 @@ mod tests {
         let ar = parse_args(args);
         match ar {
             Err(paError::MissingArgument) => (),
-            _ => {
-                panic!("{ar:?}");
-            }
+            _ => panic!("{ar:?}"),
         };
     }
 
@@ -1266,9 +1226,7 @@ mod tests {
         let ar = parse_args(args);
         match ar {
             Err(paError::ArgumentParsingFailed { cause: _ }) => (),
-            _ => {
-                panic!("{ar:?}");
-            }
+            _ => panic!("{ar:?}"),
         };
     }
 
@@ -1278,9 +1236,7 @@ mod tests {
         let ar = parse_args(args);
         match ar {
             Err(paError::OptionWithoutAValue(_)) => (),
-            _ => {
-                panic!("{ar:?}");
-            }
+            _ => panic!("{ar:?}"),
         };
     }
 }

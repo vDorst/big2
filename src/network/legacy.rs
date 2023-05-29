@@ -758,8 +758,8 @@ mod tests {
         assert_eq!(mycards, 0x10a4_c18c_9020_0000);
 
         let mut mycards: u64 = 0;
-        for c in 0..sm.your_hand.count as usize {
-            mycards |= muon::card_from_byte(sm.your_hand.data[c]);
+        for (_idx, data) in (0..sm.your_hand.count).zip(sm.your_hand.data) {
+            mycards |= muon::card_from_byte(data);
         }
         assert_eq!(mycards, 0x10a4_c18c_9020_0000);
     }
