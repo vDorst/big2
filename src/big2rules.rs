@@ -1,13 +1,11 @@
 use crate::network::legacy as network;
 
-use self::cards::{CardNum, CardRank, ScoreKind};
+use self::cards::{CardNum, CardRank, Cards, ScoreKind};
 
 pub const RANKS: [u8; 13] = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
-pub type Cards = u64;
-
 pub mod deck {
-    use super::{deck, Cards};
+    use super::{cards::Cards, deck};
     use rand::seq::SliceRandom;
     use rand::thread_rng;
 
@@ -34,9 +32,9 @@ pub mod deck {
         let players_hand: [Cards; 4] = cards
             .chunks_exact(13)
             .map(|v| {
-                let mut card = 0;
+                let mut card = Cards(0);
                 for &d in v {
-                    card |= 1 << Cards::from(d);
+                    card.set_bit(d);
                 }
                 card
             })
@@ -52,7 +50,120 @@ pub mod deck {
 }
 
 pub mod cards {
-    use std::ops::{Add, Sub};
+    use core::fmt;
+    use std::ops::{Add, BitAnd, BitOr, BitXor, BitXorAssign, Sub};
+
+    #[derive(Debug)]
+    pub enum ParseCardsError {
+        InvalidLowerBits,
+        InvalidBoard,
+        InvalidHand,
+        IlligalHand,
+    }
+
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+    pub struct Cards(pub u64);
+
+    impl Cards {
+        #[must_use]
+        pub fn from(cards: u64) -> Self {
+            Self(cards)
+        }
+        pub fn set_bit(&mut self, bit: u8) {
+            self.0 |= 1 << bit;
+        }
+
+        #[must_use]
+        pub fn has_lowest_card(&self) -> bool {
+            self.0 & 0x1000 != 0
+        }
+
+        // pub fn contains(&self, rhs: Cards) -> bool {
+        //     self.0 & rhs.0 == rhs.0;
+        // }
+
+        #[must_use]
+        pub fn count_ones(&self) -> u32 {
+            self.0.count_ones()
+        }
+    }
+
+    // impl Into<u64> for Cards {
+    //     type Error = ParseIntError;
+
+    //     fn try_into(self) -> Result<u64, Self::Error> {
+    //         let val = self;
+    //         if val & 0xFFFF_FFFF_FFFF_F000 != val {
+    //             return Err(Self::Error);
+    //         }
+    //         Ok(Self(val))
+    //     }
+    // }
+
+    impl TryFrom<u64> for Cards {
+        type Error = ParseCardsError;
+
+        fn try_from(value: u64) -> Result<Self, Self::Error> {
+            if value & 0xFFFF_FFFF_FFFF_F000 != value {
+                return Err(ParseCardsError::InvalidLowerBits);
+            }
+            Ok(Self(value))
+        }
+    }
+
+    impl BitOr for Cards {
+        type Output = u64;
+
+        fn bitor(self, rhs: Self) -> Self::Output {
+            self.0 | rhs.0
+        }
+    }
+
+    impl BitOr<u64> for Cards {
+        type Output = Cards;
+
+        fn bitor(self, rhs: u64) -> Self::Output {
+            Cards(self.0 | rhs)
+        }
+    }
+
+    impl BitOr<Cards> for u64 {
+        type Output = u64;
+
+        fn bitor(self, rhs: Cards) -> Self::Output {
+            self | rhs.0
+        }
+    }
+
+    impl BitXorAssign for Cards {
+        fn bitxor_assign(&mut self, rhs: Self) {
+            self.0 = self.0.bitxor(rhs.0);
+        }
+    }
+
+    impl BitAnd<Cards> for u64 {
+        type Output = u64;
+
+        fn bitand(self, rhs: Cards) -> Self::Output {
+            self & rhs.0
+        }
+    }
+
+    impl fmt::LowerHex for Cards {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            let val = self.0;
+
+            fmt::LowerHex::fmt(&val, f)
+        }
+    }
+
+    impl fmt::UpperHex for Cards {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            let val = self.0;
+
+            fmt::UpperHex::fmt(&val, f)
+        }
+    }
 
     #[non_exhaustive]
     pub struct Kind;
@@ -555,13 +666,13 @@ impl SrvGameState {
             turn: -1,
             round: 0,
             rounds,
-            cards: [0; 4],
-            played_cards: 0,
+            cards: [Cards::default(); 4],
+            played_cards: Cards::default(),
             score: [0; 4],
             card_cnt: [13; 4],
         }
     }
-    pub fn deal(&mut self, cards: Option<&[u64; 4]>) {
+    pub fn deal(&mut self, cards: Option<&[Cards; 4]>) {
         // create cards
         if let Some(cards) = cards {
             assert_eq!(cards.len(), 4);
@@ -578,9 +689,9 @@ impl SrvGameState {
         self.card_cnt = [13; 4];
 
         let mut m: u64 = 0;
-        for c in &self.cards {
-            m |= c;
-            println!("C 0x{:16x} count {}", c, c.count_ones());
+        for &c in &self.cards {
+            m = m | c;
+            println!("C 0x{:16x} count {}", c.0, c.0.count_ones());
         }
         let im = !(m | 0xFFF);
         println!("! 0x{:16x} M 0x{:16x} count {}", im, m, im.count_ones());
@@ -590,7 +701,7 @@ impl SrvGameState {
         self.turn = if self.round == 1 {
             self.cards
                 .iter()
-                .position(|&x| x & 0x1000 != 0)
+                .position(|&x| x.has_lowest_card())
                 .expect("Weard a use should start with 0x1000 card!") as i32
         } else {
             let p = self.last_action & 0x3;
@@ -606,12 +717,12 @@ impl SrvGameState {
         let p: usize = player as usize & 0x3;
         let pc = self.cards[p];
 
-        let illegal_cards = (pc ^ hand) & hand;
+        let illegal_cards = (pc.0 ^ hand.0) & hand.0;
         if illegal_cards != 0 {
             return Err(SrvGameError::PlayerPlayedIllegalCard(illegal_cards));
         }
 
-        let Some(score) = rules::score_hand(hand) else {
+        let Some(score) = rules::score_hand(hand.0) else {
             return Err(SrvGameError::InvalidHand);
         };
 
@@ -622,7 +733,7 @@ impl SrvGameState {
         }
 
         self.prev_action = self.last_action;
-        self.last_action = hand | (p as Cards) | ((self.last_action & 0x3) << 2);
+        self.last_action = hand.0 | (p as u64) | ((self.last_action & 0x3) << 2);
 
         self.board_score = Some(score);
         self.cards[p] ^= hand;
@@ -714,12 +825,12 @@ impl SrvGameState {
         // Assist!
         let assisted = prev_player != curr_player
             && matches!(self.board_score, Some(ScoreKind::Single(_)))
-            && hand < self.cards[prev_player];
+            && hand < self.cards[prev_player].0;
 
         if assisted {
             println!(
                 "Assist! PP{} {:16x} CP{} {:16x}",
-                prev_player, self.cards[prev_player], self.turn, hand,
+                prev_player, self.cards[prev_player].0, self.turn, hand,
             );
         }
 
@@ -980,15 +1091,15 @@ mod tests {
     #[test]
     fn c_deal_hand() {
         // No cards generated
-        assert!(deck::deal() != [0, 0, 0, 0]);
+        assert!(deck::deal() != [Cards(0); 4]);
         // Detect shuffle is did not work at all.
         assert!(
             deck::deal()
                 != [
-                    0x1111_1111_1111_1000,
-                    0x2222_2222_2222_2000,
-                    0x4444_4444_4444_4000,
-                    0x8888_8888_8888_8000
+                    Cards(0x1111_1111_1111_1000),
+                    Cards(0x2222_2222_2222_2000),
+                    Cards(0x4444_4444_4444_4000),
+                    Cards(0x8888_8888_8888_8000),
                 ]
         );
     }
@@ -1013,58 +1124,58 @@ mod tests {
     fn assist_test() {
         let mut gs = SrvGameState::new(1);
         gs.deal(Some(&[
-            0x1111_1111_1111_1000,
-            0x2222_2222_2222_2000,
-            0x4444_4444_4444_4000,
-            0x8888_8888_8888_8000,
+            Cards(0x1111_1111_1111_1000),
+            Cards(0x2222_2222_2222_2000),
+            Cards(0x4444_4444_4444_4000),
+            Cards(0x8888_8888_8888_8000),
         ]));
         assert_eq!(gs.turn, 0);
 
         // reduct cards
-        gs.cards = [0x24000, 0x8000, 0x2000, 0x1000];
+        gs.cards = [Cards(0x24000), Cards(0x8000), Cards(0x2000), Cards(0x1000)];
         gs.card_cnt = [2, 1, 1, 1];
 
-        assert!(gs.play(0, 0x4000).is_ok());
-        assert!(gs.play(1, 0x8000).is_ok());
+        assert!(gs.play(0, Cards(0x4000)).is_ok());
+        assert!(gs.play(1, Cards(0x8000)).is_ok());
         assert_eq!(gs.score, [-3, 3, 0, 0]);
     }
     #[test]
     fn non_assist_test() {
         let mut gs = SrvGameState::new(1);
         gs.deal(Some(&[
-            0x1111_1111_1111_1000,
-            0x2222_2222_2222_2000,
-            0x4444_4444_4444_4000,
-            0x8888_8888_8888_8000,
+            Cards(0x1111_1111_1111_1000),
+            Cards(0x2222_2222_2222_2000),
+            Cards(0x4444_4444_4444_4000),
+            Cards(0x8888_8888_8888_8000),
         ]));
         assert_eq!(gs.turn, 0);
 
         // reduct cards
-        gs.cards = [0x5000, 0x8000, 0x2000, 0x40000];
+        gs.cards = [Cards(0x5000), Cards(0x8000), Cards(0x2000), Cards(0x40000)];
         gs.card_cnt = [2, 1, 1, 1];
 
-        assert!(gs.play(0, 0x4000).is_ok());
-        assert!(gs.play(1, 0x8000).is_ok());
+        assert!(gs.play(0, Cards(0x4000)).is_ok());
+        assert!(gs.play(1, Cards(0x8000)).is_ok());
         assert_eq!(gs.score, [-1, 3, -1, -1]);
     }
     #[test]
     fn score_multiply_test() {
         let mut gs = SrvGameState::new(1);
         gs.deal(Some(&[
-            0x1111_1111_1111_1000,
-            0x2222_2222_2222_2000,
-            0x8444_4444_4444_4000,
-            0x4888_8888_8888_8000,
+            Cards(0x1111_1111_1111_1000),
+            Cards(0x2222_2222_2222_2000),
+            Cards(0x4444_4444_4444_4000),
+            Cards(0x8888_8888_8888_8000),
         ]));
         assert_eq!(gs.turn, 0);
 
         // reduct cards
-        gs.cards[2] = 0x8000_0000_0000_0000;
+        gs.cards[2] = Cards(0x8000_0000_0000_0000);
         gs.card_cnt[2] = 1;
 
-        assert!(gs.play(0, 0x1000).is_ok());
-        assert!(gs.play(1, 0x2000).is_ok());
-        assert!(gs.play(2, 0x8000_0000_0000_0000).is_ok());
+        assert!(gs.play(0, Cards(0x1000)).is_ok());
+        assert!(gs.play(1, Cards(0x2000)).is_ok());
+        assert!(gs.play(2, Cards(0x8000_0000_0000_0000)).is_ok());
         assert_eq!(gs.score, [-24, -24, 87, -39]);
     }
 
@@ -1108,10 +1219,10 @@ mod tests {
         assert_eq!(
             &cards,
             &[
-                0x0000_0000_01FF_F000,
-                0x0000_003F_FE00_0000,
-                0x0007_FFC0_0000_0000,
-                0xFFF8_0000_0000_0000,
+                Cards(0x0000_0000_01FF_F000),
+                Cards(0x0000_003F_FE00_0000),
+                Cards(0x0007_FFC0_0000_0000),
+                Cards(0xFFF8_0000_0000_0000),
             ]
         );
     }

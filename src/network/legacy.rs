@@ -1,4 +1,4 @@
-use crate::big2rules::{self, Cards};
+use crate::big2rules::{self, cards::Cards};
 use log::{debug, error, info, trace};
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
@@ -110,6 +110,7 @@ pub enum GameUpdate<'a> {
         ready: u8,
     },
     Update(&'a ServerStatePlayers),
+    Full(&'a ServerState),
 }
 
 pub struct ServerStatePlayers {
@@ -126,6 +127,27 @@ pub struct ServerState {
     pub player_hand: Cards,
     pub players: [ServerStatePlayers; 4],
     pub board: Option<Cards>,
+}
+
+impl ServerState {
+    #[must_use]
+    pub fn from(sm: &StateMessage) -> Option<Self> {
+        // Some(ServerState {
+        //     round: u8::try_from(sm.round).ok()?,
+        //     rounds: u8::try_from(sm.num_rounds).ok()?,
+        //     turn: PlayerID::try_from(sm.turn),
+        //     player_id: PlayerID::try_from(sm.your_index)?,
+        //     player_hand: Cards::try_from(sm.your_hand)?,
+        //     players: sm.players.iter().map(|player|
+        //         StateMessagePlayer {
+        //             name: player.name.as_str()?.into(),
+        //             score: i16::try_from(player.score)?,
+        //         }
+        //     ).collect::<Vec<ServerStatePlayers>>.try_into().ok()?,
+        //     board: Cards::try_from(sm.board),
+        // })
+        None
+    }
 }
 
 #[non_exhaustive]
@@ -194,12 +216,12 @@ impl StateMessage {
 
         match self.action.action_type {
             StateMessageActionType::Play => {
-                let mut cards = self.action.cards.as_card().expect("invalid cards");
+                let mut cards = self.action.cards.as_card().expect("invalid cards").0;
                 cards |= p;
                 cards
             }
             StateMessageActionType::Pass => {
-                let mut cards = self.board.as_card().expect("invalid cards");
+                let mut cards = self.board.as_card().expect("invalid cards").0;
                 cards |= 0x100;
                 cards |= p;
                 cards
@@ -229,24 +251,28 @@ impl StateMessage {
 }
 
 pub mod muon {
-    use crate::big2rules::{cards::CardNum, rules::is_valid_hand};
+    use crate::big2rules::{
+        cards::{CardNum, Cards},
+        rules::is_valid_hand,
+    };
 
     use super::{big2rules, Deserialize, Serialize, TryFrom};
 
-    #[non_exhaustive]
-    pub struct Cards(pub u64);
+    // #[non_exhaustive]
+    // pub struct Cards(pub u64);
 
-    impl Cards {
-        #[must_use]
-        pub fn from_hand(hand: u64) -> Option<Self> {
-            // if hand != 0 {
-            //     score_hand(hand)?;
-            // }
+    // impl Cards {
+    //     #[must_use]
+    //     pub fn from_hand(hand: u64) -> Option<Self> {
+    //         // if hand != 0 {
+    //         //     score_hand(hand)?;
+    //         // }
 
-            Some(Self(hand))
-        }
-    }
+    //         Some(Self(hand))
+    //     }
+    // }
 
+    #[allow(clippy::copy_iterator)]
     impl Iterator for Cards {
         type Item = u64;
 
@@ -254,15 +280,15 @@ pub mod muon {
             if self.0 == 0 {
                 None
             } else {
-                let zeros = u64::from(self.0.trailing_zeros());
-                let mask = 1 << zeros;
-                self.0 ^= mask;
+                let val = self.0;
+                let mask = 1 << u64::from(val.trailing_zeros());
+                self.0 = val ^ mask;
                 Some(mask)
             }
         }
 
         fn size_hint(&self) -> (usize, Option<usize>) {
-            let size = usize::try_from(self.0.count_ones()).unwrap();
+            let size = usize::try_from(self.count_ones()).unwrap();
             (size, Some(size))
         }
     }
@@ -363,7 +389,7 @@ pub mod muon {
         // pub fn to_card(&self) -> u64 {
         //     self.into_card().unwrap()
         // }
-        pub fn as_card(&self) -> Result<u64, &'static str> {
+        pub fn as_card(&self) -> Result<Cards, &'static str> {
             let Some(count) = usize::try_from(self.count).ok().and_then(|v| if (0..=self.data.len()).contains(&v) { Some(v)} else { None }) else {
                 return Err("Count out-of-range!");
             };
@@ -375,7 +401,7 @@ pub mod muon {
                 }
                 cards |= card_from_byte(card);
             }
-            Ok(cards)
+            Ok(Cards(cards))
         }
     }
 
@@ -781,8 +807,8 @@ mod tests {
     #[test]
     fn muon_inline8_try_from_valid() {
         // No cards
-        let hand: u64 = 0;
-        let muon_hand = muon::InlineList8::try_from(hand);
+        let hand = Cards::from(0);
+        let muon_hand = muon::InlineList8::try_from(hand.0);
         assert!(muon_hand.is_ok());
         let il8 = muon::InlineList8 {
             data: [0; 8],
@@ -795,8 +821,8 @@ mod tests {
         assert_eq!(hand, cards.unwrap());
 
         // lowest card 3d
-        let hand: u64 = 0x1000;
-        let muon_hand = muon::InlineList8::try_from(hand);
+        let hand = Cards::from(0x1000);
+        let muon_hand = muon::InlineList8::try_from(hand.0);
         assert!(muon_hand.is_ok());
         let il8 = muon::InlineList8 {
             data: [0x3, 0, 0, 0, 0, 0, 0, 0],
@@ -809,8 +835,8 @@ mod tests {
         assert_eq!(hand, cards.unwrap());
 
         // higest card 2s
-        let hand: u64 = 0x8000_0000_0000_0000;
-        let muon_hand = muon::InlineList8::try_from(hand);
+        let hand = Cards::from(0x8000_0000_0000_0000);
+        let muon_hand = muon::InlineList8::try_from(hand.0);
         assert!(muon_hand.is_ok());
         let il8 = muon::InlineList8 {
             data: [0x32, 0, 0, 0, 0, 0, 0, 0],
@@ -822,21 +848,21 @@ mod tests {
         assert!(cards.is_ok());
         assert_eq!(hand, cards.unwrap());
 
-        let hand: u64 = 0xF100_0000_0000_0000;
+        let hand = Cards::from(0xF100_0000_0000_0000);
         let il8 = muon::InlineList8 {
             data: [14, 2, 18, 34, 50, 0, 0, 0],
             count: 5,
         };
-        let muon_hand = muon::InlineList8::try_from(hand).unwrap();
+        let muon_hand = muon::InlineList8::try_from(hand.0).unwrap();
         assert_eq!(muon_hand, il8);
         assert_eq!(hand, muon_hand.as_card().unwrap());
 
-        let hand: u64 = 0x1F000;
+        let hand = Cards::from(0x1F000);
         let il8 = muon::InlineList8 {
             data: [3, 19, 35, 51, 4, 0, 0, 0],
             count: 5,
         };
-        let muon_hand = muon::InlineList8::try_from(hand).unwrap();
+        let muon_hand = muon::InlineList8::try_from(hand.0).unwrap();
         assert_eq!(muon_hand, il8);
         assert_eq!(hand, muon_hand.as_card().unwrap());
 
@@ -844,7 +870,7 @@ mod tests {
             data: [0; 8],
             count: 0,
         };
-        assert!(il8.as_card().unwrap() == 0);
+        assert!(il8.as_card().unwrap() == Cards::default());
     }
 
     #[test]
@@ -978,7 +1004,7 @@ mod tests {
         let cards = sm.action.cards.as_card().unwrap();
         let trail = sm.action_msg();
         assert_eq!(trail, 0x2121_1032);
-        assert_eq!(trail & 0xFFFF_FFFF_FFFF_F000, cards);
+        assert_eq!(Cards::from(trail & 0xFFFF_FFFF_FFFF_F000), cards);
 
         // PLAY:             NG: FULLHOUSE
         let buffer: &[u8] = &[
@@ -1001,7 +1027,7 @@ mod tests {
         let cards = sm.action.cards.as_card().unwrap();
         let trail = sm.action_msg();
         assert_eq!(trail, 0x005E_0073);
-        assert_eq!(trail & 0xFFFF_FFFF_FFFF_F000, cards);
+        assert_eq!(Cards::from(trail & 0xFFFF_FFFF_FFFF_F000), cards);
     }
 
     #[test]
@@ -1027,7 +1053,7 @@ mod tests {
         let cards = sm.board.as_card().unwrap();
         let trail = sm.action_msg();
         assert_eq!(trail, 0x2000_0000_0000_0103);
-        assert_eq!(trail & 0xFFFF_FFFF_FFFF_F000, cards);
+        assert_eq!(Cards::from(trail & 0xFFFF_FFFF_FFFF_F000), cards);
     }
 
     #[test]
@@ -1124,5 +1150,42 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn legacy_to_new_statemessage_current_players_names() {
+        let buffer: &[u8] = &[
+            5, 0, 0, 0, 0xe0, 0, 0, 0, 1, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0x15, 7,
+            0x37, 0x28, 0x38, 0x39, 0xa, 0x2b, 0x3b, 0x2c, 0x1d, 0x3d, 2, 0, 0, 0, 0xd, 0, 0, 0,
+            0x54, 0x69, 0x6b, 0x6b, 0x69, 0x65, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0,
+            0, 9, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0x68, 0x6f, 0x73, 0x74, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0x52, 0x65,
+            0x6e, 0x65, 0x31, 0x32, 0x33, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0xb,
+            0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0x52, 0x65, 0x6e, 0x65, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0xd, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0x16, 0x26, 0, 0,
+            0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0,
+        ];
+        let mut sm = StateMessage::new(Some(buffer));
+
+        assert_eq!(sm.action_msg(), 0x0111_1800);
+
+        assert_eq!(sm.current_player().unwrap(), 0);
+        assert_eq!(sm.current_player_name().unwrap(), "Tikkie");
+        sm.turn = -1;
+        assert!(sm.current_player().is_none());
+        assert!(sm.current_player_name().is_none());
+        sm.turn = 1;
+        assert_eq!(sm.current_player_name().unwrap(), "host");
+        sm.turn = 2;
+        assert_eq!(sm.current_player_name().unwrap(), "Rene123");
+        sm.turn = 3;
+        assert_eq!(sm.current_player_name().unwrap(), "Rene");
+        sm.turn = 4;
+        assert!(sm.current_player().is_none());
+
+        let new = ServerState::from(&sm);
+
+        assert!(new.is_none());
     }
 }

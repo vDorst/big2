@@ -1,4 +1,7 @@
-use big2::{big2rules, network::legacy as net_legacy};
+use big2::{
+    big2rules::{self, cards::Cards},
+    network::legacy as net_legacy,
+};
 use crossterm::event::{Event, EventStream};
 use futures::{select, FutureExt, StreamExt};
 use std::{fs::File, thread, time};
@@ -114,10 +117,7 @@ fn parse_args(mut args: Arguments) -> Result<CliArgs, paError> {
 
 pub mod display {
     use super::{big2rules, net_legacy};
-    use big2::{
-        big2rules::cards::{CardNum, ScoreKind},
-        legacy::muon::Cards,
-    };
+    use big2::big2rules::cards::{CardNum, Cards, ScoreKind};
     use log::trace;
 
     use std::io::stdout;
@@ -461,9 +461,9 @@ pub mod display {
     }
 
     #[must_use]
-    pub fn cards_str(cards: u64) -> String {
+    pub fn cards_str(cards: Cards) -> String {
         let mut bit: u64 = 1 << 11;
-        let odd_straight = if let Some(score) = big2rules::rules::score_hand(cards) {
+        let odd_straight = if let Some(score) = big2rules::rules::score_hand(cards.0) {
             match score {
                 ScoreKind::Straight(a) | ScoreKind::StraightFlush(a) => a.is_odd_straight(),
                 _ => false,
@@ -481,7 +481,7 @@ pub mod display {
                 bit = 1 << 11;
             };
             bit <<= 1;
-            let card = cards & bit;
+            let card = bit & cards;
             if card == 0 {
                 continue;
             }
@@ -582,7 +582,7 @@ pub mod display {
             if p == gs.sm.your_index {
                 let cards = gs.sm.your_hand.to_card();
                 info!("Cards: {cards:X}");
-                for card in Cards::from_hand(cards).unwrap() {
+                for card in Cards::try_from(cards).unwrap() {
                     let cardnum = CardNum::lowcard(card).unwrap();
                     if gs.cards_selected & card == 0 {
                         out_sel_str.push_str("  ");
@@ -682,7 +682,7 @@ async fn main() {
 
         println!("Start game {}/{}", srv.round, srv.rounds);
 
-        srv.play(srv.turn, 0x1000).unwrap();
+        srv.play(srv.turn, Cards(0x1000)).unwrap();
 
         srv.pass(srv.turn).unwrap();
 
@@ -724,7 +724,7 @@ async fn main() {
 
         let mut gs = big2rules::GameState {
             srn,
-            board: 0,
+            board: Cards::default(),
             board_score: None,
             cards_selected: 0,
             auto_pass: false,
@@ -850,7 +850,7 @@ async fn main() {
                                         data: [0; 8],
                                         count: 0,
                                     };
-                                    gs.board = 0;
+                                    gs.board = Cards::default();
                                     gs.board_score = None;
                                     gs.i_am_ready = false;
                                     // Clear only the cards when it is not your turn.
@@ -866,7 +866,7 @@ async fn main() {
                             }
 
                             if gs.sm.action.action_type == net_legacy::StateMessageActionType::Deal {
-                                gs.board = 0;
+                                gs.board = Cards::default();
                                 gs.board_score = None;
                                 gs.i_am_ready = false;
                                 gs.cards_selected = 0;
@@ -879,9 +879,9 @@ async fn main() {
 
                             if gs.sm.action.action_type == net_legacy::StateMessageActionType::Update {
                                 gs.board = gs.sm.board.as_card().unwrap();
-                                gs.board_score = big2rules::rules::score_hand(gs.board);
+                                gs.board_score = big2rules::rules::score_hand(gs.board.0);
                                 gs.is_valid_hand = (gs.hand_score > gs.board_score)
-                                    && (gs.board == 0
+                                    && (gs.board == Cards::default()
                                         || gs.board.count_ones() == gs.cards_selected.count_ones());
 
                                 update_display = true;
@@ -914,7 +914,7 @@ async fn main() {
                                         let _ = ts.action_pass().await;
                                     }
                                     let hand = gs.sm.your_hand.to_card();
-                                    let better_card = big2rules::rules::higher_single_card(gs.board, hand);
+                                    let better_card = big2rules::rules::higher_single_card(gs.board.0, hand);
                                     // println!(
                                     //     "\n\n\r\n-- B 0x{:16x} H 0x{:16x} C 0x{:16x} --",
                                     //     gs.board, hand, better_card
@@ -1048,7 +1048,7 @@ async fn main() {
                             gs.hand_score = big2rules::rules::score_hand(gs.cards_selected);
                             gs.is_valid_hand = is_your_turn
                                 && (gs.hand_score > gs.board_score)
-                                && (gs.board == 0
+                                && (gs.board == Cards::default()
                                     || gs.board.count_ones() == gs.cards_selected.count_ones());
                             update_display = true;
                         }
