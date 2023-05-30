@@ -23,3 +23,16 @@ futures = "0.3.28"
 [[bin]]
 name = "big2-cli"
 test = true
+
+
+[profile.release]
+opt-level = 3
+debug = false
+# split-debuginfo = '...'  # Platform-specific.
+debug-assertions = false
+overflow-checks = true
+lto = false
+panic = 'unwind'
+incremental = false
+codegen-units = 16
+rpath = true

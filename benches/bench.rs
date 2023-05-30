@@ -1,6 +1,6 @@
 #![feature(test)]
-
 extern crate test;
+
 use big2::big2rules::cards::CardNum;
 use big2::big2rules::cards::Cards;
 use test::Bencher;
@@ -119,7 +119,7 @@ fn bench_game_srv_obj_deal_full_play_8_rounds(b: &mut Bencher) {
 fn bench_score_hand(b: &mut Bencher) {
     b.iter(|| {
         for &hand in benchfactor::gameserver_vectors::TEST_VECTOR_TRAIL_GAME1 {
-            let score = big2rules::rules::score_hand(hand);
+            let score = big2rules::rules::score_hand(Cards(hand & 0xFFFF_FFFF_FFFF_F000));
             // score is never 3, but to be sure that score is tested and not optimized out.
             assert_ne!(
                 score,

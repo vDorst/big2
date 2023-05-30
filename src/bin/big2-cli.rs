@@ -411,8 +411,12 @@ pub mod display {
     // 2.         pietje3: #13 ## ## ## ## ## ## ## ## ## ## ## ## ##  €   0
 
     pub fn draw_btn_play(gs: &mut big2rules::GameState) -> Result<()> {
-        let line = if gs.sm.your_index == gs.sm.turn && gs.is_valid_hand {
-            "[ PLAY ]".white().on_green()
+        let line = if gs.is_valid_hand {
+            if gs.sm.your_index == gs.sm.turn {
+                "[ PLAY ]".white().on_green()
+            } else {
+                "[ PLAY ]".white().on_blue()
+            }
         } else {
             "[ PLAY ]".white().on_dark_grey()
         };
@@ -463,7 +467,7 @@ pub mod display {
     #[must_use]
     pub fn cards_str(cards: Cards) -> String {
         let mut bit: u64 = 1 << 11;
-        let odd_straight = if let Some(score) = big2rules::rules::score_hand(cards.0) {
+        let odd_straight = if let Some(score) = big2rules::rules::score_hand(cards) {
             match score {
                 ScoreKind::Straight(a) | ScoreKind::StraightFlush(a) => a.is_odd_straight(),
                 _ => false,
@@ -485,7 +489,7 @@ pub mod display {
             if card == 0 {
                 continue;
             }
-            cards_to_utf8(CardNum::lowcard(bit).unwrap(), &mut card_str);
+            cards_to_utf8(CardNum::lowcard(Cards(bit)).unwrap(), &mut card_str);
             card_str.push(' ');
         }
         card_str
@@ -592,9 +596,8 @@ pub mod display {
             if p == gs.sm.your_index {
                 let cards: Cards = (&gs.sm.your_hand).try_into().expect("Should not crash");
                 info!("Cards: {cards:X}");
-                for card in cards {
-                    let cardnum = CardNum::lowcard(card).unwrap();
-                    if gs.cards_selected & card == 0 {
+                for cardnum in cards {
+                    if gs.cards_selected & cardnum.as_card() == 0 {
                         out_sel_str.push_str("  ");
                         cards_to_utf8(cardnum, &mut out_str);
                     } else {
@@ -736,11 +739,11 @@ async fn main() {
             srn,
             board: Cards::default(),
             board_score: None,
-            cards_selected: 0,
+            cards_selected: Cards::default(),
             auto_pass: false,
             i_am_ready: true,
             is_valid_hand: false,
-            hand_score: None,
+            hand: Cards::default(),
             sm: net_legacy::StateMessage::new(None),
         };
 
@@ -865,9 +868,8 @@ async fn main() {
                                     gs.i_am_ready = false;
                                     // Clear only the cards when it is not your turn.
                                     if gs.sm.turn != gs.sm.your_index {
-                                        gs.cards_selected = 0;
+                                        gs.cards_selected = Cards::default();
                                     }
-                                    gs.hand_score = big2rules::rules::score_hand(gs.cards_selected);
                                     if let Err(e) = display::clear(&mut gs.srn) {
                                         error!("DISPLAY ERROR {}", e);
                                     }
@@ -879,8 +881,7 @@ async fn main() {
                                 gs.board = Cards::default();
                                 gs.board_score = None;
                                 gs.i_am_ready = false;
-                                gs.cards_selected = 0;
-                                gs.hand_score = None;
+                                gs.cards_selected = Cards::default();
                                 if let Err(e) = display::clear(&mut gs.srn) {
                                     error!("DISPLAY ERROR {}", e);
                                 }
@@ -889,13 +890,15 @@ async fn main() {
 
                             if gs.sm.action.action_type == net_legacy::StateMessageActionType::Update {
                                 gs.board = gs.sm.board.try_into().unwrap();
-                                gs.board_score = big2rules::rules::score_hand(gs.board.0);
-                                gs.is_valid_hand = match (gs.board_score, gs.hand_score) {
+                                gs.board_score = big2rules::rules::score_hand(gs.board);
+                                gs.hand = (&gs.sm.your_hand).try_into().unwrap();
+                                let hand_score = big2rules::rules::score_hand(gs.hand);
+                                gs.is_valid_hand = match (gs.board_score, hand_score) {
                                         (_, None) => false,
                                         (None, Some(_)) => true,
                                         (Some(b), Some(h)) => matches!(b.partial_cmp(&h), Some(Ordering::Greater)),
                                 };
-                                info!("is_valid: b{:?} vs h{:?} = {}", gs.board_score, gs.hand_score, gs.is_valid_hand);
+                                info!("is_valid: b{:?} vs h{:?} = {}", gs.board_score, hand_score, gs.is_valid_hand);
                                 update_display = true;
                             }
 
@@ -1011,9 +1014,8 @@ async fn main() {
                             display::UserEvent::ToggleCard11 => toggle_card = 11,
                             display::UserEvent::ToggleCard12 => toggle_card = 12,
                             display::UserEvent::ToggleCard13 => toggle_card = 13,
-                            display::UserEvent::Clear => if gs.cards_selected != 0 {
-                                gs.cards_selected = 0;
-                                gs.hand_score = None;
+                            display::UserEvent::Clear => if gs.cards_selected != Cards(0) {
+                                gs.cards_selected = Cards::default();
                                 gs.is_valid_hand = false;
                                 update_display = true;
                             },
@@ -1023,12 +1025,11 @@ async fn main() {
                                     // println!("Play hand");
                                     gs.sm.action.action_type = net_legacy::StateMessageActionType::Play;
 
-                                    if let Err(e) = ts.action_play(gs.cards_selected).await {
+                                    if let Err(e) = ts.action_play(gs.cards_selected.0).await {
                                         error!("Could not send your hand to the server!\r\n{e}");
                                     }
 
-                                    gs.cards_selected = 0;
-                                    gs.hand_score = None;
+                                    gs.cards_selected = Cards::default();
                                     gs.is_valid_hand = false;
                                 }
                             },
@@ -1053,18 +1054,20 @@ async fn main() {
                             | display::UserEvent::Resize => (),
                         }
 
-                        if toggle_card != 0 && toggle_card <= gs.sm.your_hand.count as usize {
-                            let card =
-                                net_legacy::muon::card_from_byte(gs.sm.your_hand.data[toggle_card - 1]);
-                            gs.cards_selected ^= card;
-                            gs.hand_score = big2rules::rules::score_hand(gs.cards_selected);
-                            gs.is_valid_hand = match (gs.board_score, gs.hand_score) {
-                                    (_, None) => false,
-                                    (None, Some(_)) => true,
-                                    (Some(b), Some(h)) => matches!(h.partial_cmp(&b), Some(Ordering::Greater)),
-                            };
-                            info!("is_valid: b{:?} vs h{:?} = {}", gs.board_score, gs.hand_score, gs.is_valid_hand);
-                            update_display = true;
+                        if toggle_card != 0 {
+                            let mut val = gs.hand.into_iter();
+                            if let Some(card) = val.nth(toggle_card - 1) {
+                                info!("Select {card:?}");
+                                gs.cards_selected ^= card.as_card();
+                                let hand_score = big2rules::rules::score_hand(gs.cards_selected);
+                                gs.is_valid_hand = match (gs.board_score, hand_score) {
+                                        (_, None) => false,
+                                        (None, Some(_)) => true,
+                                        (Some(b), Some(h)) => matches!(h.partial_cmp(&b), Some(Ordering::Greater)),
+                                };
+                                info!("is_valid: b{:?} vs h{:?} = {}", gs.board_score, hand_score, gs.is_valid_hand);
+                                update_display = true;
+                            }
                         }
                     }
                 }

@@ -197,14 +197,14 @@ pub mod cards {
 
     impl CardNum {
         #[must_use]
-        pub fn highcard(cards: u64) -> Option<Self> {
-            let cardnum = 63 - u8::try_from(cards.leading_zeros()).ok()?;
+        pub fn highcard(cards: Cards) -> Option<Self> {
+            let cardnum = 63 - u8::try_from(cards.0.leading_zeros()).ok()?;
             Self::try_from(cardnum)
         }
 
         #[must_use]
-        pub fn lowcard(cards: u64) -> Option<Self> {
-            let cardnum = u8::try_from(cards.trailing_zeros()).ok()?;
+        pub fn lowcard(cards: Cards) -> Option<Self> {
+            let cardnum = u8::try_from(cards.0.trailing_zeros()).ok()?;
             Self::try_from(cardnum)
         }
 
@@ -243,6 +243,11 @@ pub mod cards {
         #[must_use]
         pub fn is_odd_straight(&self) -> bool {
             self.0 & (0x40 | 0x80) != 0
+        }
+
+        #[must_use]
+        pub fn as_card(&self) -> Cards {
+            Cards(1 << self.0)
         }
     }
 
@@ -378,11 +383,6 @@ pub mod cards {
         }
     }
 
-    impl Kind {
-        pub const HIGHEST: u64 = 0x3f;
-        pub const LOWEST: u64 = 12;
-    }
-
     #[must_use]
     pub fn has_rank(hand: u64, rank: CardRank) -> u64 {
         let mask = 0b1111 << ((rank as u8) << 2);
@@ -395,7 +395,7 @@ pub mod cards {
     }
 
     #[must_use]
-    pub fn card_selected(card: u64) -> CardNum {
+    pub fn card_selected(card: Cards) -> CardNum {
         CardNum::highcard(card).expect("Should fit")
     }
 
@@ -411,7 +411,7 @@ pub mod cards {
 }
 
 pub mod rules {
-    use super::cards::{self, CardNum, CardRank, ScoreKind};
+    use super::cards::{self, CardNum, CardRank, Cards, ScoreKind};
 
     // #[allow(dead_code)]
     // pub fn get_numbers(hand: u64) {
@@ -522,7 +522,7 @@ pub mod rules {
         flushs
     }
     #[must_use]
-    pub fn score_hand(hand: u64) -> Option<ScoreKind> {
+    pub fn score_hand(hand: Cards) -> Option<ScoreKind> {
         // Score:
         //  0xKNN = One, Pair and Straigth, Flush
         //    |++- highest card: bit nummer of the highest card
@@ -533,7 +533,7 @@ pub mod rules {
         //    |+-- Zero
         //    +--- Kind: Kind::QUADS or Kind::SET or Kind::FULLHOUSE
 
-        if !is_valid_hand(hand) {
+        if !is_valid_hand(hand.0) {
             return None;
         }
 
@@ -545,7 +545,7 @@ pub mod rules {
         let rank = highest_card.rank();
 
         // Get the played suit of that rank.
-        let suitmask = hand >> ((rank as u8) << 2);
+        let suitmask = hand.0 >> ((rank as u8) << 2);
         // Count number of cards based on the suit
         let cnt = suitmask.count_ones();
 
@@ -571,7 +571,7 @@ pub mod rules {
         let lowest_card = CardNum::lowcard(hand)?;
         let low_rank = lowest_card.rank();
         // Get the played suit of that rank.
-        let low_suitmask = hand >> ((low_rank as u8) << 2) & 0xF;
+        let low_suitmask = hand.0 >> ((low_rank as u8) << 2) & 0xF;
         // Count number of cards based on the suit
         let low_cnt = low_suitmask.count_ones();
 
@@ -592,7 +592,7 @@ pub mod rules {
         }
 
         // Flush
-        let is_flush: bool = is_flush(hand);
+        let is_flush: bool = is_flush(hand.0);
 
         // Straigth detection
         let mut is_straight: bool = rank - low_rank == 4 || rank - low_rank == 12;
@@ -600,27 +600,27 @@ pub mod rules {
         if is_straight {
             let mut straigth_score: Option<CardNum> = None;
             if rank - low_rank == 12 {
-                is_straight = cards::has_rank(hand, CardRank::THREE) != 0
-                    && cards::has_rank(hand, CardRank::FOUR) != 0
-                    && cards::has_rank(hand, CardRank::FIVE) != 0
-                    && cards::has_rank(hand, CardRank::TWO) != 0;
+                is_straight = cards::has_rank(hand.0, CardRank::THREE) != 0
+                    && cards::has_rank(hand.0, CardRank::FOUR) != 0
+                    && cards::has_rank(hand.0, CardRank::FIVE) != 0
+                    && cards::has_rank(hand.0, CardRank::TWO) != 0;
 
                 if is_straight {
                     // Straight 23456
-                    if cards::has_rank(hand, CardRank::SIX) != 0 {
+                    if cards::has_rank(hand.0, CardRank::SIX) != 0 {
                         straigth_score = Some(highest_card.set_straight_23456());
                     }
                     // Straight A2345
-                    if cards::has_rank(hand, CardRank::ACE) != 0 {
+                    if cards::has_rank(hand.0, CardRank::ACE) != 0 {
                         straigth_score = Some(highest_card.set_straight_A2345());
                     }
                 }
             } else {
-                is_straight = cards::has_rank(hand, low_rank) != 0
-                    && cards::has_rank(hand, CardRank::from(low_rank as u8 + 1)) != 0
-                    && cards::has_rank(hand, CardRank::from(low_rank as u8 + 2)) != 0
-                    && cards::has_rank(hand, CardRank::from(low_rank as u8 + 3)) != 0
-                    && cards::has_rank(hand, CardRank::from(low_rank as u8 + 4)) != 0;
+                is_straight = cards::has_rank(hand.0, low_rank) != 0
+                    && cards::has_rank(hand.0, CardRank::from(low_rank as u8 + 1)) != 0
+                    && cards::has_rank(hand.0, CardRank::from(low_rank as u8 + 2)) != 0
+                    && cards::has_rank(hand.0, CardRank::from(low_rank as u8 + 3)) != 0
+                    && cards::has_rank(hand.0, CardRank::from(low_rank as u8 + 4)) != 0;
                 if is_straight {
                     straigth_score = Some(highest_card);
                 }
@@ -647,11 +647,11 @@ pub struct GameState {
     pub srn: std::io::Stdout,
     pub board: Cards,
     pub board_score: Option<ScoreKind>,
-    pub cards_selected: u64,
+    pub cards_selected: Cards,
     pub auto_pass: bool,
     pub i_am_ready: bool,
     pub is_valid_hand: bool,
-    pub hand_score: Option<ScoreKind>,
+    pub hand: Cards,
 }
 
 pub struct SrvGameState {
@@ -703,7 +703,7 @@ impl SrvGameState {
         }
 
         // Setup
-        self.round += 1;
+        self.round = self.round.saturating_add(1);
         self.has_passed = 0;
         self.board_score = None;
         self.has_passed = 0;
@@ -716,14 +716,19 @@ impl SrvGameState {
         }
         let im = !(m | 0xFFF);
         println!("! 0x{:16x} M 0x{:16x} count {}", im, m, im.count_ones());
-        // assert!(m == 0xFFFF_FFFF_FFFF_F000);
+
+        // Disable by the limited info in the trace
+        // assert_eq!(m, 0xFFFF_FFFF_FFFF_F000);
 
         // Which player to start
         self.turn = if self.round == 1 {
-            self.cards
-                .iter()
-                .position(|&x| x.has_lowest_card())
-                .expect("Weard a use should start with 0x1000 card!") as i32
+            i32::try_from(
+                self.cards
+                    .iter()
+                    .position(|&x| x.has_lowest_card())
+                    .expect("Weard a use should start with 0x1000 card!"),
+            )
+            .unwrap()
         } else {
             let p = self.last_action & 0x3;
             println!("Last action {:16x} P{}", self.last_action, p);
@@ -735,7 +740,7 @@ impl SrvGameState {
             return Err(SrvGameError::NotPlayersTurn);
         }
 
-        let p: usize = player as usize & 0x3;
+        let p = usize::try_from(player).unwrap() & 0x3;
         let pc = self.cards[p];
 
         let illegal_cards = (pc.0 ^ hand.0) & hand.0;
@@ -743,7 +748,7 @@ impl SrvGameState {
             return Err(SrvGameError::PlayerPlayedIllegalCard(illegal_cards));
         }
 
-        let Some(score) = rules::score_hand(hand.0) else {
+        let Some(score) = rules::score_hand(hand) else {
             return Err(SrvGameError::InvalidHand);
         };
 
@@ -760,7 +765,7 @@ impl SrvGameState {
         self.cards[p] ^= hand;
 
         let cnt = hand.count_ones();
-        self.card_cnt[p] -= cnt as u8;
+        self.card_cnt[p] -= u8::try_from(cnt).expect("Should allways valid!");
 
         if self.card_cnt[p] == 0 {
             self.calc_score();
@@ -839,8 +844,8 @@ impl SrvGameState {
     }
 
     fn calc_score(&mut self) {
-        let prev_player = self.prev_action as usize & 0x3;
-        let curr_player = self.last_action as usize & 0x3;
+        let prev_player = usize::try_from(self.prev_action & 0x3).unwrap();
+        let curr_player = usize::try_from(self.last_action & 0x3).unwrap();
         let hand = self.last_action & 0xFFFF_FFFF_FFFF_F000;
 
         // Assist!
@@ -882,7 +887,7 @@ impl SrvGameState {
                 .zip(delta_score)
                 .for_each(|(score, delta_score)| *score -= delta_score);
         }
-        self.score[self.turn as usize] += total_score;
+        self.score[curr_player] += total_score;
     }
 }
 
@@ -946,170 +951,170 @@ mod tests {
     fn b_rules_score_hand() {
         // ONE
         assert_eq!(
-            rules::score_hand(0x0000_0000_0000_1000),
+            rules::score_hand(Cards(0x0000_0000_0000_1000)),
             Some(ScoreKind::Single(CardNum::LOWCARD))
         );
         assert_eq!(
-            rules::score_hand(0x8000_0000_0000_0000),
+            rules::score_hand(Cards(0x8000_0000_0000_0000)),
             Some(ScoreKind::Single(CardNum::HIGHCARD))
         );
 
         // PAIR
         assert_eq!(
-            rules::score_hand(0b11 << 12),
+            rules::score_hand(Cards(0b11 << 12)),
             Some(ScoreKind::Pair(CardNum::try_from(13).unwrap()))
         );
         // Select one 3 and one 4
-        assert!(rules::score_hand(0b11000 << 12).is_none());
-        assert!(rules::score_hand(0b11 << 12) < rules::score_hand(0b11 << 62));
+        assert!(rules::score_hand(Cards(0b11000 << 12)).is_none());
+        assert!(rules::score_hand(Cards(0b11 << 12)) < rules::score_hand(Cards(0b11 << 62)));
 
         // SET
         assert_eq!(
-            rules::score_hand(0b0111 << 12),
+            rules::score_hand(Cards(0b0111 << 12)),
             Some(ScoreKind::Set(CardRank::THREE))
         );
         assert_eq!(
-            rules::score_hand(0b1110 << 12),
+            rules::score_hand(Cards(0b1110 << 12)),
             Some(ScoreKind::Set(CardRank::THREE))
         );
         assert_eq!(
-            rules::score_hand(0b1101 << 12),
+            rules::score_hand(Cards(0b1101 << 12)),
             Some(ScoreKind::Set(CardRank::THREE))
         );
         assert_eq!(
-            rules::score_hand(0b1011 << 12),
+            rules::score_hand(Cards(0b1011 << 12)),
             Some(ScoreKind::Set(CardRank::THREE))
         );
-        assert!(rules::score_hand(0b11100 << 12).is_none());
-        assert!(rules::score_hand(0b11 << 12) < rules::score_hand(0b11 << 13));
+        assert!(rules::score_hand(Cards(0b11100 << 12)).is_none());
+        assert!(rules::score_hand(Cards(0b11 << 12)) < rules::score_hand(Cards(0b11 << 13)));
 
         // QUAD
         assert_eq!(
-            rules::score_hand(0b0001_1111_0000 << 12),
+            rules::score_hand(Cards(0b0001_1111_0000 << 12)),
             Some(ScoreKind::Quads(CardRank::FOUR))
         );
         assert_eq!(
-            rules::score_hand(0b0000_1111_1000 << 12),
+            rules::score_hand(Cards(0b0000_1111_1000 << 12)),
             Some(ScoreKind::Quads(CardRank::FOUR))
         );
         assert_eq!(
-            rules::score_hand(0b0001_1111_0000 << 52),
+            rules::score_hand(Cards(0b0001_1111_0000 << 52)),
             Some(ScoreKind::Quads(CardRank::ACE))
         );
         assert_eq!(
-            rules::score_hand(0b0000_1111_1000 << 52),
+            rules::score_hand(Cards(0b0000_1111_1000 << 52)),
             Some(ScoreKind::Quads(CardRank::ACE))
         );
         assert_eq!(
-            rules::score_hand(0b1111_0000_1000 << 52),
+            rules::score_hand(Cards(0b1111_0000_1000 << 52)),
             Some(ScoreKind::Quads(CardRank::TWO))
         );
-        assert!(rules::score_hand(0b1111_0001_1000 << 52).is_none());
-        assert!(rules::score_hand(0b1111_0000_1001 << 52).is_none());
+        assert!(rules::score_hand(Cards(0b1111_0001_1000 << 52)).is_none());
+        assert!(rules::score_hand(Cards(0b1111_0000_1001 << 52)).is_none());
 
         // FULL HOUSE
         assert_eq!(
-            rules::score_hand(0b0011_1011_0000 << 12),
+            rules::score_hand(Cards(0b0011_1011_0000 << 12)),
             Some(ScoreKind::FullHouse(CardRank::FOUR))
         );
 
         assert_eq!(
-            rules::score_hand(0b0000_1101_1001 << 12),
+            rules::score_hand(Cards(0b0000_1101_1001 << 12)),
             Some(ScoreKind::FullHouse(CardRank::FOUR))
         );
         assert_eq!(
-            rules::score_hand(0b0000_1011_0110 << 12),
+            rules::score_hand(Cards(0b0000_1011_0110 << 12)),
             Some(ScoreKind::FullHouse(CardRank::FOUR))
         );
         assert_eq!(
-            rules::score_hand(0b1110_1001_0000 << 52),
+            rules::score_hand(Cards(0b1110_1001_0000 << 52)),
             Some(ScoreKind::FullHouse(CardRank::TWO))
         );
         assert_eq!(
-            rules::score_hand(0b0000_0111_1001 << 52),
+            rules::score_hand(Cards(0b0000_0111_1001 << 52)),
             Some(ScoreKind::FullHouse(CardRank::ACE))
         );
         assert_eq!(
-            rules::score_hand(0b0000_1101_0110 << 52),
+            rules::score_hand(Cards(0b0000_1101_0110 << 52)),
             Some(ScoreKind::FullHouse(CardRank::ACE))
         );
 
         // STRAIGHT
         assert_eq!(
-            rules::score_hand(0x0002_1111 << 12),
+            rules::score_hand(Cards(0x0002_1111 << 12)),
             Some(ScoreKind::Straight(CardNum::try_from(0x1d).unwrap()))
         );
         assert_eq!(
-            rules::score_hand(0x0002_2221 << 12),
+            rules::score_hand(Cards(0x0002_2221 << 12)),
             Some(ScoreKind::Straight(CardNum::try_from(0x1d).unwrap()))
         );
         assert_eq!(
-            rules::score_hand(0x0000_0002_2221 << 12),
+            rules::score_hand(Cards(0x0000_0002_2221 << 12)),
             Some(ScoreKind::Straight(CardNum::try_from(0x1d).unwrap()))
         );
         // 23456
         assert_eq!(
-            rules::score_hand(0x8000_0000_0111_1000),
+            rules::score_hand(Cards(0x8000_0000_0111_1000)),
             Some(ScoreKind::Straight(CardNum::HIGHCARD.set_straight_23456()))
         );
         // A2345
         assert_eq!(
-            rules::score_hand(0x8200_0000_0011_1000),
+            rules::score_hand(Cards(0x8200_0000_0011_1000)),
             Some(ScoreKind::Straight(CardNum::HIGHCARD.set_straight_A2345()))
         );
 
         // FLUSH
         assert_eq!(
-            rules::score_hand(0x0011_1101 << 12),
+            rules::score_hand(Cards(0x0011_1101 << 12)),
             Some(ScoreKind::Flush(CardNum::try_from(32).unwrap()))
         );
         assert_eq!(
-            rules::score_hand(0x8800_0000_0808_8000),
+            rules::score_hand(Cards(0x8800_0000_0808_8000)),
             Some(ScoreKind::Flush(CardNum::HIGHCARD))
         );
 
         // STRAIGHT FLUSH
         assert_eq!(
-            rules::score_hand(0x0001_1111 << 12),
+            rules::score_hand(Cards(0x0001_1111 << 12)),
             Some(ScoreKind::StraightFlush(CardNum::try_from(0x1c).unwrap()))
         );
         assert_eq!(
-            rules::score_hand(0x1111_1000_0000_0000),
+            rules::score_hand(Cards(0x1111_1000_0000_0000)),
             Some(ScoreKind::StraightFlush(CardNum::try_from(0x3c).unwrap()))
         );
         assert_eq!(
-            rules::score_hand(0x8888_8000_0000_0000),
+            rules::score_hand(Cards(0x8888_8000_0000_0000)),
             Some(ScoreKind::StraightFlush(CardNum::HIGHCARD))
         );
         // 23456
         assert_eq!(
-            rules::score_hand(0x8000_0000_0888_8000),
+            rules::score_hand(Cards(0x8000_0000_0888_8000)),
             Some(ScoreKind::StraightFlush(
                 CardNum::HIGHCARD.set_straight_23456()
             ))
         );
         assert_eq!(
-            rules::score_hand(0x1000_0000_0111_1000),
+            rules::score_hand(Cards(0x1000_0000_0111_1000)),
             Some(ScoreKind::StraightFlush(
                 CardNum::try_from(0x3c).unwrap().set_straight_23456()
             ))
         );
         // A2345
         assert_eq!(
-            rules::score_hand(0x8800_0000_0088_8000),
+            rules::score_hand(Cards(0x8800_0000_0088_8000)),
             Some(ScoreKind::StraightFlush(
                 CardNum::HIGHCARD.set_straight_A2345()
             ))
         );
         assert_eq!(
-            rules::score_hand(0x1100_0000_0011_1000),
+            rules::score_hand(Cards(0x1100_0000_0011_1000)),
             Some(ScoreKind::StraightFlush(
                 CardNum::try_from(0x3c).unwrap().set_straight_A2345()
             ))
         );
 
         // GARBAGE
-        assert!(rules::score_hand(0x0001_0311 << 12).is_none());
+        assert!(rules::score_hand(Cards(0x0001_0311 << 12)).is_none());
     }
     #[test]
     fn c_deal_hand() {
@@ -1236,12 +1241,12 @@ mod tests {
         let play = rules::beter_hand(board.0, my_hand.0);
         assert!(play);
 
-        let board_score = score_hand(board.0).unwrap();
+        let board_score = score_hand(board).unwrap();
         assert_eq!(
             board_score,
             ScoreKind::Straight(CardNum::HIGHCARD.set_straight_A2345())
         );
-        let hand_score = score_hand(my_hand.0).unwrap();
+        let hand_score = score_hand(my_hand).unwrap();
         assert_eq!(hand_score, ScoreKind::Quads(CardRank::SEVEN));
 
         let cmp = board_score.partial_cmp(&hand_score);

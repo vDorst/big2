@@ -33,7 +33,7 @@ impl Message {
     pub fn new(kind: u32) -> Self {
         Self {
             kind,
-            size: std::mem::size_of::<Message>() as u32,
+            size: u32::try_from(std::mem::size_of::<Message>()).expect("Should Fit!"),
             pad: [0; 32],
         }
     }
@@ -190,7 +190,7 @@ impl StateMessage {
         };
         let mut sm: StateMessage =
             bincode::deserialize(buf).expect("Can't deserialize StateMessage");
-        sm.size = mem::size_of::<StateMessage>() as u32;
+        sm.size = u32::try_from(std::mem::size_of::<StateMessage>()).expect("Should Fit!");
         sm
     }
     #[must_use]
@@ -219,7 +219,9 @@ impl StateMessage {
             return 0xFFFF_FFFF_FFFF_FFFF;
         };
         let mut p: u64 = player.in_to();
-        p |= ((self.turn as u64) & 0x7) << 4;
+        #[allow(clippy::cast_sign_loss)]
+        let turn = self.turn as u64;
+        p |= (turn & 0x7) << 4;
 
         match self.action.action_type {
             StateMessageActionType::Play => {
@@ -256,7 +258,9 @@ impl StateMessage {
                     .expect("Shoud fit")
                     .in_to::<u64>()
                     & 0x7;
-                cards |= ((self.turn as u64) & 0x7) << 4;
+                #[allow(clippy::cast_sign_loss)]
+                let turn = self.turn as u64;
+                cards |= (turn & 0x7) << 4;
                 cards
             }
         }
@@ -287,16 +291,18 @@ pub mod muon {
 
     #[allow(clippy::copy_iterator)]
     impl Iterator for Cards {
-        type Item = u64;
+        type Item = CardNum;
 
         fn next(&mut self) -> Option<Self::Item> {
             if self.0 == 0 {
                 None
             } else {
                 let val = self.0;
-                let mask = 1 << u64::from(val.trailing_zeros());
+                let card_num = u8::try_from(val.trailing_zeros()).ok()?;
+                let mask = 1 << card_num;
                 self.0 = val ^ mask;
-                Some(mask)
+
+                CardNum::try_from(card_num)
             }
         }
 
@@ -393,7 +399,6 @@ pub mod muon {
             cards.count = hand.count_ones();
 
             for (card, data) in Cards(hand).zip(&mut cards.data) {
-                let card = CardNum::lowcard(card).unwrap();
                 *data = cards_to_byte(card);
             }
             Ok(cards)
@@ -448,7 +453,7 @@ pub mod muon {
     #[test]
     fn cards_iter() {
         let hand = 0;
-        let cards = Cards(hand).collect::<Vec<u64>>();
+        let cards = Cards(hand).collect::<Vec<CardNum>>();
         assert_eq!(cards, vec![]);
     }
 
@@ -808,7 +813,7 @@ mod tests {
         let cards: u64 = 0b111 << 12;
         let sm = PlayMessage {
             kind: 2,
-            size: mem::size_of::<PlayMessage>() as u32,
+            size: u32::try_from(mem::size_of::<PlayMessage>()).unwrap(),
             cards: muon::InlineList8::try_from(cards).unwrap(),
         };
         let byte_buf = bincode::serialize(&sm).unwrap();
