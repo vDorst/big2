@@ -509,13 +509,31 @@ pub mod rules {
         }
         false
     }
+
+    #[must_use]
+    pub fn is_flush3(mut hand: u64) -> bool {
+        let mut start = hand.trailing_zeros();
+        let mut ret = true;
+        for _ in 0..4 {
+            let bit = 1 << start;
+            hand ^= bit;
+            let sec = hand.trailing_zeros();
+            if (sec - start) % 4 != 0 {
+                ret = false;
+            }
+            start = sec;
+        }
+        ret
+    }
+
     #[must_use]
     pub fn has_flush(hand: u64) -> u8 {
         let mut mask: u64 = 0x1111_1111_1111_1000;
         let mut flushs: u8 = 0;
         for _ in 0..4 {
-            if (hand & mask).count_ones() >= 5 {
-                flushs += 1;
+            let num = (hand & mask).count_ones() / 5;
+            if num != 0 {
+                flushs += u8::try_from(num).unwrap();
             }
             mask <<= 1;
         }
@@ -533,96 +551,105 @@ pub mod rules {
         //    |+-- Zero
         //    +--- Kind: Kind::QUADS or Kind::SET or Kind::FULLHOUSE
 
-        if !is_valid_hand(hand.0) {
+        let lowest_card = CardNum::lowcard(hand)?;
+        let card_cnt_hand = hand.count_ones();
+
+        if card_cnt_hand == 1 {
+            return Some(ScoreKind::Single(lowest_card));
+        }
+
+        if !{
+            // Check number of cards played. count = 1, 2, 3 or 5 is valid.
+            card_cnt_hand != 4 && card_cnt_hand < 6
+        } {
             return None;
         }
 
-        let card_cnt_hand = hand.count_ones();
-
         // find the highest card and calc the rank.
-        //let highest_card = 63 - u8::try_from(hand.leading_zeros()).ok()?;
-        let highest_card = CardNum::highcard(hand)?;
-        let rank = highest_card.rank();
+        let high_card = CardNum::highcard(hand)?;
+        let high_rank = high_card.rank();
 
-        // Get the played suit of that rank.
-        let suitmask = hand.0 >> ((rank as u8) << 2);
-        // Count number of cards based on the suit
-        let cnt = suitmask.count_ones();
+        // find the lowest card and calc the rank.
+        let low_rank = lowest_card.rank();
 
         if card_cnt_hand <= 3 {
             // If cnt doesn't match the card_cnt then it is invalid hand.
-            if cnt != card_cnt_hand {
+            if high_rank != low_rank {
                 return None;
             }
-
-            if card_cnt_hand == 1 {
-                return Some(ScoreKind::Single(highest_card));
-            }
             if card_cnt_hand == 2 {
-                return Some(ScoreKind::Pair(highest_card));
-            }
-            if card_cnt_hand == 3 {
-                return Some(ScoreKind::Set(rank));
+                return Some(ScoreKind::Pair(high_card));
             }
 
-            return None;
+            return Some(ScoreKind::Set(high_rank));
         }
 
-        let lowest_card = CardNum::lowcard(hand)?;
-        let low_rank = lowest_card.rank();
+        // Get the played suit of that rank.
+        let high_suitmask = hand.0 >> ((high_rank as u8) << 2);
+        // Count number of cards based on the suit
+        let high_cnt = high_suitmask.count_ones();
+
         // Get the played suit of that rank.
         let low_suitmask = hand.0 >> ((low_rank as u8) << 2) & 0xF;
         // Count number of cards based on the suit
         let low_cnt = low_suitmask.count_ones();
 
         // Quad
-        if cnt == 4 {
-            return Some(ScoreKind::Quads(rank));
+        if high_cnt == 4 {
+            return Some(ScoreKind::Quads(high_rank));
         }
         if low_cnt == 4 {
             return Some(ScoreKind::Quads(low_rank));
         }
 
         // Full House
-        if cnt == 3 && low_cnt == 2 {
-            return Some(ScoreKind::FullHouse(rank));
+        if high_cnt == 3 && low_cnt == 2 {
+            return Some(ScoreKind::FullHouse(high_rank));
         }
-        if cnt == 2 && low_cnt == 3 {
+        if high_cnt == 2 && low_cnt == 3 {
             return Some(ScoreKind::FullHouse(low_rank));
         }
 
         // Flush
-        let is_flush: bool = is_flush(hand.0);
+        let is_flush = {
+            let mut mask: u64 = 0x1111_1111_1111_1000;
+            let mut is_flush = false;
+            for _ in 0..4 {
+                if (hand.0 & !mask) == 0 {
+                    is_flush = true;
+                }
+                mask <<= 1;
+            }
+            is_flush
+        };
 
         // Straigth detection
-        let mut is_straight: bool = rank - low_rank == 4 || rank - low_rank == 12;
+        let maybe_straight = high_rank - low_rank == 4 || high_rank - low_rank == 12;
 
-        if is_straight {
+        if maybe_straight {
             let mut straigth_score: Option<CardNum> = None;
-            if rank - low_rank == 12 {
-                is_straight = cards::has_rank(hand.0, CardRank::THREE) != 0
-                    && cards::has_rank(hand.0, CardRank::FOUR) != 0
-                    && cards::has_rank(hand.0, CardRank::FIVE) != 0
-                    && cards::has_rank(hand.0, CardRank::TWO) != 0;
 
-                if is_straight {
-                    // Straight 23456
-                    if cards::has_rank(hand.0, CardRank::SIX) != 0 {
-                        straigth_score = Some(highest_card.set_straight_23456());
-                    }
-                    // Straight A2345
-                    if cards::has_rank(hand.0, CardRank::ACE) != 0 {
-                        straigth_score = Some(highest_card.set_straight_A2345());
-                    }
-                }
-            } else {
-                is_straight = cards::has_rank(hand.0, low_rank) != 0
+            if high_rank - low_rank == 4 {
+                if cards::has_rank(hand.0, low_rank) != 0
                     && cards::has_rank(hand.0, CardRank::from(low_rank as u8 + 1)) != 0
                     && cards::has_rank(hand.0, CardRank::from(low_rank as u8 + 2)) != 0
                     && cards::has_rank(hand.0, CardRank::from(low_rank as u8 + 3)) != 0
-                    && cards::has_rank(hand.0, CardRank::from(low_rank as u8 + 4)) != 0;
-                if is_straight {
-                    straigth_score = Some(highest_card);
+                    && cards::has_rank(hand.0, CardRank::from(low_rank as u8 + 4)) != 0
+                {
+                    straigth_score = Some(high_card);
+                }
+            } else if cards::has_rank(hand.0, CardRank::THREE) != 0
+                && cards::has_rank(hand.0, CardRank::FOUR) != 0
+                && cards::has_rank(hand.0, CardRank::FIVE) != 0
+                && cards::has_rank(hand.0, CardRank::TWO) != 0
+            {
+                // Straight 23456
+                if cards::has_rank(hand.0, CardRank::SIX) != 0 {
+                    straigth_score = Some(high_card.set_straight_23456());
+                }
+                // Straight A2345
+                if cards::has_rank(hand.0, CardRank::ACE) != 0 {
+                    straigth_score = Some(high_card.set_straight_A2345());
                 }
             }
 
@@ -635,7 +662,7 @@ pub mod rules {
         }
 
         if is_flush {
-            return Some(ScoreKind::Flush(highest_card));
+            return Some(ScoreKind::Flush(high_card));
         }
 
         None
@@ -895,7 +922,10 @@ impl SrvGameState {
 mod tests {
     use std::cmp::Ordering;
 
-    use crate::big2rules::{cards::CardRank, rules::score_hand};
+    use crate::big2rules::{
+        cards::CardRank,
+        rules::{is_flush, is_flush3, score_hand},
+    };
 
     use super::*;
 
@@ -904,6 +934,7 @@ mod tests {
         assert!(!rules::is_valid_hand(0));
         assert!(!rules::is_valid_hand(0x1001));
         assert!(!rules::is_valid_hand(0b1), "1 invalid card");
+        assert!(!rules::is_valid_hand(0b1 << 11));
         assert!(rules::is_valid_hand(0b1 << 12));
         assert!(rules::is_valid_hand(0b11 << 12));
         assert!(rules::is_valid_hand(0b111 << 12));
@@ -949,6 +980,17 @@ mod tests {
     }
     #[test]
     fn b_rules_score_hand() {
+        // INVALID
+        assert_eq!(rules::score_hand(Cards(0x0000_0000_0000_0000)), None);
+        let mut card = 0x0000_0000_0000_0001;
+        for _ in 0..12 {
+            assert_eq!(rules::score_hand(Cards(card)), None);
+            card <<= 1;
+        }
+        assert_eq!(rules::score_hand(Cards(0x0000_0000_0000_F000)), None);
+        assert_eq!(rules::score_hand(Cards(0x0000_0000_0003_F000)), None);
+        assert_eq!(rules::score_hand(Cards(0x0000_0000_0000_F800)), None);
+
         // ONE
         assert_eq!(
             rules::score_hand(Cards(0x0000_0000_0000_1000)),
@@ -958,6 +1000,15 @@ mod tests {
             rules::score_hand(Cards(0x8000_0000_0000_0000)),
             Some(ScoreKind::Single(CardNum::HIGHCARD))
         );
+
+        let mut card = 0x0000_0000_0000_1000;
+        for c in 12..64 {
+            assert_eq!(
+                rules::score_hand(Cards(card)),
+                Some(ScoreKind::Single(CardNum::try_from(c).unwrap()))
+            );
+            card <<= 1;
+        }
 
         // PAIR
         assert_eq!(
@@ -1038,6 +1089,17 @@ mod tests {
             rules::score_hand(Cards(0b0000_1101_0110 << 52)),
             Some(ScoreKind::FullHouse(CardRank::ACE))
         );
+
+        // QUAD & FULLHOUSE
+        let mut card = 0x0000_0000_0001_F000;
+        for c in 12..60 {
+            let score = rules::score_hand(Cards(card));
+            match score {
+                Some(ScoreKind::Quads(_) | ScoreKind::FullHouse(_)) => (),
+                _ => panic!("Invalid score c {c} - {score:?}"),
+            }
+            card <<= 1;
+        }
 
         // STRAIGHT
         assert_eq!(
@@ -1305,4 +1367,71 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn test_is_flush() {
+        let mut cards = 0x1_1111 << 12;
+        for _ in 0..4 {
+            assert!(is_flush(cards));
+            assert!(is_flush3(cards));
+            cards <<= 1;
+        }
+
+        let mut cards = 0x2_1111 << 12;
+        for _ in 0..4 {
+            assert!(!is_flush(cards));
+            assert!(!is_flush3(cards));
+            cards <<= 1;
+        }
+        // let mut cards = 0x1111 << 12;
+        // for _ in 0..4 {
+        //     // assert!(!is_flush(cards));
+        //     assert!(!is_flush3(cards));
+        //     cards <<= 1;
+        // }
+    }
+
+    #[test]
+    #[cfg_attr(kani, kani::proof)]
+    pub fn check_something() {
+        bolero::check!().with_type::<u64>().for_each(|&hand| {
+            let cards = Cards(hand);
+            let score = score_hand(cards);
+            let num = hand.count_ones();
+            if hand.trailing_zeros() >= 12 {
+                if num == 1 {
+                    assert!(score.is_some());
+                }
+                if num == 4 || num > 5 {
+                    assert!(score.is_none());
+                }
+            } else {
+                assert!(score.is_none());
+            }
+        });
+    }
 }
+
+// mod verification {
+//     use self::{cards::has_rank, rules::score_hand};
+
+//     use super::*;
+
+//     #[kani::proof]
+//     pub fn check_something() {
+//         let hand = kani::any();
+//         //kani::assume(hand > 0xFFF);
+//         let hand = Cards(hand);
+//         score_hand(hand);
+//     }
+
+//     #[kani::proof]
+//     pub fn kani_has_rank() {
+//         let rank: u8 = kani::any();
+//         kani::assume(rank > 2 && rank < 16);
+//         let rank = CardRank::from(rank);
+//         let hand = kani::any();
+//         kani::assume(hand > 0xFFF);
+//         has_rank(hand, rank);
+//     }
+// }

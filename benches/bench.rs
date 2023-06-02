@@ -26,8 +26,7 @@ fn bench_inlinelist8_convert(b: &mut Bencher) {
 #[bench]
 fn bench_create_game_srv_obj(b: &mut Bencher) {
     b.iter(|| {
-        let gs = big2rules::SrvGameState::new(8);
-        drop(gs);
+        let _gs = big2rules::SrvGameState::new(8);
     });
 }
 
