@@ -1,11 +1,11 @@
 [package]
 name = "big2"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["René van Dorst"]
 edition = "2021"
 exclude = ["target", "Cargo.lock"]
 license = "MIT"
-rust-version = "1.69"
+rust-version = "1.70"
 description = "Chinees poker game Big2"
 
 [dependencies]
@@ -23,6 +23,13 @@ futures = "0.3.28"
 [[bin]]
 name = "big2-cli"
 test = true
+
+[features]
+kani = []
+
+[dev-dependencies]
+bolero = "0.9.0"
+kani-verifier = "0.29"
 
 
 [profile.release]

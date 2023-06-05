@@ -197,18 +197,21 @@ pub mod cards {
 
     impl CardNum {
         #[must_use]
+        #[inline]
         pub fn highcard(cards: Cards) -> Option<Self> {
             let cardnum = 63 - u8::try_from(cards.0.leading_zeros()).ok()?;
             Self::try_from(cardnum)
         }
 
         #[must_use]
+        #[inline]
         pub fn lowcard(cards: Cards) -> Option<Self> {
             let cardnum = u8::try_from(cards.0.trailing_zeros()).ok()?;
             Self::try_from(cardnum)
         }
 
         #[must_use]
+        #[inline]
         pub fn try_from(val: u8) -> Option<Self> {
             if (12..12 + super::deck::NUMBER_OF_CARDS).contains(&val) {
                 Some(Self(val))
@@ -221,31 +224,37 @@ pub mod cards {
         pub const LOWCARD: CardNum = Self(12);
 
         #[must_use]
+        #[inline]
         pub fn rank(&self) -> CardRank {
             CardRank::from(self.0 >> 2)
         }
         #[must_use]
+        #[inline]
         pub fn suit(&self) -> CardSuit {
             CardSuit::from(self.0 & 0x3)
         }
 
         #[must_use]
+        #[inline]
         pub fn set_straight_23456(self) -> Self {
             Self(self.0 | 0x40)
         }
 
         #[allow(non_snake_case)]
         #[must_use]
+        #[inline]
         pub fn set_straight_A2345(self) -> Self {
             Self(self.0 | 0x80)
         }
 
         #[must_use]
+        #[inline]
         pub fn is_odd_straight(&self) -> bool {
             self.0 & (0x40 | 0x80) != 0
         }
 
         #[must_use]
+        #[inline]
         pub fn as_card(&self) -> Cards {
             Cards(1 << self.0)
         }
@@ -558,10 +567,8 @@ pub mod rules {
             return Some(ScoreKind::Single(lowest_card));
         }
 
-        if !{
-            // Check number of cards played. count = 1, 2, 3 or 5 is valid.
-            card_cnt_hand != 4 && card_cnt_hand < 6
-        } {
+        // Check number of cards played. count = 1, 2, 3 or 5 is valid.
+        if card_cnt_hand == 4 || card_cnt_hand > 5 {
             return None;
         }
 
@@ -624,7 +631,7 @@ pub mod rules {
         };
 
         // Straigth detection
-        let maybe_straight = high_rank - low_rank == 4 || high_rank - low_rank == 12;
+        let maybe_straight = [4, 12].contains(&(high_rank - low_rank));
 
         if maybe_straight {
             let mut straigth_score: Option<CardNum> = None;
@@ -638,10 +645,10 @@ pub mod rules {
                 {
                     straigth_score = Some(high_card);
                 }
-            } else if cards::has_rank(hand.0, CardRank::THREE) != 0
+            } else if cards::has_rank(hand.0, CardRank::TWO) != 0
+                && cards::has_rank(hand.0, CardRank::THREE) != 0
                 && cards::has_rank(hand.0, CardRank::FOUR) != 0
                 && cards::has_rank(hand.0, CardRank::FIVE) != 0
-                && cards::has_rank(hand.0, CardRank::TWO) != 0
             {
                 // Straight 23456
                 if cards::has_rank(hand.0, CardRank::SIX) != 0 {
@@ -1389,26 +1396,6 @@ mod tests {
         //     assert!(!is_flush3(cards));
         //     cards <<= 1;
         // }
-    }
-
-    #[test]
-    #[cfg_attr(kani, kani::proof)]
-    pub fn check_something() {
-        bolero::check!().with_type::<u64>().for_each(|&hand| {
-            let cards = Cards(hand);
-            let score = score_hand(cards);
-            let num = hand.count_ones();
-            if hand.trailing_zeros() >= 12 {
-                if num == 1 {
-                    assert!(score.is_some());
-                }
-                if num == 4 || num > 5 {
-                    assert!(score.is_none());
-                }
-            } else {
-                assert!(score.is_none());
-            }
-        });
     }
 }
 

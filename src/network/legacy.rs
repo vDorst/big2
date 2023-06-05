@@ -352,6 +352,29 @@ pub mod muon {
         }
     }
 
+    #[cfg(kani)]
+    mod verification {
+        use super::*;
+
+        #[kani::proof]
+        pub fn kani_i8() {
+            let ret = "                ";
+            let cnt: u32 = kani::any();
+            kani::assume(cnt < 18);
+            let name = String16 {
+                data: [32; 16],
+                count: cnt,
+            };
+            let sname = name.as_str();
+            if cnt > 16 {
+                assert!(sname.is_err())
+            } else {
+                assert!(sname.is_ok());
+                assert_eq!(sname.unwrap().len(), cnt as usize);
+            }
+        }
+    }
+
     #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq)]
     pub struct InlineList8 {
         pub data: [u8; 8],
