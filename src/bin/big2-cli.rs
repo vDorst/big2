@@ -4,7 +4,7 @@ use big2::{
 };
 use crossterm::event::{Event, EventStream};
 use futures::{select, FutureExt, StreamExt};
-use std::{cmp::Ordering, fs::File, thread, time};
+use std::{cmp::Ordering, fs::File, io::IsTerminal, thread, time};
 
 use log::error;
 #[macro_use]
@@ -119,8 +119,7 @@ pub mod display {
     use super::{big2rules, net_legacy};
     use big2::big2rules::cards::{CardNum, Cards, ScoreKind};
     use log::trace;
-
-    use std::io::stdout;
+    use std::io::Write;
 
     use crossterm::{
         cursor::{MoveTo, RestorePosition, SavePosition},
@@ -174,22 +173,29 @@ pub mod display {
     const COL_SCORE_NEG: &str = "\u{1b}[97;41m"; // White on Red
     const COL_SCORE_ZERO: &str = "\u{1b}[97;100m"; // White on Grey
 
-    const COL_DIAMONDS: &str = "\u{1b}[34m"; // White on Grey
-    const COL_CLUBS: &str = "\u{1b}[32m";
-    const COL_HEARTS: &str = "\u{1b}[31m";
-    const COL_SPADES: &str = "\u{1b}[30m";
+    // const COL_DIAMONDS: &str = "\u{1b}[32m"; // White on Grey
+    // const COL_CLUBS: &str = "\u{1b}[34m";
+    // const COL_HEARTS: &str = "\u{1b}[31m";
+    // const COL_SPADES: &str = "\u{1b}[30m";
 
-    pub fn clear(srn: &mut std::io::Stdout) -> Result<()> {
+    pub fn clear<W>(srn: &mut W) -> Result<()>
+    where
+        W: Write,
+    {
         execute!(srn, Clear(ClearType::All))
     }
 
-    pub fn titlebar(srn: &mut std::io::Stdout, title: &str) -> Result<()> {
+    pub fn titlebar<W>(srn: &mut W, title: &str) -> Result<()>
+    where
+        W: Write,
+    {
         execute!(srn, SetTitle(&title))
     }
 
-    pub fn init(title: &str) -> Result<std::io::Stdout> {
-        let mut srn = stdout();
-
+    pub fn init<W>(srn: &mut W, title: &str) -> Result<()>
+    where
+        W: Write,
+    {
         execute!(
             srn,
             EnterAlternateScreen,
@@ -199,11 +205,9 @@ pub mod display {
             //SetTitle(&title),
         )?;
 
-        titlebar(&mut srn, title)?;
+        titlebar(srn, title)?;
 
-        enable_raw_mode()?;
-
-        Ok(srn)
+        enable_raw_mode()
     }
 
     pub fn close(mut srn: std::io::Stdout) -> Result<()> {
@@ -288,11 +292,7 @@ pub mod display {
         }
 
         match event.code {
-            KeyCode::Char('r') => UserEvent::Ready,
-            KeyCode::Char('`') => UserEvent::Clear,
-            KeyCode::Char('q') => UserEvent::Quit,
             KeyCode::Enter => UserEvent::Play,
-            KeyCode::Char('/') => UserEvent::Pass,
             KeyCode::Char('1') => UserEvent::ToggleCard1,
             KeyCode::Char('2') => UserEvent::ToggleCard2,
             KeyCode::Char('3') => UserEvent::ToggleCard3,
@@ -306,38 +306,24 @@ pub mod display {
             KeyCode::Char('-') => UserEvent::ToggleCard11,
             KeyCode::Char('=') => UserEvent::ToggleCard12,
             KeyCode::Backspace => UserEvent::ToggleCard13,
+            KeyCode::Char('r') => UserEvent::Ready,
+            KeyCode::Char('`') => UserEvent::Clear,
+            KeyCode::Char('q') => UserEvent::Quit,
+            KeyCode::Char('/') => UserEvent::Pass,
             KeyCode::Char('d') => UserEvent::Resize,
             _ => UserEvent::Nothing,
         }
     }
 
-    fn cards_to_utf8(card: CardNum, card_str: &mut String) {
-        //                          0123456789ABCDEF
-        let rank_str = b".+-3456789TJQKA2";
-
-        card_str.push_str(COL_CARD_BACK);
-
-        let rank = card.rank() as usize;
+    pub(crate) fn cards_to_utf8(card: CardNum, card_str: &mut String) {
+        let rank = card.rank();
         let suit = card.suit();
 
-        card_str.push(char::from(rank_str[rank]));
+        card_str.push_str(COL_CARD_BACK);
+        card_str.push(rank.as_char());
 
-        if suit == big2rules::cards::CardSuit::Diamonds {
-            card_str.push_str(COL_DIAMONDS);
-            card_str.push('\u{2666}');
-        }
-        if suit == big2rules::cards::CardSuit::Clubs {
-            card_str.push_str(COL_CLUBS);
-            card_str.push('\u{2663}');
-        }
-        if suit == big2rules::cards::CardSuit::Hearts {
-            card_str.push_str(COL_HEARTS);
-            card_str.push('\u{2665}');
-        }
-        if suit == big2rules::cards::CardSuit::Spades {
-            card_str.push_str(COL_SPADES);
-            card_str.push('\u{2660}');
-        }
+        card_str.push_str(suit.as_color());
+        card_str.push(suit.as_char());
 
         card_str.push_str(COL_NORMAL);
     }
@@ -466,31 +452,28 @@ pub mod display {
 
     #[must_use]
     pub fn cards_str(cards: Cards) -> String {
-        let mut bit: u64 = 1 << 11;
-        let odd_straight = if let Some(score) = big2rules::rules::score_hand(cards) {
-            match score {
-                ScoreKind::Straight(a) | ScoreKind::StraightFlush(a) => a.is_odd_straight(),
-                _ => false,
-            }
-        } else {
-            false
-        };
+        let score = big2rules::rules::score_hand(cards);
+        let odd_straight = score.is_some_and(|score| match score {
+            ScoreKind::Straight(a) | ScoreKind::StraightFlush(a) => a.is_odd_straight(),
+            _ => false,
+        });
 
-        if odd_straight {
-            bit = 1 << 38;
-        };
+        // With odd_straight 23456 or A2345 we start at the `ACE` first.
+        let mut bit: u64 = 1 << if odd_straight { 38 } else { 12 };
         let mut card_str = String::with_capacity(64);
         for _ in 12..64 {
-            if bit == 1 << 63 {
-                bit = 1 << 11;
-            };
-            bit <<= 1;
             let card = bit & cards;
-            if card == 0 {
-                continue;
+
+            if card != 0 {
+                cards_to_utf8(CardNum::lowcard(Cards(bit)).unwrap(), &mut card_str);
+                card_str.push(' ');
             }
-            cards_to_utf8(CardNum::lowcard(Cards(bit)).unwrap(), &mut card_str);
-            card_str.push(' ');
+
+            if bit == 1 << 63 {
+                bit = 1 << 12;
+            } else {
+                bit <<= 1;
+            }
         }
         card_str
     }
@@ -651,17 +634,6 @@ pub mod display {
             };
         }
 
-        // // Debug Text
-        // execute!(
-        //     gs.srn,
-        //     MoveTo(0, 7),
-        //     Clear(ClearType::CurrentLine),
-        //     Print(format!(
-        //         "Debug: B {:x} BS {} s {:x} HS {}",
-        //         gs.board, gs.board_score, gs.cards_selected, gs.hand_score
-        //     ))
-        // )?;
-
         Ok(())
     }
 }
@@ -718,7 +690,8 @@ async fn main() {
             &cli_args.socket_addr.get(l - 1..l).unwrap()
         );
 
-        let srn = display::init(&title).unwrap();
+        let mut srn = std::io::stdout();
+        display::init(&mut srn, &title).unwrap();
 
         let mut ts = match net_legacy::client::TcpClient::connect(&cli_args.socket_addr).await {
             Ok(ts) => ts,
@@ -1086,7 +1059,14 @@ async fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use big2::{
+        big2rules::cards::CardNum,
+        legacy::{PlayerID, ServerState, ServerStatePlayers},
+    };
+    // use big2::big2rules::GameState;
+    use crossterm::{execute, terminal::SetSize};
+
+    use super::{display::cards_to_utf8, *};
     use std::ffi::OsString;
 
     fn to_vec(args: &[&str]) -> Vec<OsString> {
@@ -1255,5 +1235,120 @@ mod tests {
             Err(paError::OptionWithoutAValue(_)) => (),
             _ => panic!("{ar:?}"),
         };
+    }
+
+    #[test]
+    fn render_test() {
+        let mut fake_stdio = Vec::<u8>::with_capacity(1024);
+
+        execute!(fake_stdio, SetSize(80, 10),).unwrap();
+
+        println!("output: {:?}", fake_stdio);
+        println!("output: {}", String::from_utf8(fake_stdio).unwrap());
+
+        let ss = ServerState {
+            round: 1,
+            rounds: 8,
+            turn: None,
+            player_id: PlayerID::try_from(1).unwrap(),
+            player_hand: Cards(0x809),
+            players: [
+                ServerStatePlayers {
+                    name: "Tikkie".into(),
+                    score: 0,
+                    num_cards: 13,
+                },
+                ServerStatePlayers {
+                    name: "Tikkie".into(),
+                    score: 0,
+                    num_cards: 13,
+                },
+                ServerStatePlayers {
+                    name: "Tikkie".into(),
+                    score: 0,
+                    num_cards: 13,
+                },
+                ServerStatePlayers {
+                    name: "Tikkie".into(),
+                    score: 0,
+                    num_cards: 13,
+                },
+            ],
+            board: None,
+        };
+
+        // let mut gs = GameState {
+        //     sm: todo!(),
+        //     srn: fake_stdio,
+        //     board: todo!(),
+        //     board_score: None,
+        //     cards_selected: todo!(),
+        //     auto_pass: todo!(),
+        //     i_am_ready: todo!(),
+        //     is_valid_hand: todo!(),
+        //     hand: todo!(),
+        // };
+    }
+
+    #[test]
+    fn card_str_rendering() {
+        let mut out_str = String::with_capacity(100);
+
+        // "3 Diamond, Blue"
+        cards_to_utf8(CardNum::try_from(12).unwrap(), &mut out_str);
+        assert_eq!(out_str, "\u{1b}[30;47m3\u{1b}[34m\u{2666}\u{1b}[0m");
+
+        out_str.clear();
+        // "3 Clubs, Green"
+        cards_to_utf8(CardNum::try_from(13).unwrap(), &mut out_str);
+        assert_eq!(out_str, "\u{1b}[30;47m3\u{1b}[32m\u{2663}\u{1b}[0m");
+
+        out_str.clear();
+        // "3 Hearts, Red"
+        cards_to_utf8(CardNum::try_from(14).unwrap(), &mut out_str);
+        assert_eq!(out_str, "\u{1b}[30;47m3\u{1b}[31m\u{2665}\u{1b}[0m");
+
+        out_str.clear();
+        // "3 Spades, Black"
+        cards_to_utf8(CardNum::try_from(15).unwrap(), &mut out_str);
+        assert_eq!(out_str, "\u{1b}[30;47m3\u{1b}[30m\u{2660}\u{1b}[0m");
+
+        out_str.clear();
+        cards_to_utf8(CardNum::try_from(60).unwrap(), &mut out_str);
+        assert_eq!(out_str, "\u{1b}[30;47m2\u{1b}[34m\u{2666}\u{1b}[0m");
+
+        out_str.clear();
+        cards_to_utf8(CardNum::try_from(61).unwrap(), &mut out_str);
+        assert_eq!(out_str, "\u{1b}[30;47m2\u{1b}[32m\u{2663}\u{1b}[0m");
+
+        out_str.clear();
+        cards_to_utf8(CardNum::try_from(62).unwrap(), &mut out_str);
+        assert_eq!(out_str, "\u{1b}[30;47m2\u{1b}[31m\u{2665}\u{1b}[0m");
+
+        out_str.clear();
+        cards_to_utf8(CardNum::try_from(63).unwrap(), &mut out_str);
+        assert_eq!(out_str, "\u{1b}[30;47m2\u{1b}[30m\u{2660}\u{1b}[0m");
+
+        // Pair Aces, Diamond and Heart
+        let cards = Cards(0x0500_0000_0000_0000);
+        out_str.clear();
+        for cn in cards {
+            cards_to_utf8(cn, &mut out_str);
+        }
+        assert_eq!(
+            out_str,
+            "\u{1b}[30;47mA\u{1b}[34m\u{2666}\u{1b}[0m\u{1b}[30;47mA\u{1b}[31m\u{2665}\u{1b}[0m"
+        );
+
+        // Pair Sixes, clubs and Heart
+        let cards = Cards(0x600_0000);
+        out_str.clear();
+        for cn in cards {
+            cards_to_utf8(cn, &mut out_str);
+        }
+        assert_eq!(
+            out_str,
+            "\u{1b}[30;47m6\u{1b}[32m\u{2663}\u{1b}[0m\u{1b}[30;47m6\u{1b}[31m\u{2665}\u{1b}[0m"
+        );
     }
 }

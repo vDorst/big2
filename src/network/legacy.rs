@@ -464,12 +464,7 @@ pub mod muon {
         if rank == big2rules::cards::CardRank::TWO as u8 {
             rank = 2;
         }
-        let suit = match card.suit() {
-            big2rules::cards::CardSuit::Clubs => 0,
-            big2rules::cards::CardSuit::Diamonds => 1,
-            big2rules::cards::CardSuit::Hearts => 2,
-            big2rules::cards::CardSuit::Spades => 3,
-        } << 4;
+        let suit = (card.suit() as u8) << 4;
         rank | suit
     }
 

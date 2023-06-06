@@ -263,22 +263,46 @@ pub mod cards {
     #[derive(Debug, PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]
     #[repr(u8)]
     pub enum CardSuit {
-        Clubs = 0b0001,
-        Diamonds = 0b0010,
-        Hearts = 0b0100,
-        Spades = 0b1000,
+        /// Diamonds - Blue
+        Diamonds = 0,
+        /// Clubs - Green
+        Clubs = 1,
+        /// Hearts - Red
+        Hearts = 2,
+        /// Spades - Black
+        Spades = 3,
     }
 
     impl CardSuit {
         #[must_use]
         pub fn from(suit: u8) -> Self {
             assert!(suit < 4);
-            match 1 << suit {
-                0b0001 => Self::Clubs,
-                0b0010 => Self::Diamonds,
-                0b0100 => Self::Hearts,
-                0b1000 => Self::Spades,
+            match suit {
+                0 => Self::Diamonds,
+                1 => Self::Clubs,
+                2 => Self::Hearts,
+                3 => Self::Spades,
                 _ => panic!("Invalid suit"),
+            }
+        }
+
+        #[must_use]
+        pub fn as_char(&self) -> char {
+            match self {
+                CardSuit::Diamonds => '\u{2666}',
+                CardSuit::Clubs => '\u{2663}',
+                CardSuit::Hearts => '\u{2665}',
+                CardSuit::Spades => '\u{2660}',
+            }
+        }
+
+        #[must_use]
+        pub fn as_color(&self) -> &str {
+            match self {
+                CardSuit::Diamonds => "\u{1b}[34m",
+                CardSuit::Clubs => "\u{1b}[32m",
+                CardSuit::Hearts => "\u{1b}[31m",
+                CardSuit::Spades => "\u{1b}[30m",
             }
         }
     }
@@ -320,6 +344,12 @@ pub mod cards {
                 15 => CardRank::TWO,
                 e => panic!("Cardnum {e} is not valid"),
             }
+        }
+
+        #[must_use]
+        pub fn as_char(&self) -> char {
+            let rank_str = b".+-3456789TJQKA2";
+            char::from(rank_str[*self as usize])
         }
     }
 
