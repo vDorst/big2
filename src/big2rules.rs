@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use crate::network::legacy as network;
 
 use self::cards::{CardNum, CardRank, Cards, ScoreKind};
@@ -51,7 +53,10 @@ pub mod deck {
 
 pub mod cards {
     use core::fmt;
-    use std::ops::{Add, BitAnd, BitOr, BitOrAssign, BitXor, BitXorAssign, Sub};
+    use std::{
+        cmp::Ordering,
+        ops::{Add, BitAnd, BitOr, BitOrAssign, BitXor, BitXorAssign, Sub},
+    };
 
     #[derive(Debug, Eq, PartialEq)]
     pub enum ParseCardsError {
@@ -382,15 +387,23 @@ pub mod cards {
     }
 
     impl PartialOrd for ScoreKind {
-        fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
             #[allow(clippy::match_same_arms)]
             match (self, other) {
+                // Singles
                 (ScoreKind::Single(a), ScoreKind::Single(b)) => a.partial_cmp(b),
                 (ScoreKind::Single(_), _) => None,
+                (_, ScoreKind::Single(_)) => None,
+                // Pairs
                 (ScoreKind::Pair(a), ScoreKind::Pair(b)) => a.partial_cmp(b),
                 (ScoreKind::Pair(_), _) => None,
+                (_, ScoreKind::Pair(_)) => None,
+                // Sets
                 (ScoreKind::Set(a), ScoreKind::Set(b)) => a.partial_cmp(b),
                 (ScoreKind::Set(_), _) => None,
+                (_, ScoreKind::Set(_)) => None,
+                // Five cards
+                // Straight
                 (ScoreKind::Straight(a), ScoreKind::Straight(b)) => a.partial_cmp(b),
                 (
                     ScoreKind::Straight(_),
@@ -398,25 +411,47 @@ pub mod cards {
                     | ScoreKind::FullHouse(_)
                     | ScoreKind::Quads(_)
                     | ScoreKind::StraightFlush(_),
-                ) => Some(std::cmp::Ordering::Greater),
+                ) => Some(Ordering::Less),
+                #[allow(unreachable_patterns)]
                 (ScoreKind::Straight(_), _) => None,
+                // Flush
                 (ScoreKind::Flush(a), ScoreKind::Flush(b)) => a.partial_cmp(b),
                 (
                     ScoreKind::Flush(_),
                     ScoreKind::FullHouse(_) | ScoreKind::Quads(_) | ScoreKind::StraightFlush(_),
-                ) => Some(std::cmp::Ordering::Greater),
+                ) => Some(Ordering::Less),
+                (ScoreKind::Flush(_), ScoreKind::Straight(_)) => Some(Ordering::Greater),
+                #[allow(unreachable_patterns)]
                 (ScoreKind::Flush(_), _) => None,
+                // FullHouse
                 (ScoreKind::FullHouse(a), ScoreKind::FullHouse(b)) => a.partial_cmp(b),
+                (ScoreKind::FullHouse(_), ScoreKind::Straight(_) | ScoreKind::Flush(_)) => {
+                    Some(Ordering::Greater)
+                }
                 (ScoreKind::FullHouse(_), ScoreKind::Quads(_) | ScoreKind::StraightFlush(_)) => {
-                    Some(std::cmp::Ordering::Greater)
+                    Some(Ordering::Less)
                 }
+                #[allow(unreachable_patterns)]
                 (ScoreKind::FullHouse(_), _) => None,
+                // Quads
                 (ScoreKind::Quads(a), ScoreKind::Quads(b)) => a.partial_cmp(b),
-                (ScoreKind::Quads(_), ScoreKind::StraightFlush(_)) => {
-                    Some(std::cmp::Ordering::Greater)
-                }
+                (ScoreKind::Quads(_), ScoreKind::StraightFlush(_)) => Some(Ordering::Less),
+                (
+                    ScoreKind::Quads(_),
+                    ScoreKind::Straight(_) | ScoreKind::Flush(_) | ScoreKind::FullHouse(_),
+                ) => Some(Ordering::Greater),
+                #[allow(unreachable_patterns)]
                 (ScoreKind::Quads(_), _) => None,
+                // StraightFlush
                 (ScoreKind::StraightFlush(a), ScoreKind::StraightFlush(b)) => a.partial_cmp(b),
+                (
+                    ScoreKind::StraightFlush(_),
+                    ScoreKind::Straight(_)
+                    | ScoreKind::Flush(_)
+                    | ScoreKind::FullHouse(_)
+                    | ScoreKind::Quads(_),
+                ) => Some(Ordering::Greater),
+                #[allow(unreachable_patterns)]
                 (ScoreKind::StraightFlush(_), _) => None,
             }
         }
@@ -450,6 +485,8 @@ pub mod cards {
 }
 
 pub mod rules {
+    use std::cmp::Ordering;
+
     use super::cards::{self, CardNum, CardRank, Cards, ScoreKind};
 
     // #[allow(dead_code)]
@@ -513,19 +550,14 @@ pub mod rules {
         let cardcount = hand.count_ones();
         ret && cardcount != 4 && cardcount < 6 && cardcount != 0
     }
-    #[allow(dead_code)]
+
     #[must_use]
-    pub fn beter_hand(board: u64, hand: u64) -> bool {
-        if !is_valid_hand(hand) {
-            return false;
+    pub fn beter_hand(hand: Option<ScoreKind>, board: Option<ScoreKind>) -> Option<Ordering> {
+        match (hand, board) {
+            (None, _) => None,
+            (Some(_), None) => Some(Ordering::Greater),
+            (Some(h), Some(b)) => h.partial_cmp(&b),
         }
-
-        let card_cnt_hand = hand.count_ones();
-        let card_cnt_board = board.count_ones();
-
-        // Board and hand count must match.
-        // Board count 0 means new turn.
-        !(card_cnt_board != 0 && card_cnt_board != card_cnt_hand)
     }
 
     #[must_use]
@@ -714,7 +746,7 @@ pub struct GameState {
     pub cards_selected: Cards,
     pub auto_pass: bool,
     pub i_am_ready: bool,
-    pub is_valid_hand: bool,
+    pub card_selected_score: Option<Ordering>,
     pub hand: Cards,
 }
 
@@ -979,42 +1011,42 @@ mod tests {
         assert!(rules::is_valid_hand(0b11111 << 12));
         assert!(!rules::is_valid_hand(0b11_1111 << 12), "6 cards");
     }
-    #[test]
-    fn rules_board_hand_new_turn() {
-        assert!(rules::beter_hand(0, 0b1 << 12));
-        assert!(rules::beter_hand(0, 0b11 << 12));
-        assert!(rules::beter_hand(0, 0b111 << 12));
-        assert!(!rules::beter_hand(0, 0b1111 << 12));
-        assert!(rules::beter_hand(0, 0b11111 << 12));
-    }
-    #[test]
-    fn rules_board_hand_one_pair() {
-        assert!(rules::beter_hand(0b1 << 12, 0b1 << 12));
-        assert!(!rules::beter_hand(0b1 << 12, 0b11 << 12));
-        assert!(!rules::beter_hand(0b1 << 12, 0b111 << 12));
-        assert!(!rules::beter_hand(0b1 << 12, 0b11111 << 12));
-    }
-    #[test]
-    fn rules_board_hand_two_pair() {
-        assert!(!rules::beter_hand(0b11 << 12, 0b1 << 12));
-        assert!(rules::beter_hand(0b11 << 12, 0b11 << 12));
-        assert!(!rules::beter_hand(0b11 << 12, 0b111 << 12));
-        assert!(!rules::beter_hand(0b11 << 12, 0b11111 << 12));
-    }
-    #[test]
-    fn rules_board_hand_three_of_kind() {
-        assert!(!rules::beter_hand(0b111 << 12, 0b1 << 12));
-        assert!(!rules::beter_hand(0b111 << 12, 0b11 << 12));
-        assert!(rules::beter_hand(0b111 << 12, 0b111 << 12));
-        assert!(!rules::beter_hand(0b111 << 12, 0b11111 << 12));
-    }
-    #[test]
-    fn rules_board_hand_fivecards() {
-        assert!(!rules::beter_hand(0b11111 << 12, 0b1 << 12));
-        assert!(!rules::beter_hand(0b11111 << 12, 0b11 << 12));
-        assert!(!rules::beter_hand(0b11111 << 12, 0b111 << 12));
-        assert!(rules::beter_hand(0b11111 << 12, 0b11111 << 12));
-    }
+    // #[test]
+    // fn rules_board_hand_new_turn() {
+    //     assert!(rules::beter_hand(None, 0b1 << 12));
+    //     assert!(rules::beter_hand(None, 0b11 << 12));
+    //     assert!(rules::beter_hand(None, 0b111 << 12));
+    //     assert!(!rules::beter_hand(None, 0b1111 << 12));
+    //     assert!(rules::beter_hand(None, 0b11111 << 12));
+    // }
+    // #[test]
+    // fn rules_board_hand_one_pair() {
+    //     assert!(rules::beter_hand(0b1 << 12, 0b1 << 12));
+    //     assert!(!rules::beter_hand(0b1 << 12, 0b11 << 12));
+    //     assert!(!rules::beter_hand(0b1 << 12, 0b111 << 12));
+    //     assert!(!rules::beter_hand(0b1 << 12, 0b11111 << 12));
+    // }
+    // #[test]
+    // fn rules_board_hand_two_pair() {
+    //     assert!(!rules::beter_hand(0b11 << 12, 0b1 << 12));
+    //     assert!(rules::beter_hand(0b11 << 12, 0b11 << 12));
+    //     assert!(!rules::beter_hand(0b11 << 12, 0b111 << 12));
+    //     assert!(!rules::beter_hand(0b11 << 12, 0b11111 << 12));
+    // }
+    // #[test]
+    // fn rules_board_hand_three_of_kind() {
+    //     assert!(!rules::beter_hand(0b111 << 12, 0b1 << 12));
+    //     assert!(!rules::beter_hand(0b111 << 12, 0b11 << 12));
+    //     assert!(rules::beter_hand(0b111 << 12, 0b111 << 12));
+    //     assert!(!rules::beter_hand(0b111 << 12, 0b11111 << 12));
+    // }
+    // #[test]
+    // fn rules_board_hand_fivecards() {
+    //     assert!(!rules::beter_hand(0b11111 << 12, 0b1 << 12));
+    //     assert!(!rules::beter_hand(0b11111 << 12, 0b11 << 12));
+    //     assert!(!rules::beter_hand(0b11111 << 12, 0b111 << 12));
+    //     assert!(rules::beter_hand(0b11111 << 12, 0b11111 << 12));
+    // }
     #[test]
     fn b_rules_score_hand() {
         // INVALID
@@ -1336,9 +1368,12 @@ mod tests {
     #[test]
     fn better_five_cards() {
         let board = Cards(0x8200_0000_0088_2000);
+        let board_score = score_hand(board);
+
         let my_hand = Cards(0x0000_0000_F000_1000);
-        let play = rules::beter_hand(board.0, my_hand.0);
-        assert!(play);
+        let hand_score = score_hand(my_hand);
+        let play = rules::beter_hand(hand_score, board_score);
+        assert_eq!(play, Some(Ordering::Greater));
 
         let board_score = score_hand(board).unwrap();
         assert_eq!(
@@ -1351,17 +1386,17 @@ mod tests {
         let cmp = board_score.partial_cmp(&hand_score);
         println!("{board_score:?} vs {hand_score:?} = {cmp:?}");
 
-        assert_eq!(cmp, Some(Ordering::Greater));
+        assert_eq!(cmp, Some(Ordering::Less));
 
         let cmp = hand_score.partial_cmp(&board_score);
         println!("{hand_score:?} vs {board_score:?} = {cmp:?}");
 
-        assert_eq!(cmp, None);
+        assert_eq!(cmp, Some(Ordering::Greater));
 
         let is_valid_hand = match (Some(board_score), Some(hand_score)) {
             (_, None) => false,
             (None, Some(_)) => true,
-            (Some(b), Some(h)) => matches!(b.partial_cmp(&h), Some(Ordering::Greater)),
+            (Some(b), Some(h)) => matches!(b.partial_cmp(&h), Some(Ordering::Less)),
         };
         assert!(is_valid_hand);
     }
@@ -1380,6 +1415,18 @@ mod tests {
         assert_eq!(
             ScoreKind::Single(CardNum::try_from(24).unwrap())
                 .partial_cmp(&ScoreKind::Single(CardNum::try_from(26).unwrap())),
+            Some(Ordering::Less)
+        );
+
+        assert_eq!(
+            ScoreKind::FullHouse(CardRank::TEN)
+                .partial_cmp(&ScoreKind::Flush(CardNum::try_from(36).unwrap())),
+            Some(Ordering::Greater)
+        );
+
+        assert_eq!(
+            ScoreKind::Flush(CardNum::try_from(36).unwrap())
+                .partial_cmp(&ScoreKind::FullHouse(CardRank::TEN)),
             Some(Ordering::Less)
         );
     }

@@ -4,7 +4,7 @@ use big2::{
 };
 use crossterm::event::{Event, EventStream};
 use futures::{select, FutureExt, StreamExt};
-use std::{cmp::Ordering, fs::File, io::IsTerminal, thread, time};
+use std::{cmp::Ordering, fs::File, thread, time};
 
 use log::error;
 #[macro_use]
@@ -14,7 +14,7 @@ extern crate simplelog;
 use pico_args::{Arguments, Error as paError};
 use simplelog::{Config, LevelFilter, WriteLogger};
 
-use crate::display::UserEvent;
+use crate::display::{UserEvent, COL_NORMAL};
 
 #[derive(Debug, PartialEq)]
 enum AppMode {
@@ -119,15 +119,16 @@ pub mod display {
     use super::{big2rules, net_legacy};
     use big2::big2rules::cards::{CardNum, Cards, ScoreKind};
     use log::trace;
-    use std::io::Write;
+    use std::{cmp::Ordering, io::Write};
 
     use crossterm::{
-        cursor::{MoveTo, RestorePosition, SavePosition},
+        cursor::{MoveRight, MoveTo, RestorePosition, SavePosition},
         event::{
             DisableMouseCapture, EnableMouseCapture, KeyCode, KeyModifiers, MouseButton,
             MouseEvent, MouseEventKind,
         },
         execute,
+        queue,
         //queue,
         style::{Print, ResetColor, Stylize},
         //QueueableCommand,
@@ -163,7 +164,7 @@ pub mod display {
     }
 
     // https://en.wikipedia.org/wiki/ANSI_escape_code
-    const COL_NORMAL: &str = "\u{1b}[0m"; // White on black
+    pub const COL_NORMAL: &str = "\u{1b}[0m"; // White on black
 
     const COL_CARD_BACK: &str = "\u{1b}[30;47m";
 
@@ -324,58 +325,17 @@ pub mod display {
 
         card_str.push_str(suit.as_color());
         card_str.push(suit.as_char());
-
-        card_str.push_str(COL_NORMAL);
     }
 
-    #[allow(dead_code)]
-    pub fn cards(cards: [u64; 4], way: usize) {
-        for (p, card) in cards.iter().enumerate() {
-            let mut out_str = String::new();
-            for c in 0..big2rules::deck::NUMBER_OF_CARDS {
-                let bit = big2rules::deck::START_BIT + c;
-                let dsp_card = card & (1 << bit);
-                if dsp_card == 0 {
-                    continue;
-                }
-                if way == 2 {
-                    cards_to_utf8(CardNum::try_from(bit).unwrap(), &mut out_str);
-                };
-
-                out_str.push(' ');
-            }
-            println!("p{p:x}: {out_str}");
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn my_cards(cards: u64) {
-        let mut out_str = String::new();
-        for c in 0..big2rules::deck::NUMBER_OF_CARDS {
-            let bit = big2rules::deck::START_BIT + c;
-            let dsp_card = cards & (1 << bit);
-            if dsp_card == 0 {
-                continue;
-            }
-            cards_to_utf8(CardNum::try_from(bit).unwrap(), &mut out_str);
-            out_str.push(' ');
-        }
-        println!("mycards: {out_str}");
-    }
-
-    fn score_str(score: i32) -> String {
+    pub(crate) fn score_str(score: i32) -> String {
         let mut buf = String::with_capacity(32);
-        if score < 0 {
-            buf.push_str(COL_SCORE_NEG);
-        }
-        if score == 0 {
-            buf.push_str(COL_SCORE_ZERO);
-        }
-        if score > 0 {
-            buf.push_str(COL_SCORE_POS);
-        }
+        let color = match score.cmp(&0) {
+            Ordering::Less => COL_SCORE_NEG,
+            Ordering::Equal => COL_SCORE_ZERO,
+            Ordering::Greater => COL_SCORE_POS,
+        };
+        buf.push_str(color);
         buf.push_str(&format!("€{score:4}"));
-        buf.push_str(COL_NORMAL);
         buf
     }
 
@@ -397,14 +357,11 @@ pub mod display {
     // 2.         pietje3: #13 ## ## ## ## ## ## ## ## ## ## ## ## ##  €   0
 
     pub fn draw_btn_play(gs: &mut big2rules::GameState) -> Result<()> {
-        let line = if gs.is_valid_hand {
-            if gs.sm.your_index == gs.sm.turn {
-                "[ PLAY ]".white().on_green()
-            } else {
-                "[ PLAY ]".white().on_blue()
-            }
-        } else {
-            "[ PLAY ]".white().on_dark_grey()
+        let line = match (gs.sm.your_index == gs.sm.turn, gs.card_selected_score) {
+            (true, Some(Ordering::Greater)) => "[ PLAY ]".white().on_green(),
+            (false, Some(Ordering::Greater)) => "[ PLAY ]".white().on_blue(),
+            (_, Some(Ordering::Less)) => "[ PLAY ]".white().on_yellow(),
+            (_, _) => "[ PLAY ]".white().on_dark_grey(),
         };
         execute!(
             gs.srn,
@@ -466,7 +423,7 @@ pub mod display {
 
             if card != 0 {
                 cards_to_utf8(CardNum::lowcard(Cards(bit)).unwrap(), &mut card_str);
-                card_str.push(' ');
+                card_str.push_str("\x1B[1C");
             }
 
             if bit == 1 << 63 {
@@ -479,42 +436,73 @@ pub mod display {
     }
 
     pub fn board(gs: &mut big2rules::GameState) -> Result<()> {
+        // Render: action
         let name = gs.sm.players[gs.sm.action.player as usize]
             .name
             .as_str()
             .unwrap();
-        let s = format!("{name:>16}: ");
+        let player_act_name: String = format!("{name:>16}: ");
+
+        queue!(gs.srn, MoveTo(9, 0))?;
 
         if gs.sm.action.action_type == net_legacy::StateMessageActionType::Pass {
-            execute!(
+            queue!(
                 gs.srn,
-                MoveTo(9, 0),
-                Print(&s),
+                Print(&player_act_name),
                 Print("PASSED".white().on_dark_grey())
             )?;
         } else if gs.sm.action.action_type == net_legacy::StateMessageActionType::Play {
             let cards = gs.sm.action.cards.try_into().expect("Should not crash!");
             let card_str = cards_str(cards);
-            execute!(gs.srn, MoveTo(9, 0), Print(&s), Print(card_str))?;
+            queue!(gs.srn, Print(&player_act_name), Print(card_str))?;
+            match big2rules::rules::score_hand(cards) {
+                Some(ScoreKind::Quads(_)) => queue!(gs.srn, MoveRight(2), Print("QUADS!!!"))?,
+                Some(ScoreKind::FullHouse(_)) => {
+                    queue!(gs.srn, MoveRight(2), Print("Full-House!!!"))?
+                }
+                Some(ScoreKind::StraightFlush(_)) => {
+                    queue!(gs.srn, MoveRight(2), Print("Straight Flush!!!"))?
+                }
+                _ => (),
+            }
         } else {
-            execute!(gs.srn, MoveTo(9, 0), Clear(ClearType::CurrentLine))?;
+            queue!(gs.srn, Print(COL_NORMAL), Clear(ClearType::CurrentLine))?;
         }
 
-        let s = format!("Rounds: {}/{}", gs.sm.round, gs.sm.num_rounds);
-        execute!(gs.srn, MoveTo(0, 1), Print(s))?;
+        // Render: rounds
+        queue!(
+            gs.srn,
+            MoveTo(0, 1),
+            Print(format!(
+                "{COL_NORMAL}Rounds: {}/{}",
+                gs.sm.round, gs.sm.num_rounds
+            ))
+        )?;
 
+        // Render: board
         let cards = gs.sm.board.try_into().expect("Should not crash!");
         let out_str = cards_str(cards);
-        execute!(gs.srn, MoveTo(20, 1), Print("Board: "), Print(out_str))?;
+        queue!(
+            gs.srn,
+            MoveTo(20, 1),
+            Print("Board:"),
+            MoveRight(1),
+            Print(out_str)
+        )?;
 
         let mut p = gs.sm.your_index;
         if !(0..=3).contains(&p) {
             p = 0;
         }
 
+        // Render: Play and Pass button
+        if p >= 0 {
+            draw_btn_play(gs)?;
+            draw_btn_pass(gs)?;
+        }
+
         if gs.sm.turn == -1 {
-            execute!(gs.srn, MoveTo(0, 3))?;
-            for _ in 0..4 {
+            for row in 0..4 {
                 let player = &gs.sm.players[p as usize];
                 let name = if let Ok(name) = player.name.as_str() {
                     if name.is_empty() {
@@ -525,34 +513,28 @@ pub mod display {
                 } else {
                     "Conv. Error"
                 };
-                print!(
-                    "\r{}.{name:>16}{COL_NORMAL}: #{:2}",
-                    p + 1,
-                    player.num_cards
-                );
-                print!("{:>34}: ", "Delta Score");
+                queue!(
+                    gs.srn,
+                    MoveTo(0, 3 + row),
+                    Print(COL_NORMAL),
+                    Print(format!("{}.{name:>16}", p + 1)),
+                    Print(format!(": #{:2}", player.num_cards)),
+                    MoveRight(34),
+                    Print(format!("{:>34}: ", "Delta Score"))
+                )?;
                 print!(
                     " {}  {}",
                     score_str(player.delta_score),
                     score_str(player.score)
                 );
                 if player.is_ready {
-                    print!(" {COL_BTN_PASS_AUTO}READY{COL_NORMAL}");
+                    print!(" {COL_BTN_PASS_AUTO}READY");
                 }
-                print!("\r\n");
-                p += 1;
-                if p == 4 {
-                    p = 0;
-                };
+                p = (p + 1) % 4;
             }
             draw_btn_ready(gs)?;
 
-            return Ok(());
-        }
-
-        if p >= 0 {
-            draw_btn_play(gs)?;
-            draw_btn_pass(gs)?;
+            return gs.srn.flush();
         }
 
         for row in 0..4 {
@@ -567,10 +549,10 @@ pub mod display {
                 "Conv. Error"
             };
 
-            let s = format!("{name:>16}: ");
+            let s: String = format!("{name:>16}: ");
 
             let mut out_str = String::with_capacity(39);
-            let mut out_sel_str = String::with_capacity(39);
+
             let n_cards = player.num_cards as usize;
 
             let has_passed = player.has_passed_this_cycle;
@@ -579,27 +561,48 @@ pub mod display {
             if p == gs.sm.your_index {
                 let cards: Cards = (&gs.sm.your_hand).try_into().expect("Should not crash");
                 info!("Cards: {cards:X}");
-                for cardnum in cards {
+
+                // Render selected cards
+                queue!(
+                    gs.srn,
+                    MoveTo(0, 2),
+                    Print(COL_NORMAL),
+                    Clear(ClearType::CurrentLine),
+                )?;
+
+                for (pos, cardnum) in (0u16..13).zip(cards) {
+                    if gs.cards_selected & cardnum.as_card() != 0 {
+                        out_str.clear();
+                        cards_to_utf8(cardnum, &mut out_str);
+                        queue!(gs.srn, MoveTo(24 + (pos * 3), 2), Print(&out_str))?;
+                    }
+                }
+
+                // Render: User cards
+                out_str.clear();
+                for (pos, cardnum) in (0u16..13).zip(cards) {
+                    out_str.clear();
                     if gs.cards_selected & cardnum.as_card() == 0 {
-                        out_sel_str.push_str("  ");
                         cards_to_utf8(cardnum, &mut out_str);
                     } else {
-                        cards_to_utf8(cardnum, &mut out_sel_str);
+                        out_str.push_str(COL_NORMAL);
                         out_str.push_str("^^");
                     }
-                    out_str.push(' ');
-                    out_sel_str.push(' ');
+                    queue!(gs.srn, MoveTo(24 + (pos * 3), 3), Print(&out_str))?;
                 }
-                execute!(
-                    gs.srn,
-                    MoveTo(24, 2),
-                    Clear(ClearType::CurrentLine),
-                    Print(out_sel_str),
-                )?;
             } else {
-                out_str = format!("{COL_CARD_BACK}##{COL_NORMAL} ").repeat(n_cards);
+                queue!(
+                    gs.srn,
+                    MoveTo(23, 3 + row),
+                    Print(format!("{COL_NORMAL} {COL_CARD_BACK}##").repeat(n_cards))
+                )?;
             }
-            let number_of_cards = ".. ".to_string().repeat(13 - n_cards);
+
+            queue!(
+                gs.srn,
+                Print(COL_NORMAL),
+                Print(" ..".to_string().repeat(13 - n_cards))
+            )?;
 
             // Number and Names.
             let player_name = if p == gs.sm.turn {
@@ -611,30 +614,32 @@ pub mod display {
             };
 
             // Cards
-            execute!(
+            queue!(
                 gs.srn,
                 MoveTo(0, 3 + row),
                 Print(format!("{}.", p + 1)),
                 Print(player_name),
-                Print(format!("#{n_cards:2} {out_str}{number_of_cards}")),
+                Print(format!("#{n_cards:2}")),
+                MoveRight(40),
                 Print(score_str(player_score)),
             )?;
 
             // Passed Text
             if has_passed {
-                execute!(
+                queue!(
                     gs.srn,
                     MoveTo(70, 3 + row),
                     Print("PASS".white().on_dark_grey()),
                 )?;
             }
-            p += 1;
-            if p == 4 {
-                p = 0;
-            };
+
+            p = (p + 1) % 4;
         }
 
-        Ok(())
+        queue!(gs.srn, Print(COL_NORMAL),)?;
+
+        // Flush queue display items
+        gs.srn.flush()
     }
 }
 
@@ -668,7 +673,6 @@ async fn main() {
         println!("Start game {}/{}", srv.round, srv.rounds);
 
         srv.play(srv.turn, Cards(0x1000)).unwrap();
-
         srv.pass(srv.turn).unwrap();
 
         println!("{}", srv.turn);
@@ -715,7 +719,7 @@ async fn main() {
             cards_selected: Cards::default(),
             auto_pass: false,
             i_am_ready: true,
-            is_valid_hand: false,
+            card_selected_score: None,
             hand: Cards::default(),
             sm: net_legacy::StateMessage::new(None),
         };
@@ -745,7 +749,7 @@ async fn main() {
                                     if let Some(name) = gs.sm.player_name(p) {
                                         let cards = gs.sm.action.cards.try_into().unwrap();
                                         let cards_str = display::cards_str(cards);
-                                        trace!("PLAY: {name:>16}: {cards_str}");
+                                        trace!("PLAY: {name:>16}: {cards_str}{COL_NORMAL}");
                                     }
                                 }
                                 net_legacy::StateMessageActionType::Pass => {
@@ -865,13 +869,10 @@ async fn main() {
                                 gs.board = gs.sm.board.try_into().unwrap();
                                 gs.board_score = big2rules::rules::score_hand(gs.board);
                                 gs.hand = (&gs.sm.your_hand).try_into().unwrap();
-                                let hand_score = big2rules::rules::score_hand(gs.hand);
-                                gs.is_valid_hand = match (gs.board_score, hand_score) {
-                                        (_, None) => false,
-                                        (None, Some(_)) => true,
-                                        (Some(b), Some(h)) => matches!(b.partial_cmp(&h), Some(Ordering::Greater)),
-                                };
-                                info!("is_valid: b{:?} vs h{:?} = {}", gs.board_score, hand_score, gs.is_valid_hand);
+                                let hand_score = big2rules::rules::score_hand(gs.cards_selected);
+                                let cmp = big2rules::rules::beter_hand(hand_score, gs.board_score);
+                                gs.card_selected_score = cmp;
+                                info!("UPDATE: is_valid: h{:?} vs b{:?} = {:?}", hand_score, gs.board_score, cmp);
                                 update_display = true;
                             }
 
@@ -989,12 +990,12 @@ async fn main() {
                             display::UserEvent::ToggleCard13 => toggle_card = 13,
                             display::UserEvent::Clear => if gs.cards_selected != Cards(0) {
                                 gs.cards_selected = Cards::default();
-                                gs.is_valid_hand = false;
+                                gs.card_selected_score = None;
                                 update_display = true;
                             },
                             display::UserEvent::Play => {
                                 // Play hand
-                                if gs.is_valid_hand {
+                                if is_your_turn && matches!(gs.card_selected_score, Some(Ordering::Greater)) {
                                     // println!("Play hand");
                                     gs.sm.action.action_type = net_legacy::StateMessageActionType::Play;
 
@@ -1003,7 +1004,7 @@ async fn main() {
                                     }
 
                                     gs.cards_selected = Cards::default();
-                                    gs.is_valid_hand = false;
+                                    gs.card_selected_score = None;
                                 }
                             },
                             display::UserEvent::Pass => {
@@ -1033,12 +1034,9 @@ async fn main() {
                                 info!("Select {card:?}");
                                 gs.cards_selected ^= card.as_card();
                                 let hand_score = big2rules::rules::score_hand(gs.cards_selected);
-                                gs.is_valid_hand = match (gs.board_score, hand_score) {
-                                        (_, None) => false,
-                                        (None, Some(_)) => true,
-                                        (Some(b), Some(h)) => matches!(h.partial_cmp(&b), Some(Ordering::Greater)),
-                                };
-                                info!("is_valid: b{:?} vs h{:?} = {}", gs.board_score, hand_score, gs.is_valid_hand);
+                                let cmp = big2rules::rules::beter_hand(hand_score, gs.board_score);
+                                gs.card_selected_score = cmp;
+                                info!("TOGGLE: is_valid: h{:?} vs b{:?} = {:?}", hand_score, gs.board_score, cmp);
                                 update_display = true;
                             }
                         }
@@ -1246,7 +1244,7 @@ mod tests {
         println!("output: {:?}", fake_stdio);
         println!("output: {}", String::from_utf8(fake_stdio).unwrap());
 
-        let ss = ServerState {
+        let _ss = ServerState {
             round: 1,
             rounds: 8,
             turn: None,
@@ -1296,38 +1294,38 @@ mod tests {
 
         // "3 Diamond, Blue"
         cards_to_utf8(CardNum::try_from(12).unwrap(), &mut out_str);
-        assert_eq!(out_str, "\u{1b}[30;47m3\u{1b}[34m\u{2666}\u{1b}[0m");
+        assert_eq!(out_str, "\u{1b}[30;47m3\u{1b}[34m\u{2666}");
 
         out_str.clear();
         // "3 Clubs, Green"
         cards_to_utf8(CardNum::try_from(13).unwrap(), &mut out_str);
-        assert_eq!(out_str, "\u{1b}[30;47m3\u{1b}[32m\u{2663}\u{1b}[0m");
+        assert_eq!(out_str, "\u{1b}[30;47m3\u{1b}[32m\u{2663}");
 
         out_str.clear();
         // "3 Hearts, Red"
         cards_to_utf8(CardNum::try_from(14).unwrap(), &mut out_str);
-        assert_eq!(out_str, "\u{1b}[30;47m3\u{1b}[31m\u{2665}\u{1b}[0m");
+        assert_eq!(out_str, "\u{1b}[30;47m3\u{1b}[31m\u{2665}");
 
         out_str.clear();
         // "3 Spades, Black"
         cards_to_utf8(CardNum::try_from(15).unwrap(), &mut out_str);
-        assert_eq!(out_str, "\u{1b}[30;47m3\u{1b}[30m\u{2660}\u{1b}[0m");
+        assert_eq!(out_str, "\u{1b}[30;47m3\u{1b}[30m\u{2660}");
 
         out_str.clear();
         cards_to_utf8(CardNum::try_from(60).unwrap(), &mut out_str);
-        assert_eq!(out_str, "\u{1b}[30;47m2\u{1b}[34m\u{2666}\u{1b}[0m");
+        assert_eq!(out_str, "\u{1b}[30;47m2\u{1b}[34m\u{2666}");
 
         out_str.clear();
         cards_to_utf8(CardNum::try_from(61).unwrap(), &mut out_str);
-        assert_eq!(out_str, "\u{1b}[30;47m2\u{1b}[32m\u{2663}\u{1b}[0m");
+        assert_eq!(out_str, "\u{1b}[30;47m2\u{1b}[32m\u{2663}");
 
         out_str.clear();
         cards_to_utf8(CardNum::try_from(62).unwrap(), &mut out_str);
-        assert_eq!(out_str, "\u{1b}[30;47m2\u{1b}[31m\u{2665}\u{1b}[0m");
+        assert_eq!(out_str, "\u{1b}[30;47m2\u{1b}[31m\u{2665}");
 
         out_str.clear();
         cards_to_utf8(CardNum::try_from(63).unwrap(), &mut out_str);
-        assert_eq!(out_str, "\u{1b}[30;47m2\u{1b}[30m\u{2660}\u{1b}[0m");
+        assert_eq!(out_str, "\u{1b}[30;47m2\u{1b}[30m\u{2660}");
 
         // Pair Aces, Diamond and Heart
         let cards = Cards(0x0500_0000_0000_0000);
@@ -1337,7 +1335,7 @@ mod tests {
         }
         assert_eq!(
             out_str,
-            "\u{1b}[30;47mA\u{1b}[34m\u{2666}\u{1b}[0m\u{1b}[30;47mA\u{1b}[31m\u{2665}\u{1b}[0m"
+            "\u{1b}[30;47mA\u{1b}[34m\u{2666}\u{1b}[0m\u{1b}[30;47mA\u{1b}[31m\u{2665}"
         );
 
         // Pair Sixes, clubs and Heart
@@ -1345,10 +1343,26 @@ mod tests {
         out_str.clear();
         for cn in cards {
             cards_to_utf8(cn, &mut out_str);
+            out_str.push_str("\x1B[2C");
         }
         assert_eq!(
             out_str,
             "\u{1b}[30;47m6\u{1b}[32m\u{2663}\u{1b}[0m\u{1b}[30;47m6\u{1b}[31m\u{2665}\u{1b}[0m"
         );
+    }
+
+    #[test]
+    fn score_renderer() {
+        // 0 score
+        let ss = display::score_str(0);
+        assert_eq!(ss, "\u{1b}[97;100m€   0");
+
+        // Negative score
+        let ss = display::score_str(-39);
+        assert_eq!(ss, "\u{1b}[97;41m€ -39");
+
+        // Positive score
+        let ss = display::score_str(89);
+        assert_eq!(ss, "\u{1b}[97;42m€  89");
     }
 }
