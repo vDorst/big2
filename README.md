@@ -8,21 +8,20 @@ The game is written in the Rust and is compatiable with the [Muon programming la
 
 Platforms: Windows and linux are supported at the moment.
 
-
 ## Build (Windows)
 
 1. Install the latest version of the Rust
 2. Clone the big2 repo.
 3. build the game `cargo build --release`
-4. run `./target/release/big2 -name <yourname> -join <ip/dnsname>[:<port>]`
+4. run `./target/release/big2 --name <yourname> --join <ip/dnsname>[:<port>]`
 
 ## Command line arguments
 
-* `-name [yourname]`
-* `-join [address]` (join game; address must be IPv4 address, port number is optional: e.g. `127.0.0.1`, `127.0.0.1:1234`, etc.)
+* `--name [yourname]`
+* `--join [address]` (join game; address must be IPv4 address, port number is optional: e.g. `127.0.0.1`, `127.0.0.1:1234`, etc.)
 
 For example:
-* Join game: `./target/release/big2 -name Saul -join 127.0.0.1`
+* Join game: `./target/release/big2 --name Saul --join 127.0.0.1`
 
 ## Hotkeys
 
