@@ -4,8 +4,8 @@ pub const RANKS: [u8; 13] = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
 pub mod deck {
     use super::*;
+    use rand::rng;
     use rand::seq::SliceRandom;
-    use rand::thread_rng;
 
     pub const NUMBER_OF_CARDS: u8 = 52;
     pub const START_BIT: u8 = 12;
@@ -22,7 +22,7 @@ pub mod deck {
 
             // Randomize/shuffle the cards
             for _ in 0..256 {
-                deck.shuffle(&mut thread_rng());
+                deck.shuffle(&mut rng());
             }
             deck
         };
