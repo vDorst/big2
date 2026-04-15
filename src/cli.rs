@@ -2,23 +2,22 @@ pub mod display {
     use crate::{big2rules, network};
     use log::trace;
 
-    use std::{io::stdout, time::Duration};
+    use std::{io::Result, io::stdout, time::Duration};
 
     use crossterm::{
         cursor::{MoveTo, RestorePosition, SavePosition},
         event::{
-            poll, read, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers,
-            MouseButton, MouseEvent, MouseEventKind,
+            DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers, MouseButton,
+            MouseEvent, MouseEventKind, poll, read,
         },
         execute,
         //queue,
-        style::{Colorize, Print, ResetColor},
+        style::{Print, ResetColor, Stylize as _},
         //QueueableCommand,
         terminal::{
-            disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen,
-            LeaveAlternateScreen, SetSize, SetTitle,
+            Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, SetSize, SetTitle,
+            disable_raw_mode, enable_raw_mode,
         },
-        Result,
     };
 
     #[derive(PartialEq)]
@@ -115,6 +114,7 @@ pub mod display {
             Event::Key(key_event) => return handle_key_events(key_event),
             Event::Mouse(mouse_event) => return handle_mouse_events(mouse_event),
             Event::Resize(_, _) => return UserEvent::RESIZE,
+            Event::FocusGained | Event::FocusLost | Event::Paste(_) => return UserEvent::NOTHING,
         }
     }
 
